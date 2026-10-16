@@ -15,6 +15,7 @@ import ctypes
 import platform
 import sys
 import time
+from ctypes import wintypes
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
@@ -47,6 +48,9 @@ def set_low_priority():
     """把本程序设为"低于正常"优先级，CPU 紧张时让游戏优先。"""
     BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
     kernel32 = ctypes.windll.kernel32
+    # 明确声明参数类型：别的代码（如 ocr_probe.memory_mb）也会设置 GetCurrentProcess 的返回类型，不声明会出错
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
 
 

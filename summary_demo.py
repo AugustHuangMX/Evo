@@ -33,7 +33,12 @@ STATUS_TEXT = {
 
 # 小块只有一两百像素宽：长边超过 960 才缩小，否则保持原样
 # （默认规则是"短边小于 736 就放大到 736"，会把小块放大十几倍，又慢又占内存）
-SMALL_CROP_PARAMS = {"Det.limit_type": "max", "Det.limit_side_len": 960}
+SMALL_CROP_PARAMS = {
+    "Det.limit_type": "max",
+    "Det.limit_side_len": 960,
+    # 小块里没有字时，RapidOCR 会打印一条警告；实战采集时每秒都会刷屏，所以只显示错误
+    "Global.log_level": "error",
+}
 
 
 def load_image(path):
@@ -139,6 +144,35 @@ def read_summary(engine, img, cfg, save_crops=False):
         if r["status"] != "ok":
             problems.append(f"{r['label']}：{STATUS_TEXT[r['status']]}（OCR 原文：{r['raw'] or '无'}）")
     return results, problems
+
+
+def to_seconds(duration):
+    """"16:03" → 963 秒。"""
+    if duration is None:
+        return None
+    minutes, seconds = duration.split(":")
+    return int(minutes) * 60 + int(seconds)
+
+
+def summary_to_match(results, problems, ended_at, evidence_path=None):
+    """把总结页的识别结果整理成数据库里"一局"的格式（键和 storage.COLUMNS 的列名一致）。"""
+    v = {name: r["value"] for name, r in results.items()}
+    kills, assists, knockdowns = v["kda"] if v["kda"] else (None, None, None)
+    return {
+        "ended_at": ended_at,
+        "placement": v["placement"],
+        "squad_kills": v["squad_kills"],
+        "kills": kills,
+        "assists": assists,
+        "knockdowns": knockdowns,
+        "damage": v["damage"],
+        "survival_time": to_seconds(v["survival_time"]),
+        "revives": v["revives"],
+        "respawns": v["respawns"],
+        "needs_review": int(bool(problems)),
+        "review_note": "；".join(problems) or None,
+        "evidence_path": str(evidence_path) if evidence_path else None,
+    }
 
 
 def show(value):
