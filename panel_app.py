@@ -21,6 +21,7 @@ from urllib.parse import parse_qsl, urlencode
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
 import storage
+from paths import CAPTURES_DIR, CONFIG_DIR, PANEL_DIR, data_absolute
 from post_match import XP_ONLY_NOTE
 
 PER_PAGE = 20
@@ -44,10 +45,8 @@ REVIEW_FIELDS = {
     "RP": ["rp_delta"],
 }
 
-ROOT = Path(__file__).resolve().parent
-
 # ---- 总览页 ----
-_XP_CFG = json.loads((ROOT / "config" / "xp.json").read_text(encoding="utf-8"))
+_XP_CFG = json.loads((CONFIG_DIR / "xp.json").read_text(encoding="utf-8"))
 TIERS, DIVISIONS = _XP_CFG["tiers"], _XP_CFG["divisions"]  # 段位从低到高；每个段位里的段从低到高（IV → I）
 DIVISION_POINTS = 1000  # 每段的排位点数（经验值页进度条的终点）
 TIER_BADGE = {"菜鸟": ("R", "rookie"), "青铜": ("B", "bronze"), "白银": ("S", "silver"), "黄金": ("G", "gold"),
@@ -58,9 +57,8 @@ CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片�
 
 # ---- 设置页 ----
 SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
-CAPTURES_DIR = ROOT / "captures"
 
-app = Flask(__name__, template_folder="panel/templates", static_folder="panel/static")
+app = Flask(__name__, template_folder=str(PANEL_DIR / "templates"), static_folder=str(PANEL_DIR / "static"))
 app.secret_key = secrets.token_hex(16)  # 每次启动随机生成，用于页面上的提示消息
 app.config["TOKEN"] = secrets.token_urlsafe(16)  # 修改、删除时要带上的口令
 app.config["DB"] = storage.DB_PATH
@@ -442,9 +440,7 @@ def evidence(match_id):
     row = storage.get_match(db(), match_id)
     if row is None or not row["evidence_path"]:
         abort(404)
-    path = Path(row["evidence_path"])
-    if not path.is_absolute():
-        path = ROOT / path
+    path = data_absolute(row["evidence_path"])  # 相对路径按数据文件夹找
     if not path.is_file():
         abort(404)
     return send_file(path)

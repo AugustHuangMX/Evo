@@ -15,9 +15,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from ocr_probe import create_engine
+from paths import CONFIG_DIR
 from summary_demo import SMALL_CROP_PARAMS, crop, load_image
 
-MATCH_START_CONFIG_PATH = Path("config/match_start.json")
+MATCH_START_CONFIG_PATH = CONFIG_DIR / "match_start.json"
 
 
 def read_text(engine, img, spec, cfg):

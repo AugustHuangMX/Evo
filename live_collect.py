@@ -12,7 +12,8 @@
   开局画面用来分隔每一局；以后用这些截图做模式、地图的识别
 - 其他画面：什么都不做（大部分时间都是这样）
 
-数据存在 data/evo.db（用 python storage.py 查看），截图存在 captures/live/<开始时间>/。
+数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python storage.py 查看），
+截图存在 captures/live/<开始时间>/。
 测试阶段截图都保留，用来做测试集；正式版只保留"待确认"的截图（原则 2）。
 
 运行：python live_collect.py
@@ -32,11 +33,12 @@ import storage
 from apex_capture_test import set_low_priority
 from ocr_probe import create_engine, memory_mb
 from match_start import MATCH_START_CONFIG_PATH, read_match_start
+from paths import CAPTURES_DIR, CONFIG_DIR
 from post_match import PostMatch
 from summary_demo import CONFIG_PATH, KEY_FIELDS, SMALL_CROP_PARAMS, crop, read_summary, show, summary_to_match
 from xp_page import XP_CONFIG_PATH, read_xp
 
-SCREENS_PATH = Path("config/screens.json")
+SCREENS_PATH = CONFIG_DIR / "screens.json"
 LATE_FIELDS = ("placement", "squad_kills")  # 总结页上晚 1–2 秒才滑进来的项
 
 
@@ -86,7 +88,7 @@ def main():
     screens = json.loads(SCREENS_PATH.read_text(encoding="utf-8"))
     xp_cfg = json.loads(XP_CONFIG_PATH.read_text(encoding="utf-8"))
     start_cfg = json.loads(MATCH_START_CONFIG_PATH.read_text(encoding="utf-8"))
-    run_dir = Path("captures/live") / datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     conn = storage.connect(args.db)
     post = PostMatch(conn)

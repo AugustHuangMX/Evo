@@ -25,6 +25,8 @@ import mss
 import mss.tools
 import numpy as np
 
+from paths import CAPTURES_DIR
+
 METHODS = ("dxcam", "mss")
 STATUSES = ("ok", "black", "none", "error")
 
@@ -40,7 +42,7 @@ def parse_args():
     parser.add_argument("--interval", type=float, default=5, help="每隔几秒测一轮（默认 5）")
     parser.add_argument("--save-every", type=int, default=6, help="每几轮保存一次 PNG（默认 6，约 30 秒一次）")
     parser.add_argument("--minutes", type=float, default=30, help="最多运行几分钟，到时自动停止（默认 30）")
-    parser.add_argument("--out", type=Path, default=Path("captures/capture_test"), help="结果保存到哪个文件夹")
+    parser.add_argument("--out", type=Path, default=CAPTURES_DIR / "capture_test", help="结果保存到哪个文件夹")
     return parser.parse_args()
 
 

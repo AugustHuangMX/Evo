@@ -18,9 +18,10 @@ import cv2
 import numpy as np
 
 from ocr_probe import create_engine, memory_mb
+from paths import CAPTURES_DIR, CONFIG_DIR, data_relative
 
-CONFIG_PATH = Path("config/summary.json")
-CROPS_DIR = Path("captures/debug_crops")
+CONFIG_PATH = CONFIG_DIR / "summary.json"
+CROPS_DIR = CAPTURES_DIR / "debug_crops"
 KEY_FIELDS = ("placement", "kda", "damage")  # 这几项有任何问题，整局标记"待确认"
 
 STATUS_TEXT = {
@@ -171,7 +172,7 @@ def summary_to_match(results, problems, ended_at, evidence_path=None):
         "respawns": v["respawns"],
         "needs_review": int(bool(problems)),
         "review_note": "；".join(problems) or None,
-        "evidence_path": str(evidence_path) if evidence_path else None,
+        "evidence_path": data_relative(evidence_path) if evidence_path else None,
     }
 
 

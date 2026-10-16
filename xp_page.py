@@ -16,9 +16,10 @@ import re
 from pathlib import Path
 
 from ocr_probe import create_engine
+from paths import CONFIG_DIR
 from summary_demo import SMALL_CROP_PARAMS, crop, load_image
 
-XP_CONFIG_PATH = Path("config/xp.json")
+XP_CONFIG_PATH = CONFIG_DIR / "xp.json"
 
 POINTS = re.compile(r"([+-]?\d+)\s*排位点")  # "130 排位点数"、"-65排位点数"
 COUNT_POINTS = re.compile(r"(\d+)(?:\s+(\d+))?\s*排位点")  # "2 40排位点数"；连在一起时是 "00排位点数"

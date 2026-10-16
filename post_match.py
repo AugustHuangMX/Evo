@@ -10,6 +10,7 @@
 """
 
 import storage
+from paths import data_relative
 
 RP_SOURCE_XP = "经验值页"
 XP_ONLY_NOTE = "没有总结页（第 2 名、冠军时没有这一页）：伤害、生存时间缺失；击杀/助攻是计入排位点数的次数，可能比实际少"
@@ -151,7 +152,7 @@ class PostMatch:
             "rp_source": RP_SOURCE_XP if rp is not None else None,
             "needs_review": int(bool(notes)),
             "review_note": "；".join(notes + [XP_ONLY_NOTE]),
-            "evidence_path": str(path),
+            "evidence_path": data_relative(path),
             "mode": self.info.get("mode") or ("ranked" if rp is not None else None),
             "map": self.info.get("map"),
         }

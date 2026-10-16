@@ -9,12 +9,12 @@
 
 import random
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import storage
+from paths import DB_DIR, data_absolute
 
-DEMO_DB = Path("data/demo.db")
-SAMPLE_SUMMARY = "captures/samples/vlcsnap-2026-10-16-18h26m12s173.png"  # 有就用作"识别依据"截图
+DEMO_DB = DB_DIR / "demo.db"
+SAMPLE_SUMMARY = "captures/samples/vlcsnap-2026-10-16-18h26m12s173.png"  # 有就用作"识别依据"截图（相对于数据文件夹）
 
 LEGENDS = ["恶灵", "恶灵", "恶灵", "寻血猎犬", "寻血猎犬", "动力小子", "罗芭", "地平线"]
 MAPS = ["世界尽头", "风暴点", "奥林匹斯", "诸王峡谷", "破碎月亮"]
@@ -74,7 +74,7 @@ def main():
         m.update(rank_tier="钻石", rank_division=DIVISIONS[min(total // 1000, 3)], rank_progress=total % 1000)
 
     # 挑 3 局做成"待确认"，演示面板里的修正流程
-    has_sample = Path(SAMPLE_SUMMARY).is_file()
+    has_sample = data_absolute(SAMPLE_SUMMARY).is_file()
     for m, note in zip(
         rng.sample(matches, 3),
         ["击杀/助攻/击倒：格式不对（OCR 原文：5/717）", "伤害：置信度低（OCR 原文：1,2S0）", "名次：没读到（OCR 原文：无）"],

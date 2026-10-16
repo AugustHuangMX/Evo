@@ -1,6 +1,6 @@
 """本地数据库：把每局数据存进 SQLite（Python 自带，不用安装）。
 
-数据库文件在 data/evo.db（已被 .gitignore 排除，不会上传）。
+数据库文件在数据文件夹的 data/evo.db（位置见 paths.py；在项目里时已被 .gitignore 排除，不会上传）。
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
 
 查看最近的记录：python storage.py
@@ -12,7 +12,8 @@ import csv
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path("data/evo.db")
+from paths import DB_PATH
+
 APP_VERSION = "0.0.1"
 SCHEMA_VERSION = 1  # 以后表结构变了就加 1，程序据此自动升级旧数据库
 
