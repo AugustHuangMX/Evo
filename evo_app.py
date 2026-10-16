@@ -88,10 +88,32 @@ def draw_shield(size=64):
     return img.resize((size, size), Image.LANCZOS)
 
 
+ICON_FILES = ("evo.png", "icon.png")  # assets/icon/ 里用户设计的图标，两个名字都认
+
+
+def square_icon(img, pad=0.04):
+    """裁掉四周的透明空白，居中放进正方形（四周留一点边）。小尺寸（如托盘的 16 像素）下图形才不会太小。"""
+    box = img.getchannel("A").point(lambda a: 255 if a > 10 else 0).getbbox()
+    if box:
+        img = img.crop(box)
+    side = round(max(img.size) * (1 + 2 * pad))
+    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    canvas.paste(img, ((side - img.width) // 2, (side - img.height) // 2), img)
+    return canvas
+
+
+def base_icon(size=64):
+    """程序图标：assets/icon/ 里有用户设计的图标就用它，否则用面板的盾牌。返回 (图片, 来源说明)。"""
+    for name in ICON_FILES:
+        path = ASSETS_DIR / "icon" / name
+        if path.is_file():
+            return square_icon(Image.open(path).convert("RGBA")).resize((size, size), Image.LANCZOS), str(path)
+    return draw_shield(size), "面板的盾牌（assets/icon/ 里还没有图标）"
+
+
 def load_icons():
     """三种状态的图标：等待游戏、正在记录（右下角小红点）、已暂停（变灰）。"""
-    custom = ASSETS_DIR / "icon" / "evo.png"
-    base = Image.open(custom).convert("RGBA").resize((64, 64), Image.LANCZOS) if custom.is_file() else draw_shield()
+    base, _ = base_icon(64)
 
     custom_rec = ASSETS_DIR / "icon" / "evo-recording.png"
     if custom_rec.is_file():

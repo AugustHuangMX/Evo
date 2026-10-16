@@ -42,7 +42,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
   - 打包成"一个文件夹"（PyInstaller 的 onedir）：一个很小的启动器 `Evo.exe` + `_internal` 文件夹，不做单个 exe（启动慢、更容易被杀毒软件误报）
   - 第一次用 exe 时，把项目里的 `data/` 和 `captures/` 复制一份到 `%LOCALAPPDATA%\Evo\`，原文件不动（2026-10-17 已复制：12 局、149 个文件 / 494 MB，核对一致）。之后打游戏用 Evo.exe，数据在 `%LOCALAPPDATA%\Evo`；用源码运行时数据仍在项目文件夹，两边互不干扰
   - 图标由用户设计，放在 `assets/icon/`（要求见那里的 README）；做好之前用面板的盾牌代替
-  - 打包步骤：整理路径 ✓ → 托盘程序 ✓ → 第一次打包 ✓ → 换上图标
+  - 打包步骤：整理路径 ✓ → 托盘程序 ✓ → 第一次打包 ✓ → 换上图标 ✓（用户设计的蓝色胶囊 + 上升柱状图，`assets/icon/icon.png`；程序自动裁掉四周透明空白。16 像素下内部细节会糊，以后可考虑画一个托盘专用的简化版）
   - 打包命令：`python build.py`（用 `evo.spec`，PyInstaller 6.22，只在开发时用）→ `dist/Evo/Evo.exe`。第一次打包（2026-10-17）：启动器 9.3 MB，整个文件夹 251 MB / 211 个文件，18 秒打完；Windows Defender 没有报警。自己电脑上生成的 exe 不会触发 SmartScreen（只有从网上下载的才会）
   - 打包后排查问题：`Evo.exe --check-image 截图.png` 自检（结果写进 logs/evo.log）；`--open-panel` 启动后打开面板
   - 托盘用 pystray（LGPLv3，用户同意）：我们的代码仍是 MIT。发布 exe 时要附上 pystray 的许可证原文，并让它以普通 .py 文件的形式放在程序文件夹里（不压进程序内部），方便别人替换
