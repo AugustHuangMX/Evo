@@ -6,9 +6,11 @@
 """
 
 import argparse
+import ctypes
 import io
 import json
 import math
+import os
 import secrets
 import threading
 import webbrowser
@@ -53,6 +55,10 @@ TIER_BADGE = {"菜鸟": ("R", "rookie"), "青铜": ("B", "bronze"), "白银": ("
 DAY_START_HOUR = 5  # "今日"从早上 5 点算起：打到凌晨的局仍算前一天
 RANGES = {"30": "近 30 局", "all": "全部"}
 CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片宽度拉伸）
+
+# ---- 设置页 ----
+SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
+CAPTURES_DIR = ROOT / "captures"
 
 app = Flask(__name__, template_folder="panel/templates", static_folder="panel/static")
 app.secret_key = secrets.token_hex(16)  # 每次启动随机生成，用于页面上的提示消息
@@ -442,6 +448,82 @@ def evidence(match_id):
     if not path.is_file():
         abort(404)
     return send_file(path)
+
+
+# ---------- 设置页 ----------
+
+def screen_size():
+    """主显示器的实际分辨率（不受 Windows 显示缩放影响）。读不到返回 None。"""
+    try:
+        user32 = ctypes.windll.user32
+        user32.SetProcessDPIAware()
+        return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    except (AttributeError, OSError):
+        return None
+
+
+def folder_usage(path):
+    """文件夹里有几个文件、一共多大。"""
+    files = [p for p in path.rglob("*") if p.is_file()] if path.is_dir() else []
+    return len(files), sum(p.stat().st_size for p in files)
+
+
+def size_text(n):
+    if n >= 1024 ** 3:
+        return f"{n / 1024 ** 3:.1f} GB"
+    if n >= 1024 ** 2:
+        return f"{n / 1024 ** 2:.0f} MB"
+    return f"{n / 1024:.0f} KB"
+
+
+def db_path():
+    return Path(app.config["DB"]).resolve()
+
+
+@app.route("/settings")
+def settings():
+    shot_count, shot_bytes = folder_usage(CAPTURES_DIR / "live")
+    size = screen_size()
+    return render_template(
+        "settings.html",
+        resolution=f"{size[0]} × {size[1]}" if size else None,
+        data_dir=db_path().parent,
+        db_file=db_path().name,
+        db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
+        total=storage.query_matches(db(), limit=1)[1],
+        review_count=storage.count_review(db()),
+        captures_dir=CAPTURES_DIR,
+        shot_count=shot_count,
+        shot_size=size_text(shot_bytes),
+        version=storage.APP_VERSION,
+        source_url=SOURCE_URL,
+    )
+
+
+@app.post("/settings/open-folder")
+def open_folder():
+    """在资源管理器里打开数据或截图文件夹。只能打开这两个固定的文件夹。"""
+    target = {"data": db_path().parent, "captures": CAPTURES_DIR}.get(request.form.get("which"))
+    if target is None:
+        abort(400)
+    target.mkdir(parents=True, exist_ok=True)
+    os.startfile(target)
+    flash(f"已在资源管理器中打开 {target}", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/settings/clear")
+def clear_data():
+    """清空所有战绩。清空前先把数据库备份一份；截图不删。"""
+    total = storage.query_matches(db(), limit=1)[1]
+    if not total:
+        flash("没有可清空的战绩", "ok")
+        return redirect(url_for("settings"))
+    backup = db_path().with_name(f"{db_path().name}.bak-clear-{datetime.now():%Y%m%d-%H%M%S}")
+    storage.backup_db(db(), backup)
+    storage.delete_all_matches(db())
+    flash(f"已清空 {total} 局战绩。清空前的数据备份在 {backup}", "ok")
+    return redirect(url_for("settings"))
 
 
 @app.route("/export.csv")

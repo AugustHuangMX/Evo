@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}设置 · Evo{% endblock %}
+
+{% block content %}
+<div class="settings-layout">
+  <div class="settings-main">
+
+    <section class="card settings-card" aria-labelledby="h-look">
+      <h2 id="h-look">外观</h2>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name">主题</div>
+          <div class="setting-desc">选"跟随系统"时，Windows 切换深浅色，面板会自动同步</div>
+        </div>
+        <select id="theme-select" aria-label="主题">
+          <option value="system">跟随系统</option>
+          <option value="dark">黑夜</option>
+          <option value="light">白天</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card settings-card" aria-labelledby="h-rec">
+      <h2 id="h-rec">识别</h2>
+      <div class="info-grid">
+        <div>
+          <div class="label">屏幕分辨率</div>
+          <div class="info-value">自动检测{% if resolution %}（<span class="num">{{ resolution }}</span>）{% endif %}</div>
+        </div>
+        <div>
+          <div class="label">游戏界面语言</div>
+          <div class="info-value">简体中文</div>
+          <div class="setting-desc">目前只支持中文游戏界面</div>
+        </div>
+      </div>
+      <div class="setting-desc rec-note">识别规则写在 <code>config/</code> 文件夹里，坐标按 1920 × 1080 校准，运行时按实际分辨率自动缩放。</div>
+    </section>
+
+    <section class="card settings-card" aria-labelledby="h-data">
+      <h2 id="h-data">数据与隐私</h2>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name">战绩数据</div>
+          <div class="setting-desc">共 <span class="num">{{ total }}</span> 局{% if review_count %}（{{ review_count }} 局待确认）{% endif %} · {{ db_file }} · {{ db_size }}</div>
+          <div class="setting-path">{{ data_dir }}</div>
+        </div>
+        <div class="setting-actions">
+          <form method="post" action="{{ url_for('open_folder') }}">
+            <input type="hidden" name="token" value="{{ token }}">
+            <input type="hidden" name="which" value="data">
+            <button type="submit" class="btn">打开文件夹</button>
+          </form>
+          <a class="btn" href="{{ url_for('export') }}">导出全部 CSV</a>
+        </div>
+      </div>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name">截图</div>
+          <div class="setting-desc">测试阶段保留全部截图，用来做测试集 · 共 <span class="num">{{ shot_count }}</span> 张 · {{ shot_size }}</div>
+          <div class="setting-path">{{ captures_dir }}</div>
+        </div>
+        <div class="setting-actions">
+          <form method="post" action="{{ url_for('open_folder') }}">
+            <input type="hidden" name="token" value="{{ token }}">
+            <input type="hidden" name="which" value="captures">
+            <button type="submit" class="btn">打开文件夹</button>
+          </form>
+        </div>
+      </div>
+      <div class="setting danger-zone">
+        <div class="setting-text">
+          <div class="setting-name">清空所有战绩</div>
+          <div class="setting-desc">清空前会自动备份一份数据库；截图不会删除</div>
+        </div>
+        <form method="post" action="{{ url_for('clear_data') }}"
+              onsubmit="return confirm('确定清空全部 {{ total }} 局战绩吗？\n清空前会自动备份一份数据库。')">
+          <input type="hidden" name="token" value="{{ token }}">
+          <button type="submit" class="btn btn-danger" {{ 'disabled' if not total }}>清空数据</button>
+        </form>
+      </div>
+    </section>
+
+    <p class="setting-desc coming">开机自动启动、每局结束后的通知、性能模式等功能还在开发中，做好后会出现在这里。</p>
+  </div>
+
+  <aside class="card about-card" aria-labelledby="h-about">
+    <h2 id="h-about">关于 Evo</h2>
+    <div class="setting-desc">版本 <span class="num">{{ version }}</span> · MIT 开源许可</div>
+    <ul class="principles">
+      <li class="pr-1"><div class="setting-name">只看不动</div><div class="setting-desc">只读取屏幕画面，不接触游戏进程，不模拟任何操作</div></li>
+      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不联网，不上传，没有账号</div></li>
+      <li class="pr-3"><div class="setting-name">轻量</div><div class="setting-desc">后台运行占用低，不影响游戏帧数</div></li>
+      <li class="pr-4"><div class="setting-name">开源</div><div class="setting-desc">所有代码公开，任何人都可以检查</div></li>
+    </ul>
+    <a class="source-link" href="{{ source_url }}" target="_blank" rel="noopener noreferrer">查看源代码 ↗</a>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var themeSelect = document.getElementById("theme-select");
+  function syncThemeSelect() { themeSelect.value = evoTheme(); }
+  syncThemeSelect();
+  themeSelect.addEventListener("change", function () { evoSetTheme(themeSelect.value); });
+  document.addEventListener("evo-theme", syncThemeSelect);  // 右上角按钮切换后，下拉框跟着变
+</script>
+{% endblock %}

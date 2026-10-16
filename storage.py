@@ -136,6 +136,22 @@ def delete_match(conn, match_id):
     conn.commit()
 
 
+def backup_db(conn, path):
+    """把整个数据库备份到 path（用 SQLite 自带的备份功能，数据库正在使用时也能安全备份）。"""
+    target = sqlite3.connect(path)
+    try:
+        conn.backup(target)
+    finally:
+        target.close()
+
+
+def delete_all_matches(conn):
+    """删除所有对局，返回删了几局。"""
+    n = conn.execute("DELETE FROM matches").rowcount
+    conn.commit()
+    return n
+
+
 def write_csv(conn, f):
     """把全部数据按 CSV 格式写进一个已打开的文件（或内存里的文本缓冲）。"""
     rows = conn.execute("SELECT * FROM matches ORDER BY match_id").fetchall()

@@ -250,7 +250,35 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .legend-key span { display: flex; align-items: center; gap: 6px; }
 .legend-key i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
+/* ---------- 设置页 ---------- */
+.settings-layout { display: grid; grid-template-columns: 1fr minmax(280px, 350px); gap: 20px; align-items: start; }
+.settings-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.settings-card, .about-card { padding: 24px; }
+.settings-card h2, .about-card h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.setting { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 0; }
+.setting + .setting { border-top: 1px solid var(--row-border); }
+.setting-text { min-width: 0; }
+.setting-name { font-weight: 500; }
+.setting-desc { color: var(--muted); font-size: 13px; }
+.setting-path { color: var(--muted); font-size: 12px; font-family: Consolas, monospace; margin-top: 2px; word-break: break-all; }
+.setting-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.setting-actions form, .danger-zone form { margin: 0; }
+.info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.info-value { margin-top: 4px; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--inset); }
+.rec-note { margin-top: 14px; }
+.btn-danger { color: var(--bad); border-color: var(--danger-border); }
+.btn-danger:hover { border-color: var(--bad); }
+.btn[disabled] { opacity: 0.45; cursor: default; }
+.coming { margin: 0; padding: 0 4px; }
+.principles { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.principles li { padding-left: 14px; border-left: 4px solid; border-radius: 2px; }
+.principles .pr-1 { border-color: var(--seg-other); } .principles .pr-2 { border-color: var(--p3-bg); }
+.principles .pr-3 { border-color: var(--p2-bg); } .principles .pr-4 { border-color: var(--p1-bg); }
+.source-link { color: var(--p3-bg); }
+.source-link:hover { text-decoration: underline; }
+
 @media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; }
   .ov-top, .ov-bottom { grid-template-columns: 1fr; }
   .stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
@@ -259,4 +287,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
   .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .recent-row { grid-template-columns: auto 1fr auto auto; gap: 12px; }
   .recent-row .recent-kda { display: none; }
+  .setting { flex-direction: column; align-items: stretch; gap: 10px; }
+  .setting-actions { justify-content: flex-start; }
+  .info-grid { grid-template-columns: 1fr; }
 }

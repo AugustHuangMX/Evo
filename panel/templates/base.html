@@ -31,7 +31,7 @@
   <nav class="nav" aria-label="主导航">
     <a href="{{ url_for('overview') }}" class="{{ 'active' if request.endpoint == 'overview' }}">总览</a>
     <a href="{{ url_for('matches') }}" class="{{ 'active' if request.endpoint == 'matches' }}">战绩</a>
-    <span class="disabled" title="即将推出">设置</span>
+    <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' }}">设置</a>
   </nav>
   {% if is_demo %}
   <div class="pill pill-warn" title="当前读取的是 {{ db_name }}，不是正式数据库">
@@ -52,10 +52,29 @@
 
 </div>
 <script>
+  // 主题选择："dark" / "light"（记住你的选择），或 "system"（跟随 Windows 的深浅色）
+  window.evoTheme = function () {
+    try { return localStorage.getItem("evo-theme") || "system"; } catch (e) { return "system"; }
+  };
+  function applyTheme() {
+    var theme = evoTheme();
+    if (theme !== "light" && theme !== "dark") {
+      theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+    document.documentElement.dataset.theme = theme;
+  }
+  window.evoSetTheme = function (choice) {
+    try {
+      if (choice === "system") localStorage.removeItem("evo-theme");
+      else localStorage.setItem("evo-theme", choice);
+    } catch (e) {}
+    applyTheme();
+    document.dispatchEvent(new CustomEvent("evo-theme"));  // 通知设置页的下拉框同步
+  };
+  // 跟随系统时：Windows 切换深浅色，面板立即跟着变
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", applyTheme);
   document.getElementById("theme-toggle").addEventListener("click", function () {
-    var next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("evo-theme", next); } catch (e) {}
+    evoSetTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   });
 </script>
 {% block scripts %}{% endblock %}
