@@ -26,9 +26,11 @@ else:
 
 CONFIG_DIR = APP_DIR / "config"
 PANEL_DIR = APP_DIR / "panel"
+ASSETS_DIR = APP_DIR / "assets"  # 图标等
 DB_DIR = DATA_DIR / "data"
 DB_PATH = DB_DIR / "evo.db"
 CAPTURES_DIR = DATA_DIR / "captures"
+LOG_DIR = DATA_DIR / "logs"  # 托盘程序的运行记录（没有终端窗口，出了问题看这里）
 
 
 def data_relative(path):

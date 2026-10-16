@@ -6,6 +6,8 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+# 托盘程序的运行记录
+logs/
 
 # ===== Python 自动生成的文件 =====
 __pycache__/

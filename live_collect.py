@@ -21,6 +21,7 @@
 """
 
 import argparse
+import gc
 import json
 import time
 from datetime import datetime
@@ -73,16 +74,15 @@ def save_png(path, frame):
     cv2.imencode(".png", frame)[1].tofile(path)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="打游戏时自动识别每局的总结页并存进数据库")
-    parser.add_argument("--interval", type=float, default=1, help="每隔几秒检查一次（默认 1）")
-    parser.add_argument("--fast", type=float, default=0.3, help="在总结页、数字还没存下时，每隔几秒检查一次（默认 0.3）")
-    parser.add_argument("--summary-timeout", type=float, default=10,
-                        help="在总结页最多等几秒让数字读全，超时就先存下并标记待确认（默认 10）")
-    parser.add_argument("--minutes", type=float, default=240, help="最多运行几分钟（默认 240）")
-    parser.add_argument("--db", type=Path, default=storage.DB_PATH, help="数据库文件（默认 data/evo.db）")
-    args = parser.parse_args()
-
+def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.0,
+            stop=None, deadline=None, log=print, status=None):
+    """采集主循环：一直截屏、识别、记录，直到下面任何一种情况发生，然后安全收尾（没存完的局存下、释放截屏和识别模型）：
+    - stop（threading.Event）被设置：托盘程序在游戏关闭、暂停或退出时用它喊停
+    - 到达 deadline（time.monotonic() 的时刻）
+    - 在终端按 Ctrl+C
+    log：输出一行文字的函数（终端里是 print，托盘程序里写进日志文件）
+    status：字典，记下的局数会实时写进 status["saved"]（托盘图标显示用）
+    返回这次一共记下了几局。"""
     set_low_priority()
     cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     screens = json.loads(SCREENS_PATH.read_text(encoding="utf-8"))
@@ -90,15 +90,15 @@ def main():
     start_cfg = json.loads(MATCH_START_CONFIG_PATH.read_text(encoding="utf-8"))
     run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
-    conn = storage.connect(args.db)
-    post = PostMatch(conn)
+    conn = storage.connect(db_path)
+    post = PostMatch(conn, log=log)
 
     camera = dxcam.create(output_color="BGR", processor_backend="numpy")
     engine = create_engine(SMALL_CROP_PARAMS)
-    print(f"屏幕: {camera.width}x{camera.height}")
-    print(f"数据库: {args.db.resolve()}")
-    print(f"截图保存到: {run_dir.resolve()}")
-    print("开始运行，到总结页时会自动保存。按 Ctrl+C 停止。\n")
+    log(f"屏幕: {camera.width}x{camera.height}")
+    log(f"数据库: {Path(db_path).resolve()}")
+    log(f"截图保存到: {run_dir.resolve()}")
+    log("开始记录，到总结页时会自动保存。")
 
     saved = 0
     visit = None  # 这一次停在总结页的情况：开始时间、上一次的读数、读得最全的一次
@@ -108,14 +108,13 @@ def main():
     screen_last = None  # 这个画面最近的一帧和时间，离开时存下来
     screen_frames = 0  # 在这个画面已经看到了几帧
     screen_enter_path = None  # 进入这个画面时存的截图
-    deadline = time.monotonic() + args.minutes * 60
 
     def record(results, problems, frame, when, note=None):
         """把一次总结页的读数存进数据库。如果和上一局是同一局（来回切页），就不重复存。"""
         nonlocal saved, last_saved
         values = {name: r["value"] for name, r in results.items()}
         if same_match(values, last_saved):
-            print(f"[{when:%H:%M:%S}] 回到了同一局的总结页，不重复保存")
+            log(f"[{when:%H:%M:%S}] 回到了同一局的总结页，不重复保存")
             return
         if note:
             problems = problems + [note]
@@ -125,10 +124,10 @@ def main():
         match_id = storage.insert_match(conn, match)
         saved += 1
         last_saved = values
-        print(f"[{when:%H:%M:%S}] 第 {saved} 局（编号 {match_id}）：第 {show(values['placement'])} 名，"
-              f"击杀/助攻/击倒 {show(values['kda'])}，伤害 {show(values['damage'])}")
+        log(f"[{when:%H:%M:%S}] 第 {saved} 局（编号 {match_id}）：第 {show(values['placement'])} 名，"
+            f"击杀/助攻/击倒 {show(values['kda'])}，伤害 {show(values['damage'])}")
         for p in problems:
-            print(f"           ⚠ {p}")
+            log(f"           ⚠ {p}")
         post.on_summary_saved(match_id, values, when)
 
     def record_best(note):
@@ -146,19 +145,22 @@ def main():
         if screen_frames > 1:
             path = run_dir / f"{on_screen}_{last_time:%H%M%S}_leave.png"
             save_png(path, last_frame)
-            print(f"[{last_time:%H:%M:%S}] 离开{screens['screens'][on_screen]['label']}，已存最后一帧")
+            log(f"[{last_time:%H:%M:%S}] 离开{screens['screens'][on_screen]['label']}，已存最后一帧")
         if on_screen == "xp":
             reading, problems = read_xp(engine, last_frame, xp_cfg)
             post.on_xp(reading, problems, path, last_time)
 
+    def keep_going():
+        return not (stop is not None and stop.is_set()) and (deadline is None or time.monotonic() < deadline)
+
     try:
-        while time.monotonic() < deadline:
+        while keep_going():
             tick = time.monotonic()
             on_summary = False
             try:
                 frame = camera.grab(new_frame_only=False)
             except Exception as e:  # 切换分辨率、切出游戏等情况，跳过这一次
-                print(f"[{datetime.now():%H:%M:%S}] 截屏出错，跳过：{e}")
+                log(f"[{datetime.now():%H:%M:%S}] 截屏出错，跳过：{e}")
                 frame = None
 
             if frame is not None:
@@ -188,8 +190,8 @@ def main():
                     if complete and values == visit["last"]:  # 关键项都读到了，且连续两次相同
                         record(results, problems, frame, now)
                         done_this_page = True
-                    elif time.monotonic() - visit["start"] > args.summary_timeout:
-                        record_best(f"在总结页等了 {args.summary_timeout:g} 秒，数字仍没读全或不稳定，请核对")
+                    elif time.monotonic() - visit["start"] > summary_timeout:
+                        record_best(f"在总结页等了 {summary_timeout:g} 秒，数字仍没读全或不稳定，请核对")
                         done_this_page = True
                     visit["last"] = values
 
@@ -202,7 +204,7 @@ def main():
                     if screen is not None:
                         screen_enter_path = run_dir / f"{screen}_{now:%H%M%S}_enter.png"
                         save_png(screen_enter_path, frame)
-                        print(f"[{now:%H:%M:%S}] 进入{screens['screens'][screen]['label']}，已存截图")
+                        log(f"[{now:%H:%M:%S}] 进入{screens['screens'][screen]['label']}，已存截图")
                     on_screen, screen_frames = screen, 0
                 if screen is not None:
                     screen_last = (frame.copy(), now)
@@ -210,10 +212,12 @@ def main():
                 if screen == "match_start" and not post.info_complete():  # 读本局的模式和地图，读到就不再读
                     post.on_match_start(read_match_start(engine, frame, start_cfg), now)
 
-            wait = args.fast if (on_summary and not done_this_page) else args.interval
+            if status is not None:
+                status["saved"] = saved + post.inserted
+            wait = fast if (on_summary and not done_this_page) else interval
             time.sleep(max(0, wait - (time.monotonic() - tick)))
     except KeyboardInterrupt:
-        print("\n已手动停止。")
+        log("已手动停止。")
     finally:
         if visit is not None and not done_this_page:  # 停止时正停在还没存下的总结页
             record_best("总结页停留太短，名次等数据可能没读全，请核对")
@@ -221,9 +225,28 @@ def main():
         post.finish()
         camera.release()
         conn.close()
+        del engine, camera  # 释放识别模型和截屏，交还内存
+        gc.collect()
+    if status is not None:
+        status["saved"] = saved + post.inserted
+    return saved + post.inserted
 
+
+def main():
+    parser = argparse.ArgumentParser(description="打游戏时自动识别每局的总结页并存进数据库")
+    parser.add_argument("--interval", type=float, default=1, help="每隔几秒检查一次（默认 1）")
+    parser.add_argument("--fast", type=float, default=0.3, help="在总结页、数字还没存下时，每隔几秒检查一次（默认 0.3）")
+    parser.add_argument("--summary-timeout", type=float, default=10,
+                        help="在总结页最多等几秒让数字读全，超时就先存下并标记待确认（默认 10）")
+    parser.add_argument("--minutes", type=float, default=240, help="最多运行几分钟（默认 240）")
+    parser.add_argument("--db", type=Path, default=storage.DB_PATH, help="数据库文件（默认 data/evo.db）")
+    args = parser.parse_args()
+
+    print("按 Ctrl+C 停止。\n")
+    saved = collect(db_path=args.db, interval=args.interval, fast=args.fast, summary_timeout=args.summary_timeout,
+                    deadline=time.monotonic() + args.minutes * 60)
     mem_now, mem_peak = memory_mb()
-    print(f"\n本次共保存 {saved + post.inserted} 局。内存: 现在 {mem_now:.0f} MB，峰值 {mem_peak:.0f} MB")
+    print(f"\n本次共保存 {saved} 局。内存: 现在 {mem_now:.0f} MB，峰值 {mem_peak:.0f} MB")
     print("查看数据库里的记录: python storage.py")
 
 
