@@ -1,0 +1,26 @@
+# ===== 项目数据（只存在本地，绝不提交）=====
+# 截图（测试用的标注截图放在 tests/fixtures/，那个文件夹会提交）
+captures/
+# 数据库等运行数据
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== Python 自动生成的文件 =====
+__pycache__/
+*.pyc
+# 虚拟环境（每台电脑自己装）
+.venv/
+venv/
+
+# ===== 打包输出（PyInstaller）=====
+build/
+dist/
+
+# ===== 个人设置 =====
+.claude/settings.local.json
+
+# ===== Windows 系统文件 =====
+Thumbs.db
+desktop.ini
