@@ -1,0 +1,17 @@
+{
+  "_说明": "赛后总结页的识别规则。坐标为 1920x1080 基准分辨率下的 [x, y, 宽, 高]，运行时按实际分辨率换算。来源：captures/samples 里的录像截图（2026-10-16）",
+  "base_resolution": [1920, 1080],
+  "upscale": 2,
+  "grayscale": true,
+  "min_score": 0.9,
+  "replace": {"O": "0", "o": "0", "l": "1", "I": "1", "：": ":"},
+  "fields": {
+    "placement":     {"label": "名次",         "roi": [1415, 138, 195, 98], "expect": "integer",  "range": [1, 20]},
+    "squad_kills":   {"label": "小队总击杀",   "roi": [1714, 145, 166, 90], "expect": "integer",  "range": [0, 99]},
+    "kda":           {"label": "击杀/助攻/击倒", "roi": [748, 404, 180, 42], "expect": "kda",      "range": [0, 99]},
+    "damage":        {"label": "伤害",         "roi": [748, 472, 180, 46],  "expect": "integer",  "range": [0, 99999]},
+    "survival_time": {"label": "生存时间",     "roi": [748, 543, 180, 45],  "expect": "duration"},
+    "revives":       {"label": "急救次数",     "roi": [748, 613, 180, 40],  "expect": "integer",  "range": [0, 99]},
+    "respawns":      {"label": "重生次数",     "roi": [748, 683, 180, 40],  "expect": "integer",  "range": [0, 99]}
+  }
+}
