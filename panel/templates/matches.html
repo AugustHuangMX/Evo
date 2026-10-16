@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}战绩 · Evo{% endblock %}
+
+{% block content %}
+
+{% if review_count and not only_review %}
+<a class="banner-warn" href="{{ url_with(review='1', page=None, open=None) }}">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 L22 20 L2 20 Z"></path><path d="M12 10 L12 14"></path><path d="M12 17 L12 17.5"></path></svg>
+  <span class="grow">有 {{ review_count }} 局识别结果不确定，需要你确认</span>
+  <span class="strong">去确认 →</span>
+</a>
+{% endif %}
+
+<div class="filters">
+  <div class="filter">
+    <span class="label">模式</span>
+    <div class="seg" role="group" aria-label="模式">
+      <a href="{{ url_with(mode=None, page=None, open=None) }}" class="{{ 'on' if not mode }}">全部</a>
+      {% for key in ('ranked', 'pubs') %}
+      <a href="{{ url_with(mode=key, page=None, open=None) }}" class="{{ 'on' if mode == key }}">{{ modes[key] }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <form method="get" action="{{ url_for('matches') }}" class="filter-form" id="filter-form">
+    {% if mode %}<input type="hidden" name="mode" value="{{ mode }}">{% endif %}
+    {% if legends %}
+    <label class="filter">
+      <span class="label">传奇</span>
+      <select name="legend" onchange="this.form.submit()">
+        <option value="">全部传奇</option>
+        {% for name in legends %}
+        <option value="{{ name }}" {{ 'selected' if legend == name }}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="check">
+      <input type="checkbox" name="review" value="1" {{ 'checked' if only_review }} onchange="this.form.submit()">
+      <span>只看待确认</span>
+    </label>
+  </form>
+
+  <a class="btn btn-icon push-right" href="{{ url_for('export') }}">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4 L12 15"></path><path d="M7 10 L12 15 L17 10"></path><path d="M4 19 L20 19"></path></svg>
+    导出 CSV
+  </a>
+</div>
+
+<div class="card table-wrap">
+<table class="matches">
+  <thead>
+    <tr>
+      <th scope="col" class="first">名次</th>
+      <th scope="col">时间</th>
+      <th scope="col">模式</th>
+      <th scope="col">地图</th>
+      <th scope="col">传奇</th>
+      <th scope="col" class="right">击杀/助攻/击倒</th>
+      <th scope="col" class="right">伤害</th>
+      <th scope="col" class="right">生存</th>
+      <th scope="col" class="right last">RP</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    {% set is_open = (r.id == open_id) %}
+    <tr id="m{{ r.id }}" class="row {{ 'review' if r.needs_review }} {{ 'open' if is_open }}"
+        data-href="{{ url_with(open=None if is_open else r.id) }}{{ '' if is_open else '#m' ~ r.id }}">
+      <td class="first"><a class="badge {{ r.badge }}" href="{{ url_with(open=None if is_open else r.id) }}#m{{ r.id }}" aria-label="展开第 {{ r.id }} 号对局">{{ r.placement }}</a></td>
+      <td class="muted">{{ r.time }}</td>
+      <td>{{ r.mode }}</td>
+      <td>{{ r.map }}</td>
+      <td>{{ r.legend }}{% if r.needs_review %} <span class="tag-review">待确认</span>{% endif %}</td>
+      <td class="right num">{{ r.kda }}</td>
+      <td class="right num">{{ r.damage }}</td>
+      <td class="right num">{{ r.survival }}</td>
+      <td class="right num last rp-{{ r.rp_class }}">{{ r.rp }}</td>
+    </tr>
+    {% if is_open %}
+    <tr class="detail-row {{ 'review' if r.needs_review }}">
+      <td colspan="9">
+        <div class="detail {{ 'detail-review' if r.needs_review }}">
+          <div class="evidence">
+            <div class="evidence-title">识别依据（本局结算截图）</div>
+            {% if r.has_evidence %}
+            <a href="{{ url_for('evidence', match_id=r.id) }}" target="_blank" title="点击查看原图">
+              <img src="{{ url_for('evidence', match_id=r.id) }}" alt="第 {{ r.id }} 号对局的总结页截图">
+            </a>
+            {% else %}
+            <div class="evidence-empty">没有保存截图</div>
+            {% endif %}
+            {% if r.review_note %}<div class="note">{{ r.review_note }}</div>{% endif %}
+            <div class="note">小队总击杀 {{ r.squad_kills }} · 急救 {{ r.revives }} · 重生 {{ r.respawns }}</div>
+          </div>
+
+          <div class="edit">
+            <form method="post" action="{{ url_for('update', match_id=r.id) }}" id="upd-{{ r.id }}" class="form-grid">
+              <input type="hidden" name="token" value="{{ token }}">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              {% for name, (label, low, high) in editable.items() %}
+              <label class="field">
+                <span class="label">{{ label }}</span>
+                <input type="text" inputmode="numeric" name="{{ name }}" value="{{ r.form[name] }}"
+                       placeholder="{{ '如 -7' if name == 'rp_delta' else low ~ '–' ~ high }}" class="{{ 'warn' if name in r.warn_fields }}">
+              </label>
+              {% endfor %}
+            </form>
+            <div class="actions">
+              <form method="post" action="{{ url_for('delete', match_id=r.id) }}"
+                    onsubmit="return confirm('确定删除第 {{ r.id }} 号对局吗？删除后无法恢复。')">
+                <input type="hidden" name="token" value="{{ token }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" class="btn">删除这局</button>
+              </form>
+              <button type="submit" form="upd-{{ r.id }}" class="btn {{ 'btn-warn' if r.needs_review else 'btn-primary' }}">
+                {{ '确认无误' if r.needs_review else '保存修改' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+    {% endif %}
+  {% else %}
+    <tr><td colspan="9" class="empty">{{ '没有符合条件的对局' if (mode or legend or only_review) else '还没有记录任何对局' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="pager">
+  <span>共 {{ total }} 局{% if total %} · 当前显示 {{ first }}–{{ last }}{% endif %}</span>
+  <div class="push-right pager-buttons">
+    {% if page > 1 %}<a class="btn" href="{{ url_with(page=page - 1, open=None) }}">上一页</a>{% else %}<span class="btn disabled">上一页</span>{% endif %}
+    {% if page < pages %}<a class="btn" href="{{ url_with(page=page + 1, open=None) }}">下一页</a>{% else %}<span class="btn disabled">下一页</span>{% endif %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // 点整行也能展开/收起（点到行里的链接、按钮、输入框时除外）
+  document.querySelectorAll("tr.row[data-href]").forEach(function (tr) {
+    tr.addEventListener("click", function (e) {
+      if (e.target.closest("a, button, input, select, label")) return;
+      window.location = tr.dataset.href;
+    });
+  });
+</script>
+{% endblock %}
