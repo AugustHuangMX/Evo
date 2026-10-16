@@ -29,7 +29,7 @@
     <span class="brand-name">EVO</span>
   </div>
   <nav class="nav" aria-label="主导航">
-    <span class="disabled" title="即将推出">总览</span>
+    <a href="{{ url_for('overview') }}" class="{{ 'active' if request.endpoint == 'overview' }}">总览</a>
     <a href="{{ url_for('matches') }}" class="{{ 'active' if request.endpoint == 'matches' }}">战绩</a>
     <span class="disabled" title="即将推出">设置</span>
   </nav>

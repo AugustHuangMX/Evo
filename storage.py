@@ -100,6 +100,11 @@ def query_matches(conn, mode=None, only_review=False, legend=None, limit=20, off
     return rows, total
 
 
+def all_matches(conn):
+    """所有对局，按时间从早到晚（总览页算统计、画走势图用）。"""
+    return conn.execute("SELECT * FROM matches ORDER BY ended_at, match_id").fetchall()
+
+
 def count_review(conn):
     return conn.execute("SELECT COUNT(*) FROM matches WHERE needs_review = 1").fetchone()[0]
 

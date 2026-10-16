@@ -56,14 +56,15 @@ def main():
     conn = storage.connect(DEMO_DB)
     rng = random.Random(2026)
 
-    # 最近 4 个晚上，每晚 8–14 局，每局间隔 20–30 分钟
+    # 最近 4 天，每天打一段 8–14 局，每局间隔 20–30 分钟；最后一段刚结束不久（总览页的"今日"有数据）
+    now = datetime.now().replace(second=0, microsecond=0)
     matches = []
     for days_ago in range(3, -1, -1):
-        t = datetime.now().replace(hour=19, minute=30, second=0, microsecond=0) - timedelta(days=days_ago)
-        for _ in range(rng.randint(8, 14)):
+        games = rng.randint(8, 14)
+        t = now - timedelta(days=days_ago, minutes=10 + games * 30)
+        for _ in range(games):
             t += timedelta(minutes=rng.randint(20, 30))
-            if t < datetime.now():
-                matches.append(fake_match(rng, t))
+            matches.append(fake_match(rng, t))
 
     # 段位：从 钻石 IV 149 分开始，按每局 RP 累加（每段 1000 分）
     total = 149

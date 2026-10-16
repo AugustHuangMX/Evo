@@ -7,6 +7,7 @@
 
 import argparse
 import io
+import json
 import math
 import secrets
 import threading
@@ -18,6 +19,7 @@ from urllib.parse import parse_qsl, urlencode
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
 import storage
+from post_match import XP_ONLY_NOTE
 
 PER_PAGE = 20
 MODES = {"ranked": "排位", "pubs": "匹配", "other": "其他"}
@@ -41,6 +43,17 @@ REVIEW_FIELDS = {
 }
 
 ROOT = Path(__file__).resolve().parent
+
+# ---- 总览页 ----
+_XP_CFG = json.loads((ROOT / "config" / "xp.json").read_text(encoding="utf-8"))
+TIERS, DIVISIONS = _XP_CFG["tiers"], _XP_CFG["divisions"]  # 段位从低到高；每个段位里的段从低到高（IV → I）
+DIVISION_POINTS = 1000  # 每段的排位点数（经验值页进度条的终点）
+TIER_BADGE = {"菜鸟": ("R", "rookie"), "青铜": ("B", "bronze"), "白银": ("S", "silver"), "黄金": ("G", "gold"),
+              "白金": ("P", "platinum"), "钻石": ("D", "diamond"), "大师": ("M", "master"), "Apex 猎杀者": ("A", "predator")}
+DAY_START_HOUR = 5  # "今日"从早上 5 点算起：打到凌晨的局仍算前一天
+RANGES = {"30": "近 30 局", "all": "全部"}
+CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片宽度拉伸）
+
 app = Flask(__name__, template_folder="panel/templates", static_folder="panel/static")
 app.secret_key = secrets.token_hex(16)  # 每次启动随机生成，用于页面上的提示消息
 app.config["TOKEN"] = secrets.token_urlsafe(16)  # 修改、删除时要带上的口令
@@ -122,6 +135,11 @@ def dash(value, fmt="{}"):
     return "—" if value is None else fmt.format(value)
 
 
+def signed(n):
+    """RP 这类有正负的数：+28、−17（用真正的减号，和游戏里一样）。"""
+    return f"+{n:,}" if n >= 0 else f"−{-n:,}"
+
+
 def warn_fields(review_note):
     """从待确认原因（如"名次：没读到（OCR 原文：无）；伤害：……"）里找出有问题的输入框。"""
     fields = set()
@@ -142,13 +160,16 @@ def view(row):
         "mode": MODES.get(row["mode"], "—"),
         "map": row["map"] or "—",
         "legend": row["legend"] or "—",
+        # 总览页"最近对局"的标题和副标题：有什么显示什么
+        "title": " · ".join(x for x in (row["legend"], row["map"]) if x) or "传奇、地图未识别",
+        "subtitle": " · ".join(x for x in (MODES.get(row["mode"]), time_text(row["ended_at"])) if x),
         "kda": " / ".join(dash(row[k]) for k in ("kills", "assists", "knockdowns")),
         "damage": dash(row["damage"], "{:,}"),
         "survival": storage.mmss(row["survival_time"]).replace("-", "—"),
         "revives": dash(row["revives"]),
         "respawns": dash(row["respawns"]),
         "squad_kills": dash(row["squad_kills"]),
-        "rp": "—" if rp is None else (f"+{rp}" if rp >= 0 else f"−{-rp}"),
+        "rp": "—" if rp is None else signed(rp),
         "rp_class": "none" if rp is None else ("good" if rp >= 0 else "bad"),
         "needs_review": bool(row["needs_review"]),
         "review_note": row["review_note"],
@@ -158,11 +179,175 @@ def view(row):
     }
 
 
+# ---------- 总览页的统计 ----------
+
+def rank_score(row):
+    """把段位换算成一条连续的分数线（每段 1000 分），用来画走势图。没有段位数据返回 None。"""
+    tier, division, progress = row["rank_tier"], row["rank_division"], row["rank_progress"]
+    if tier not in TIERS or division not in DIVISIONS or progress is None:
+        return None
+    return (TIERS.index(tier) * len(DIVISIONS) + DIVISIONS.index(division)) * DIVISION_POINTS + progress
+
+
+def next_division(tier, division):
+    """下一段的名字：钻石 II → 钻石 I；钻石 I → 大师。"""
+    d = DIVISIONS.index(division)
+    if d + 1 < len(DIVISIONS):
+        return f"{tier} {DIVISIONS[d + 1]}"
+    t = TIERS.index(tier)
+    return TIERS[t + 1] if t + 1 < len(TIERS) else None
+
+
+def rank_card(rows):
+    """最近一次读到的段位。"""
+    row = next((r for r in reversed(rows) if rank_score(r) is not None), None)
+    if row is None:
+        return None
+    letter, css = TIER_BADGE.get(row["rank_tier"], ("?", "unknown"))
+    progress = row["rank_progress"]
+    return {
+        "badge": f"{letter}{len(DIVISIONS) - DIVISIONS.index(row['rank_division'])}",
+        "tier_class": css,
+        "name": f"{row['rank_tier']} {row['rank_division']}",
+        "progress": progress,
+        "division_points": DIVISION_POINTS,
+        "percent": min(100, progress / DIVISION_POINTS * 100),
+        "next_name": next_division(row["rank_tier"], row["rank_division"]),
+        "to_next": max(0, DIVISION_POINTS - progress),
+        "as_of": time_text(row["ended_at"]),
+    }
+
+
+def division_name(score):
+    """分数线上从 score 开始的是哪一段：如 钻石 IV 的起点 → "钻石 IV"。"""
+    t, d = divmod(score // DIVISION_POINTS, len(DIVISIONS))
+    return f"{TIERS[t]} {DIVISIONS[d]}" if 0 <= t < len(TIERS) else ""
+
+
+def rp_chart(rows):
+    """RP 走势图：每局结束后的段位换算成分数，连成折线；范围内的段位分界线画成虚线。
+    有段位的局少于 2 局时返回 None。"""
+    points = [s for s in (rank_score(r) for r in rows) if s is not None]
+    if len(points) < 2:
+        return None
+    low, high = min(points), max(points)
+    target = (points[-1] // DIVISION_POINTS + 1) * DIVISION_POINTS  # 下一段的起点
+    if target - high <= max(200, high - low):  # 快升段了：把下一段的分数线也画进来；离得远就不画，免得折线被压扁
+        high = max(high, target)
+    pad = max(20, (high - low) * 0.1)
+    low, high = low - pad, high + pad
+
+    def y(score):
+        return CHART_H - (score - low) / (high - low) * CHART_H
+
+    first_line = math.ceil(low / DIVISION_POINTS) * DIVISION_POINTS
+    lines = [{"y": round(y(b), 1), "top": round(y(b) / CHART_H * 100, 1), "name": division_name(b)}
+             for b in range(first_line, int(high) + 1, DIVISION_POINTS)]
+    xs = [i / (len(points) - 1) * CHART_W for i in range(len(points))]
+    line = " ".join(f"{x:.1f},{y(s):.1f}" for x, s in zip(xs, points))
+    return {
+        "w": CHART_W,
+        "h": CHART_H,
+        "line": line,
+        "area": f"0,{CHART_H} {line} {CHART_W},{CHART_H}",
+        "lines": lines,
+        "end_top": round(y(points[-1]) / CHART_H * 100, 1),
+        "count": len(points),
+    }
+
+
+def stat_cards(rows):
+    placements = [r["placement"] for r in rows if r["placement"] is not None]
+    # 只有经验值页的局，击杀是"计分次数"（可能比实际少），不算进场均击杀
+    kills = [r["kills"] for r in rows if r["kills"] is not None and XP_ONLY_NOTE not in (r["review_note"] or "")]
+    damages = [r["damage"] for r in rows if r["damage"] is not None]
+
+    def avg(values, fmt):
+        return fmt.format(sum(values) / len(values)) if values else "—"
+
+    def rate(hit):
+        return f"{sum(1 for p in placements if hit(p)) / len(placements):.0%}" if placements else "—"
+
+    return [
+        {"label": "场均名次", "value": avg(placements, "{:.1f}")},
+        {"label": "场均击杀", "value": avg(kills, "{:.1f}")},
+        {"label": "场均伤害", "value": avg(damages, "{:,.0f}")},
+        {"label": "前五率", "value": rate(lambda p: p <= 5)},
+        {"label": "胜率", "value": rate(lambda p: p == 1), "accent": True},
+        {"label": "统计局数", "value": str(len(rows))},
+    ]
+
+
+def rp_sum(rows):
+    values = [r["rp_delta"] for r in rows if r["rp_delta"] is not None]
+    return {"text": signed(sum(values)), "good": sum(values) >= 0} if values else {"text": "—", "good": None}
+
+
+def legend_bars(rows, top=3):
+    """传奇表现：用得最多的几个传奇，每个一条横条，按名次分段上色。没有传奇数据返回 None。"""
+    groups = {}
+    for r in rows:
+        if r["legend"]:
+            groups.setdefault(r["legend"], []).append(r)
+    if not groups:
+        return None
+    ordered = sorted(groups.items(), key=lambda kv: -len(kv[1]))
+    items = ordered[:top]
+    rest = [r for _, rs in ordered[top:] for r in rs]
+    if rest:
+        items.append(("其他", rest))
+    widest = max(len(rs) for _, rs in items)
+
+    bars = []
+    for name, rs in items:
+        places = [r["placement"] for r in rs]
+        buckets = [
+            ("p1", sum(1 for p in places if p == 1)),
+            ("p2", sum(1 for p in places if p is not None and 2 <= p <= 3)),
+            ("p3", sum(1 for p in places if p is not None and 4 <= p <= 10)),
+            ("p4", sum(1 for p in places if p is None or p > 10)),
+        ]
+        damages = [r["damage"] for r in rs if r["damage"] is not None]
+        bars.append({
+            "name": name,
+            "games": len(rs),
+            "avg_damage": f"{sum(damages) / len(damages):,.0f}" if damages else None,
+            "segments": [(css, n / widest * 100) for css, n in buckets if n],
+            "other": name == "其他",
+        })
+    return bars
+
+
+def day_start(now):
+    start = now.replace(hour=DAY_START_HOUR, minute=0, second=0, microsecond=0)
+    return start if now >= start else start - timedelta(days=1)
+
+
 # ---------- 页面 ----------
 
 @app.route("/")
-def index():
-    return redirect(url_for("matches"))
+def overview():
+    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    rows = storage.all_matches(db())
+    in_range = rows[-30:] if range_key == "30" else rows
+    since = f"{day_start(datetime.now()):%Y-%m-%d %H:%M:%S}"
+    today = [r for r in rows if (r["ended_at"] or "") >= since]
+
+    return render_template(
+        "overview.html",
+        range_key=range_key,
+        ranges=RANGES,
+        rank=rank_card(rows),
+        chart=rp_chart(in_range),
+        range_rp=rp_sum(in_range),
+        today_rp=rp_sum(today),
+        today_games=len(today),
+        stats=stat_cards(in_range),
+        recent=[view(r) for r in reversed(rows[-5:])],
+        legends=legend_bars(in_range),
+        review_count=storage.count_review(db()),
+        total=len(rows),
+    )
 
 
 @app.route("/matches")

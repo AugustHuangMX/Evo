@@ -34,6 +34,7 @@
   --p2-bg: #B07CFF; --p2-fg: #1E0B3A;
   --p3-bg: #4C9AFF; --p3-fg: #06172F;
   --p4-bg: #E6E9EE; --p4-fg: #0D0F13;
+  --seg-other: #E6E9EE;
   color-scheme: dark;
 }
 
@@ -65,6 +66,7 @@
   --p2-bg: #7A3FD1; --p2-fg: #FFFFFF;
   --p3-bg: #2266CC; --p3-fg: #FFFFFF;
   --p4-bg: #E7E7E2; --p4-fg: #17191E;
+  --seg-other: #A3A8B0;
   color-scheme: light;
 }
 
@@ -179,3 +181,82 @@ table.matches { width: 100%; min-width: 900px; border-collapse: collapse; }
 /* ---------- 分页 ---------- */
 .pager { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; color: var(--muted); font-size: 13px; }
 .pager-buttons { display: flex; gap: 4px; }
+
+/* ---------- 总览页 ---------- */
+.small { font-size: 13px; }
+code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; border-radius: 4px; background: var(--inset); border: 1px solid var(--border); }
+.empty-card { padding: 40px; text-align: center; color: var(--muted); }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.card-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+
+.ov-top { display: grid; grid-template-columns: minmax(300px, 410px) 1fr; gap: 20px; }
+.rank-card, .chart-card, .list-card, .legend-card { padding: 24px; }
+
+/* 段位颜色：徽章边框、进度条 */
+.tier-rookie { --tier: #9AA3B2; } .tier-bronze { --tier: #C0834F; } .tier-silver { --tier: #A9B4C2; }
+.tier-gold { --tier: #E5B94A; } .tier-platinum { --tier: #3FBFC4; } .tier-diamond { --tier: #4C9AFF; }
+.tier-master { --tier: #B07CFF; } .tier-predator { --tier: #FF5A5A; } .tier-unknown { --tier: var(--muted); }
+.rank-head { display: flex; align-items: center; gap: 18px; margin: 16px 0 24px; }
+.rank-badge { width: 68px; height: 68px; flex: none; border-radius: 8px; border: 2px solid var(--tier); color: var(--tier);
+  background: color-mix(in srgb, var(--tier) 14%, transparent); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; }
+.rank-name { font-size: 26px; font-weight: 700; line-height: 1.2; }
+.rank-points { font-size: 28px; font-weight: 600; line-height: 1.3; }
+.rank-points .unit { font-size: 15px; color: var(--muted); font-weight: 500; }
+.rank-next { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.rank-empty { color: var(--muted); font-size: 13px; margin: 16px 0 24px; line-height: 1.7; }
+.bar { height: 8px; border-radius: 999px; background: var(--row-border); overflow: hidden; display: flex; }
+.bar-fill { height: 100%; border-radius: 999px; background: var(--tier); }
+.mini-stats { display: flex; gap: 28px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.mini { font-size: 22px; font-weight: 600; margin-top: 2px; }
+
+.chart-card { display: flex; flex-direction: column; min-width: 0; }
+.chart { position: relative; flex: 1; min-height: 200px; }
+.chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.chart-area { fill: var(--accent); fill-opacity: 0.1; stroke: none; }
+.chart-target { stroke: var(--p3-bg); stroke-width: 1.5; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
+.chart-mark { position: absolute; left: 0; transform: translateY(-115%); font-size: 11px; color: var(--p3-bg);
+  background: var(--card); padding: 0 4px 0 0; line-height: 1.3; }
+.chart-dot { position: absolute; right: -5px; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: var(--accent); }
+.chart-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+.chart-legend { color: var(--p3-bg); }
+.chart-empty { flex: 1; min-height: 200px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px;
+  border: 1px dashed var(--dashed); border-radius: 6px; }
+
+.stat-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.stat { padding: 18px 20px; }
+.stat-value { font-size: 30px; font-weight: 600; margin-top: 4px; }
+.stat-value.accent { color: var(--accent); }
+
+.ov-bottom { display: grid; grid-template-columns: 1fr minmax(280px, 360px); gap: 20px; align-items: start; }
+.ov-bottom.no-legends { grid-template-columns: 1fr; }
+.recent { list-style: none; margin: 0; padding: 0; }
+.recent li + li { border-top: 1px solid var(--row-border); }
+.recent-row { display: grid; grid-template-columns: auto 1fr auto auto 56px; align-items: center; gap: 16px; padding: 12px 0; }
+.recent-row:hover .recent-title { text-decoration: underline; }
+.recent-main, .recent-num { display: flex; flex-direction: column; min-width: 0; }
+.recent-num { align-items: flex-end; }
+.recent-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-sub { color: var(--muted); font-size: 12px; }
+.recent-rp { text-align: right; }
+
+.legend-list { display: flex; flex-direction: column; gap: 18px; }
+.legend-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.legend-name { font-weight: 600; }
+.seg-p1 { background: var(--p1-bg); } .seg-p2 { background: var(--p2-bg); }
+.seg-p3 { background: var(--p3-bg); } .seg-p4 { background: var(--seg-other); }
+.bar.stacked span { height: 100%; }
+.legend-key { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.legend-key span { display: flex; align-items: center; gap: 6px; }
+.legend-key i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+@media (max-width: 900px) {
+  .ov-top, .ov-bottom { grid-template-columns: 1fr; }
+  .stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .wrap { padding: 16px 16px 40px; }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recent-row { grid-template-columns: auto 1fr auto auto; gap: 12px; }
+  .recent-row .recent-kda { display: none; }
+}

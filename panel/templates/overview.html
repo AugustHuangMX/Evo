@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}总览 · Evo{% endblock %}
+
+{% block content %}
+
+{% if review_count %}
+<a class="banner-warn" href="{{ url_for('matches', review='1') }}">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 L22 20 L2 20 Z"></path><path d="M12 10 L12 14"></path><path d="M12 17 L12 17.5"></path></svg>
+  <span class="grow">有 {{ review_count }} 局识别结果不确定，需要你确认</span>
+  <span class="strong">去确认 →</span>
+</a>
+{% endif %}
+
+{% if not total %}
+<div class="card empty-card">
+  还没有记录任何对局。打游戏时运行 <code>python live_collect.py</code>，每局结束后会自动记下来。
+</div>
+{% else %}
+
+<div class="ov-top">
+  <section class="card rank-card" aria-label="当前段位">
+    {% if rank %}
+    <div class="label">当前段位 · 截至 {{ rank.as_of }}</div>
+    <div class="rank-head">
+      <div class="rank-badge tier-{{ rank.tier_class }} num">{{ rank.badge }}</div>
+      <div>
+        <div class="rank-name">{{ rank.name }}</div>
+        <div class="rank-points"><span class="num">{{ rank.progress }}</span><span class="unit num"> / {{ rank.division_points }}</span><span class="unit"> 排位点数</span></div>
+      </div>
+    </div>
+    {% if rank.next_name %}
+    <div class="rank-next">
+      <span>距{{ rank.next_name }}</span><span>还差 <span class="num">{{ rank.to_next }}</span></span>
+    </div>
+    <div class="bar"><div class="bar-fill tier-{{ rank.tier_class }}" style="width: {{ rank.percent }}%"></div></div>
+    {% endif %}
+    {% else %}
+    <div class="label">当前段位</div>
+    <div class="rank-empty">还没有段位数据。每局结束后切到经验值页、等数字停下再离开，这里就会显示段位。</div>
+    {% endif %}
+    <div class="mini-stats">
+      <div><div class="label">{{ ranges[range_key] }} RP</div><div class="mini num {{ 'rp-good' if range_rp.good else ('rp-bad' if range_rp.good is false else 'rp-none') }}">{{ range_rp.text }}</div></div>
+      <div title="从早上 5 点算起，打到凌晨的局仍算前一天"><div class="label">今日 RP</div><div class="mini num {{ 'rp-good' if today_rp.good else ('rp-bad' if today_rp.good is false else 'rp-none') }}">{{ today_rp.text }}</div></div>
+      <div title="从早上 5 点算起，打到凌晨的局仍算前一天"><div class="label">今日局数</div><div class="mini num">{{ today_games }}</div></div>
+    </div>
+  </section>
+
+  <section class="card chart-card" aria-label="RP 走势">
+    <div class="card-head">
+      <h2>RP 走势</h2>
+      <div class="seg" role="group" aria-label="统计范围">
+        {% for key, label in ranges.items() %}
+        <a href="{{ url_for('overview', range=key) if key != '30' else url_for('overview') }}" class="{{ 'on' if range_key == key }}">{{ label }}</a>
+        {% endfor %}
+      </div>
+    </div>
+    {% if chart %}
+    <div class="chart">
+      <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" preserveAspectRatio="none" role="img" aria-label="最近 {{ chart.count }} 局的段位分数走势">
+        {% for l in chart.lines %}
+        <line class="chart-target" x1="0" x2="{{ chart.w }}" y1="{{ l.y }}" y2="{{ l.y }}"></line>
+        {% endfor %}
+        <polygon class="chart-area" points="{{ chart.area }}"></polygon>
+        <polyline class="chart-line" points="{{ chart.line }}"></polyline>
+      </svg>
+      {% for l in chart.lines %}<span class="chart-mark" style="top: {{ l.top }}%">{{ l.name }}</span>{% endfor %}
+      <span class="chart-dot" style="top: {{ chart.end_top }}%"></span>
+    </div>
+    <div class="chart-foot">
+      <span>{{ chart.count - 1 }} 局前</span>
+      {% if chart.lines %}<span class="chart-legend">虚线 = 段位分界线</span>{% endif %}
+      <span>最近一局</span>
+    </div>
+    {% else %}
+    <div class="chart-empty">至少要有 2 局带段位的数据才能画走势图</div>
+    {% endif %}
+  </section>
+</div>
+
+<div class="stat-row">
+  {% for s in stats %}
+  <div class="card stat">
+    <div class="label">{{ s.label }}</div>
+    <div class="stat-value num {{ 'accent' if s.accent }}">{{ s.value }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="ov-bottom {{ 'no-legends' if not legends }}">
+  <section class="card list-card" aria-label="最近对局">
+    <div class="card-head">
+      <h2>最近对局</h2>
+      <a class="muted small" href="{{ url_for('matches') }}">查看全部 →</a>
+    </div>
+    <ul class="recent">
+      {% for r in recent %}
+      <li>
+        <a href="{{ url_for('matches', open=r.id) }}#m{{ r.id }}" class="recent-row">
+          <span class="badge {{ r.badge }}">{{ r.placement }}</span>
+          <span class="recent-main">
+            <span class="recent-title {{ 'muted' if r.legend == '—' and r.map == '—' }}">{{ r.title }}{% if r.needs_review %} <span class="tag-review">待确认</span>{% endif %}</span>
+            <span class="recent-sub">{{ r.subtitle }}</span>
+          </span>
+          <span class="recent-num recent-kda"><span class="num">{{ r.kda }}</span><span class="recent-sub">击杀/助攻/击倒</span></span>
+          <span class="recent-num"><span class="num">{{ r.damage }}</span><span class="recent-sub">伤害</span></span>
+          <span class="recent-rp num rp-{{ r.rp_class }}">{{ r.rp }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {% if legends %}
+  <section class="card legend-card" aria-label="传奇表现">
+    <div class="card-head"><h2>传奇表现 · {{ ranges[range_key] }}</h2></div>
+    <div class="legend-list">
+      {% for l in legends %}
+      <div class="legend-item">
+        <div class="legend-line">
+          <span class="legend-name {{ 'muted' if l.other }}">{{ l.name }}</span>
+          <span class="muted small"><span class="num">{{ l.games }}</span> 局{% if l.avg_damage %} · 均伤 <span class="num">{{ l.avg_damage }}</span>{% endif %}</span>
+        </div>
+        <div class="bar stacked">
+          {% for css, width in l.segments %}<span class="seg-{{ css }}" style="width: {{ width }}%"></span>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="legend-key">
+      <span><i class="seg-p1"></i>冠军</span><span><i class="seg-p2"></i>第 2–3</span><span><i class="seg-p3"></i>第 4–10</span><span><i class="seg-p4"></i>其余</span>
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+{% endif %}
+{% endblock %}
