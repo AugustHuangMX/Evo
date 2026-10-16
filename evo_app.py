@@ -10,6 +10,7 @@
 
 运行：python evo_app.py
 测试：python evo_app.py --game notepad.exe   （把别的程序当作游戏，用来测试"开始/停止记录"）
+自检：python evo_app.py --check-image 截图.png   （识别截图，结果写进 logs/evo.log）
 """
 
 import argparse
@@ -22,6 +23,7 @@ import threading
 import time
 import webbrowser
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from queue import Empty
 
 import pystray
@@ -238,7 +240,7 @@ class PanelServer:
     def __init__(self, log):
         self.log, self.url, self._server = log, None, None
 
-    def open(self):
+    def open(self, browser=True):
         if self._server is None:
             import panel_app  # 用到时才加载
             from werkzeug.serving import make_server
@@ -251,12 +253,52 @@ class PanelServer:
             threading.Thread(target=self._server.serve_forever, name="panel", daemon=True).start()
             self.url = f"http://127.0.0.1:{port}/"
             self.log(f"面板已启动：{self.url}")
-        webbrowser.open(self.url)
+        if browser:
+            webbrowser.open(self.url)
         return self.url
 
     def close(self):
         if self._server is not None:
             self._server.shutdown()
+
+
+# ---------- 自检 ----------
+
+def check_images(paths, log):
+    """识别几张截图，把结果写进日志。打包后用来确认识别模型和配置都在；以后排查问题也能用。"""
+    import json
+
+    from live_collect import SCREENS_PATH, is_summary, which_screen
+    from match_start import MATCH_START_CONFIG_PATH, read_match_start
+    from ocr_probe import create_engine
+    from summary_demo import CONFIG_PATH, SMALL_CROP_PARAMS, load_image, read_summary, show
+    from xp_page import XP_CONFIG_PATH, read_xp
+
+    cfgs = [json.loads(p.read_text(encoding="utf-8"))
+            for p in (CONFIG_PATH, SCREENS_PATH, XP_CONFIG_PATH, MATCH_START_CONFIG_PATH)]
+    cfg, screens, xp_cfg, start_cfg = cfgs
+    engine = create_engine(SMALL_CROP_PARAMS)
+    for path in paths:
+        img = load_image(path)
+        if img is None:
+            log(f"自检 {path}：打不开这张图片")
+            continue
+        if is_summary(engine, img, cfg):
+            results, problems = read_summary(engine, img, cfg)
+            v = {k: show(r["value"]) for k, r in results.items()}
+            text = f"总结页 第 {v['placement']} 名，击杀/助攻/击倒 {v['kda']}，伤害 {v['damage']}，生存 {v['survival_time']}"
+        else:
+            screen = which_screen(engine, img, screens)
+            problems = []
+            if screen == "xp":
+                r, problems = read_xp(engine, img, xp_cfg)
+                text = f"经验值页 RP {r['rp_delta']}，第 {r['placement']} 名，段位 {r['rank_tier']} {r['rank_division']} {r['rank_progress']}"
+            elif screen == "match_start":
+                r = read_match_start(engine, img, start_cfg)
+                text = f"开局画面 模式 {r['mode']}，地图 {r['map']}"
+            else:
+                text = "大厅" if screen == "lobby" else "没认出是哪个画面"
+        log(f"自检 {Path(path).name}：{text}" + "".join(f"\n    ⚠ {p}" for p in problems))
 
 
 # ---------- 托盘 ----------
@@ -267,7 +309,17 @@ def main():
     parser.add_argument("--game", nargs="+", default=sorted(GAME_PROCESSES),
                         help="把哪些进程当作游戏（测试用，默认 Apex 的进程名）")
     parser.add_argument("--check-seconds", type=float, default=5, help="多久看一次游戏有没有在运行（默认 5）")
+    parser.add_argument("--open-panel", action="store_true", help="启动后立刻打开面板")
+    parser.add_argument("--no-browser", action="store_true", help="和 --open-panel 一起用：只启动面板，不打开浏览器（测试用）")
+    parser.add_argument("--check-image", type=Path, nargs="+", metavar="截图",
+                        help="自检：识别这些截图，把结果写进日志后退出")
     args = parser.parse_args()
+
+    if args.check_image:
+        log = setup_logging().info
+        log(f"Evo {storage.APP_VERSION} 自检")
+        check_images(args.check_image, log)
+        return
 
     if already_running():
         tell_user("Evo 已经在运行了，请看任务栏右下角的托盘图标。")
@@ -310,6 +362,8 @@ def main():
     def setup(ic):
         ic.visible = True
         recorder.start()
+        if args.open_panel:
+            panel.open(browser=not args.no_browser)
 
     icon.run(setup=setup)
     log("Evo 已退出")
