@@ -7,6 +7,7 @@
   每局只存一次，在总结页和经验值页之间来回切换也不会重复存
 - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上这一局的 RP、段位，名次缺的话也补上。
   没有总结页的局（第 2 名、冠军）只靠经验值页单独记一局。怎么归到同一局见 post_match.py
+- 开局画面：读本局的模式和地图（见 match_start.py），两项都读到就不再读
 - 经验值页、开局画面、大厅（见 config/screens.json）：进入时存一张截图，离开前最后一帧再存一张。
   开局画面用来分隔每一局；以后用这些截图做模式、地图的识别
 - 其他画面：什么都不做（大部分时间都是这样）
@@ -30,6 +31,7 @@ import dxcam
 import storage
 from apex_capture_test import set_low_priority
 from ocr_probe import create_engine, memory_mb
+from match_start import MATCH_START_CONFIG_PATH, read_match_start
 from post_match import PostMatch
 from summary_demo import CONFIG_PATH, KEY_FIELDS, SMALL_CROP_PARAMS, crop, read_summary, show, summary_to_match
 from xp_page import XP_CONFIG_PATH, read_xp
@@ -83,6 +85,7 @@ def main():
     cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     screens = json.loads(SCREENS_PATH.read_text(encoding="utf-8"))
     xp_cfg = json.loads(XP_CONFIG_PATH.read_text(encoding="utf-8"))
+    start_cfg = json.loads(MATCH_START_CONFIG_PATH.read_text(encoding="utf-8"))
     run_dir = Path("captures/live") / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     conn = storage.connect(args.db)
@@ -202,6 +205,8 @@ def main():
                 if screen is not None:
                     screen_last = (frame.copy(), now)
                     screen_frames += 1
+                if screen == "match_start" and not post.info_complete():  # 读本局的模式和地图，读到就不再读
+                    post.on_match_start(read_match_start(engine, frame, start_cfg), now)
 
             wait = args.fast if (on_summary and not done_this_page) else args.interval
             time.sleep(max(0, wait - (time.monotonic() - tick)))
