@@ -47,7 +47,8 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
   - 打游戏用安装好的 Evo（数据在 `E:\Evo Tracker Data`）；用源码运行时数据仍在项目文件夹，两边互不干扰。不要直接运行 `dist\Evo\Evo.exe`：它开着时没法重新打包
   - 图标由用户设计（蓝色胶囊 + 上升柱状图），文件是 `assets/icon/evo.png`（要求见 `assets/icon/` 里的 README）；程序自动裁掉四周透明空白（`icons.py`）。托盘、exe、窗口标题栏、面板左上角的标志、浏览器标签页都用它（2026-10-17 用户决定，取代设计稿里的红色盾牌）
   - 打包命令：`python build.py`（用 `evo.spec`，PyInstaller 6.22，只在开发时用）→ `dist/Evo/Evo.exe`。自己电脑上生成的 exe 不会触发 SmartScreen（只有从网上下载的才会）
-  - 打包后排查问题：`Evo.exe --check-image 截图.png` 自检（结果写进 logs/evo.log）；`--open-panel` 启动后打开面板
+  - 打包后排查问题：`Evo.exe --check-image 截图.png` 自检（结果写进 logs/evo.log）；`--background` 启动时只进托盘、不弹窗口（留给开机自启）；`--no-window` 只启动面板服务（测试用）
+  - 启动行为（2026-10-17 用户要求）：打开 Evo 就立刻弹出窗口（约 1 秒），不能只在托盘里，否则像没打开成功。Evo 已经在运行时再双击，就让它把窗口弹出来（Windows 命名事件），不再弹"已经在运行"的提示。关掉窗口 Evo 仍在托盘里记录（和 Outplayed、Blitz 一样），第一次关时弹一条 Windows 通知说明，只提示一次（记在数据文件夹的 `settings.json`）。"只能运行一个"按数据文件夹区分
   - 托盘用 pystray（LGPLv3，用户同意）：我们的代码仍是 MIT。发布 exe 时要附上 pystray 的许可证原文，并让它以普通 .py 文件的形式放在程序文件夹里（不压进程序内部），方便别人替换
   - 托盘程序 `evo_app.py` 的结构：托盘进程只负责检测游戏、托盘图标和面板（约 37 MB）；检测到游戏时另开一个**记录子进程**跑 `live_collect.collect()`，游戏关掉就让它安全停下并退出，识别模型的内存全部还给系统（实测：记录中子进程约 200 MB，停下后托盘回到 37 MB）。识别模块崩溃也只影响子进程，60 秒后自动重试
   - 没有数字签名的 exe 可能被杀毒软件误报、被 SmartScreen 拦截，发布前要考虑代码签名

@@ -10,6 +10,8 @@ data/
 logs/
 # Evo 窗口（WebView2）的本地存储（记住主题等）
 webview/
+# Evo 自己的小设置（app_settings.py）
+settings.json
 
 # ===== Python 自动生成的文件 =====
 __pycache__/

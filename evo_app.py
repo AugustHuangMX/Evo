@@ -3,10 +3,12 @@
 - 每 5 秒看一次 Apex 有没有在运行（只看进程名）。在运行、而且没有暂停，就启动一个记录子程序；
   游戏关掉或暂停时让它安全停下。子程序退出后，识别模型占的内存全部还给系统，托盘本身只占几十 MB，
   不玩游戏时几乎不占 CPU。识别模块万一崩溃也只影响子程序，托盘还在，下次检测到游戏会重新开始
-- 右键托盘图标：打开面板 / 暂停记录 / 退出；单击图标也能打开面板。面板显示在 Evo 自己的窗口里
+- 打开 Evo 就弹出窗口（加 --background 则只待在托盘里，留给开机自启用）。Evo 已经在运行时再双击，
+  就把窗口弹出来。关掉窗口 Evo 仍在托盘里继续记录，第一次关时会弹通知提示一下
+- 右键托盘图标：打开 Evo / 暂停记录 / 退出；单击图标也能打开窗口。面板显示在 Evo 自己的窗口里
   （Windows 自带的 WebView2，见 app_window.py），窗口也在单独的进程里，关掉就把内存还给系统
 - 图标：平时是 Evo 图标；正在记录时右下角有个小红点；暂停时变灰。鼠标停在图标上能看到状态
-- 同一时间只能运行一个 Evo（防止同一局被记两遍）
+- 同一个数据文件夹同时只能运行一个 Evo（防止同一局被记两遍）
 - 运行记录写在数据文件夹的 logs/evo.log（打包后没有终端窗口，出了问题看这里）
 
 运行：python evo_app.py
@@ -16,6 +18,7 @@
 
 import argparse
 import ctypes
+import hashlib
 import logging
 import multiprocessing
 import socket
@@ -23,6 +26,7 @@ import sys
 import threading
 import time
 import webbrowser
+from ctypes import wintypes
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Empty
@@ -30,13 +34,16 @@ from queue import Empty
 import pystray
 from PIL import Image, ImageDraw, ImageOps
 
+import app_settings
 import storage
 from game_detect import GAME_PROCESSES, game_running
 from icons import base_icon
 from paths import ASSETS_DIR, DATA_DIR, FROZEN, LOG_DIR
 
 APP_NAME = "Evo"
-MUTEX_NAME = "Local\\EvoTrackerSingleInstance"
+# 同一个数据文件夹只能运行一个 Evo（防止同一局被记两遍）；数据文件夹不同（比如测试用的临时文件夹）互不影响
+_INSTANCE_TAG = hashlib.sha1(str(DATA_DIR).lower().encode("utf-8")).hexdigest()[:12]
+MUTEX_NAME = f"Local\\EvoTracker-{_INSTANCE_TAG}"
 RETRY_AFTER_ERROR = 60  # 记录出错后，至少等这么多秒再重新开始，免得反复出错
 PANEL_PORTS = range(5000, 5020)
 
@@ -66,6 +73,37 @@ def already_running():
     kernel32.CreateMutexW.restype = ctypes.c_void_p
     _mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
     return ctypes.get_last_error() == 183  # ERROR_ALREADY_EXISTS
+
+
+SHOW_EVENT_NAME = f"Local\\EvoTrackerShow-{_INSTANCE_TAG}"  # 再次双击 Evo 时，用这个信号让已经在运行的 Evo 弹出窗口
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_k32.CreateEventW.restype = _k32.OpenEventW.restype = ctypes.c_void_p
+_k32.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+_k32.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+_k32.SetEvent.argtypes = _k32.CloseHandle.argtypes = [ctypes.c_void_p]
+_k32.WaitForSingleObject.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+
+
+def ask_running_evo_to_show():
+    """Evo 已经在运行：通知它把窗口弹出来。成功返回 True；对方是不认识这个信号的旧版时返回 False。"""
+    handle = _k32.OpenEventW(0x0002, False, SHOW_EVENT_NAME)  # EVENT_MODIFY_STATE
+    if not handle:
+        return False
+    _k32.SetEvent(handle)
+    _k32.CloseHandle(handle)
+    return True
+
+
+def listen_for_show(callback):
+    """在后台一直等"弹出窗口"的信号（用户又双击了 Evo），收到就调用 callback。"""
+    handle = _k32.CreateEventW(None, False, False, SHOW_EVENT_NAME)  # 自动复位：收到一次就清掉
+
+    def loop():
+        while True:
+            if _k32.WaitForSingleObject(handle, 1000) == 0:  # WAIT_OBJECT_0：收到信号
+                callback()
+
+    threading.Thread(target=loop, name="show-signal", daemon=True).start()
 
 
 def tell_user(text):
@@ -239,9 +277,11 @@ class PanelServer:
     """第一次点"打开面板"时，在本程序里启动面板（只接受本机访问），然后在单独的进程里打开 Evo 窗口。
     窗口已经开着，就把它调到最前面；窗口打不开（比如电脑上没有 WebView2），改用浏览器打开。"""
 
-    def __init__(self, log):
+    def __init__(self, log, on_window_closed=None):
         self.log, self.url, self._server = log, None, None
         self._window, self._focus = None, None
+        self.on_window_closed = on_window_closed or (lambda: None)  # 用户关掉窗口后调用（退出程序时不算）
+        self._closing = False
 
     def open(self, window=True):
         url = self._start_server()
@@ -264,7 +304,9 @@ class PanelServer:
         try:
             _, detail = queue.get(timeout=1)
         except Empty:
-            return  # 正常关闭
+            if not self._closing:
+                self.on_window_closed()  # 用户关掉了窗口（Evo 还在托盘里）
+            return
         self.log(f"Evo 窗口打不开，改用浏览器打开面板。原因：\n{detail}")
         webbrowser.open(url)
 
@@ -284,6 +326,7 @@ class PanelServer:
         return self.url
 
     def close(self):
+        self._closing = True
         if self._window is not None and self._window.is_alive():
             self._window.terminate()
         if self._server is not None:
@@ -337,8 +380,9 @@ def main():
     parser.add_argument("--game", nargs="+", default=sorted(GAME_PROCESSES),
                         help="把哪些进程当作游戏（测试用，默认 Apex 的进程名）")
     parser.add_argument("--check-seconds", type=float, default=5, help="多久看一次游戏有没有在运行（默认 5）")
-    parser.add_argument("--open-panel", action="store_true", help="启动后立刻打开面板")
-    parser.add_argument("--no-window", action="store_true", help="和 --open-panel 一起用：只启动面板服务，不打开窗口（测试用）")
+    parser.add_argument("--background", action="store_true",
+                        help="启动时不弹窗口，只待在托盘里（以后开机自启时用）")
+    parser.add_argument("--no-window", action="store_true", help="启动时只启动面板服务，不弹窗口（测试用）")
     parser.add_argument("--check-image", type=Path, nargs="+", metavar="截图",
                         help="自检：识别这些截图，把结果写进日志后退出")
     args = parser.parse_args()
@@ -350,7 +394,9 @@ def main():
         return
 
     if already_running():
-        tell_user("Evo 已经在运行了，请看任务栏右下角的托盘图标。")
+        # 再次双击 Evo：让已经在运行的那个把窗口弹出来，自己安静退出
+        if not ask_running_evo_to_show():
+            tell_user("Evo 已经在运行了，请看任务栏右下角的托盘图标。")
         return
 
     logger = setup_logging()
@@ -360,7 +406,15 @@ def main():
     icons = load_icons()
     tips = {"waiting": "等待 Apex 启动", "recording": "正在记录", "paused": "已暂停记录"}
     icon = pystray.Icon(APP_NAME, icons["waiting"], f"{APP_NAME} · {tips['waiting']}")
-    panel = PanelServer(log)
+
+    def window_closed():
+        """第一次关掉窗口时提示一下：Evo 没有退出，还在托盘里。只提示这一次。"""
+        if not app_settings.get("tray_tip_shown"):
+            icon.notify("Evo 还在后台运行，打游戏时会自动记录。右键托盘图标可以退出。", APP_NAME)
+            app_settings.set_value("tray_tip_shown", True)
+            log("第一次关掉窗口：已提示 Evo 还在后台运行")
+
+    panel = PanelServer(log, on_window_closed=window_closed)
 
     def refresh():
         state = recorder.state
@@ -381,7 +435,7 @@ def main():
         icon.stop()
 
     icon.menu = pystray.Menu(
-        pystray.MenuItem("打开面板", lambda _i, _m: panel.open(), default=True),
+        pystray.MenuItem("打开 Evo", lambda _i, _m: panel.open(), default=True),
         pystray.MenuItem(lambda _m: "继续记录" if recorder.paused else "暂停记录", toggle_pause),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("退出", quit_app),
@@ -390,8 +444,9 @@ def main():
     def setup(ic):
         ic.visible = True
         recorder.start()
-        if args.open_panel:
-            panel.open(window=not args.no_window)
+        listen_for_show(lambda: panel.open())  # 再次双击 Evo 时弹出窗口
+        if not args.background:
+            panel.open(window=not args.no_window)  # 一打开 Evo 就弹出窗口，而不是只在托盘里
 
     icon.run(setup=setup)
     log("Evo 已退出")
