@@ -1,18 +1,18 @@
 """Evo 的图标：托盘、程序文件（exe）、窗口标题栏和浏览器标签页都从这里取，保证是同一个。
 
-优先用 assets/icon/ 里用户设计的图标（evo.png 或 icon.png），自动裁掉四周的透明空白、居中放进正方形；
-没有的话，用面板左上角的盾牌临时代替。
+用 assets/icon/evo.png（用户设计的图标），自动裁掉四周的透明空白、居中放进正方形；
+文件不在的话，用一个盾牌临时代替。
 """
 
 from PIL import Image, ImageDraw
 
 from paths import ASSETS_DIR
 
-ICON_FILES = ("evo.png", "icon.png")  # 两个名字都认
+ICON_FILES = ("evo.png",)
 
 
 def draw_shield(size=64):
-    """临时图标：面板左上角的盾牌。"""
+    """临时图标：一个盾牌（设计稿里原来的标志）。"""
     s = 4 * size / 28  # 先画 4 倍大再缩小，边缘更平滑
     img = Image.new("RGBA", (4 * size, 4 * size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)

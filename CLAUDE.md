@@ -44,7 +44,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
   - 数据库和截图放 `%LOCALAPPDATA%\Evo\`；配置和模型从程序所在目录读取。所有路径由 `paths.py` 统一管理，代码里不依赖"当前目录"；用源码运行时数据仍在项目文件夹，环境变量 `EVO_DATA_DIR` 可以指定别的数据文件夹（测试用）。数据库里的截图路径存成相对于数据文件夹的写法
   - 打包成"一个文件夹"（PyInstaller 的 onedir）：一个很小的启动器 `Evo.exe` + `_internal` 文件夹，不做单个 exe（启动慢、更容易被杀毒软件误报）
   - 第一次用 exe 时，把项目里的 `data/` 和 `captures/` 复制一份到 `%LOCALAPPDATA%\Evo\`，原文件不动。之后打游戏用 Evo.exe，数据在 `%LOCALAPPDATA%\Evo`；用源码运行时数据仍在项目文件夹，两边互不干扰
-  - 图标由用户设计（蓝色胶囊 + 上升柱状图），文件是 `assets/icon/icon.png`（要求见 `assets/icon/` 里的 README）；程序自动裁掉四周透明空白
+  - 图标由用户设计（蓝色胶囊 + 上升柱状图），文件是 `assets/icon/evo.png`（要求见 `assets/icon/` 里的 README）；程序自动裁掉四周透明空白（`icons.py`）。托盘、exe、窗口标题栏、面板左上角的标志、浏览器标签页都用它（2026-10-17 用户决定，取代设计稿里的红色盾牌）
   - 打包命令：`python build.py`（用 `evo.spec`，PyInstaller 6.22，只在开发时用）→ `dist/Evo/Evo.exe`。自己电脑上生成的 exe 不会触发 SmartScreen（只有从网上下载的才会）
   - 打包后排查问题：`Evo.exe --check-image 截图.png` 自检（结果写进 logs/evo.log）；`--open-panel` 启动后打开面板
   - 托盘用 pystray（LGPLv3，用户同意）：我们的代码仍是 MIT。发布 exe 时要附上 pystray 的许可证原文，并让它以普通 .py 文件的形式放在程序文件夹里（不压进程序内部），方便别人替换
