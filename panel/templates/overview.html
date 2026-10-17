@@ -29,7 +29,7 @@
       {% if rank.icon %}
       <div class="rank-emblem tier-{{ rank.tier_class }}" aria-hidden="true">
         <img src="{{ url_for('static', filename=rank.icon) }}" alt="" width="96" height="96">
-        {% if rank.plate %}<span class="rank-numeral num" style="--x: {{ rank.plate.x }}%; --y: {{ rank.plate.y }}%; --h: {{ rank.plate.h }}">{{ rank.division }}</span>{% endif %}
+        {% if rank.plate and rank.division %}<span class="rank-numeral num" style="--x: {{ rank.plate.x }}%; --y: {{ rank.plate.y }}%; --h: {{ rank.plate.h }}">{{ rank.division }}</span>{% endif %}
       </div>
       {% else %}
       <div class="rank-badge tier-{{ rank.tier_class }} num">{{ rank.badge }}</div>
