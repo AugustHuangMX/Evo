@@ -3,8 +3,8 @@
 用途：看看 OCR 在游戏截图上读得准不准，并找出每个数字在屏幕上的位置（以后写进识别配置）。
 顺便测量模型加载耗时、识别耗时和内存占用。
 
-运行：python ocr_probe.py <截图路径>
-例如：python ocr_probe.py captures/samples/vlcsnap-2026-10-16-18h26m12s173.png
+运行：python tools/ocr_probe.py <截图路径>
+例如：python tools/ocr_probe.py captures/samples/vlcsnap-2026-10-16-18h26m12s173.png
 
 全程不联网：直接指定安装包里自带的模型文件，RapidOCR 的下载代码不会被执行。
 """
@@ -13,6 +13,7 @@ import argparse
 import time
 from pathlib import Path
 
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 from ocr import create_engine
 from process_info import memory_mb
 

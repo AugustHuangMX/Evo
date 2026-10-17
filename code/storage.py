@@ -4,8 +4,8 @@
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
 另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节。
 
-查看最近的记录：python storage.py
-导出成 CSV：    python storage.py --export data/matches.csv
+查看最近的记录：python code/storage.py
+导出成 CSV：    python code/storage.py --export data/matches.csv
 """
 
 import argparse

@@ -11,12 +11,12 @@
 - 同一个数据文件夹同时只能运行一个 Evo（防止同一局被记两遍）
 - 运行记录写在数据文件夹的 logs/evo.log（打包后没有终端窗口，出了问题看这里）
 
-运行：python evo_app.py
+运行：python code/evo_app.py
   用源码运行、这台电脑上装过 Evo 时：战绩记进安装版的数据文件夹（启动前先备份数据库），截图全部存进项目的 captures/，
   见 source_run.py。所以源码版和安装版不能同时开
-测试：python evo_app.py --game notepad.exe   （把别的程序当作游戏，用来测试"开始/停止记录"；
+测试：python code/evo_app.py --game notepad.exe   （把别的程序当作游戏，用来测试"开始/停止记录"；
   不想碰正式数据就先设 EVO_DATA_DIR 指向一个测试用的文件夹）
-自检：python evo_app.py --check-image 截图.png   （识别截图，结果写进 logs/evo.log）
+自检：python code/evo_app.py --check-image 截图.png   （识别截图，结果写进 logs/evo.log）
 """
 
 import argparse
@@ -462,7 +462,7 @@ def main():
         # 再次双击 Evo：让已经在运行的那个把窗口弹出来，自己安静退出
         if INSTALLED_DATA is not None:
             print("安装版 Evo 正在运行（和源码版用同一个数据文件夹，只能开一个），已让它弹出窗口。")
-            print("要用源码记录：先右键托盘图标 → 退出安装版，再运行 python evo_app.py")
+            print("要用源码记录：先右键托盘图标 → 退出安装版，再运行 python code/evo_app.py")
             ask_running_evo_to_show()
         elif not ask_running_evo_to_show():
             tell_user("Evo 已经在运行了，请看任务栏右下角的托盘图标。")

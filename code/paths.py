@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 FROZEN = getattr(sys, "frozen", False)  # 是不是打包后的 Evo.exe
-APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).resolve().parent
+APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).resolve().parent.parent  # 源码：本文件在 code/ 里，上一层是项目文件夹
 EXE_DIR = Path(sys.executable).resolve().parent if FROZEN else APP_DIR  # Evo.exe 所在的文件夹
 DATA_LOCATION_FILE = EXE_DIR / "data_location.txt"
 

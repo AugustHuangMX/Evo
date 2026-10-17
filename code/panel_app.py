@@ -1,7 +1,7 @@
 """本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；唯一会联网的是"检查更新"（update_check.py，可以关掉）。
 
-运行：python panel_app.py                    读正式数据库 data/evo.db
-演示：python panel_app.py --db data/demo.db   读伪数据（先运行 python demo_data.py 生成）
+运行：python code/panel_app.py                    读正式数据库 data/evo.db
+演示：python code/panel_app.py --db data/demo.db   读伪数据（先运行 python tools/demo_data.py 生成）
 启动后会自动打开浏览器；在终端按 Ctrl+C 关闭面板。
 """
 
@@ -54,7 +54,7 @@ REVIEW_FIELDS = {
 # ---- 总览页 ----
 TIER_BADGE = {"菜鸟": ("R", "rookie"), "青铜": ("B", "bronze"), "白银": ("S", "silver"), "黄金": ("G", "gold"),
               "白金": ("P", "platinum"), "钻石": ("D", "diamond"), "大师": ("M", "master"), "Apex 猎杀者": ("A", "predator")}
-try:  # 段位图标的铭牌位置（python icons.py 生成）；没有图标的段位（菜鸟）用上面的字母方块
+try:  # 段位图标的铭牌位置（python code/icons.py 生成）；没有图标的段位（菜鸟）用上面的字母方块
     RANK_PLATES = json.loads((PANEL_DIR / "static" / "ranks" / "ranks.json").read_text(encoding="utf-8"))
 except (OSError, ValueError):
     RANK_PLATES = {}

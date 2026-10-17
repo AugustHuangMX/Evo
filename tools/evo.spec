@@ -1,20 +1,24 @@
-# PyInstaller 打包配置。一般不直接用它，运行 python build.py 即可（会先生成图标，打包后再放入许可证）。
+# PyInstaller 打包配置。一般不直接用它，运行 python tools/build.py 即可（会先生成图标，打包后再放入许可证）。
 # 打包方式：文件夹模式（onedir）——一个很小的 Evo.exe 启动器 + _internal 文件夹（依赖、配置、网页、识别模型）。
 import os
 
 from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 
+ROOT = os.path.dirname(SPECPATH)  # 项目文件夹（本文件在 tools/ 里）
+CODE = os.path.join(ROOT, "code")  # 程序代码
+
 datas = [
-    ("config", "config"),                    # 识别规则
-    ("panel/templates", "panel/templates"),  # 面板网页
-    ("panel/static", "panel/static"),        # 面板样式、字体
-    ("assets", "assets"),                    # 图标
+    (os.path.join(ROOT, "config"), "config"),                    # 识别规则
+    (os.path.join(ROOT, "panel", "templates"), "panel/templates"),  # 面板网页
+    (os.path.join(ROOT, "panel", "static"), "panel/static"),        # 面板样式、字体
+    (os.path.join(ROOT, "assets"), "assets"),                    # 图标
 ]
 datas += collect_data_files("rapidocr")      # 识别模型（.onnx）和识别引擎的配置（.yaml）
 datas += copy_metadata("pystray")            # pystray 的许可证信息（LGPL 要求）
 
 a = Analysis(
-    ["evo_app.py"],
+    [os.path.join(CODE, "evo_app.py")],
+    pathex=[CODE],
     datas=datas,
     excludes=["tkinter", "matplotlib", "IPython", "pytest"],  # 用不到的大模块
     # pystray 是 LGPL：以 .py 源文件形式放在 _internal/pystray 里（不压进程序内部），别人可以换成自己改过的版本
@@ -30,7 +34,7 @@ exe = EXE(
     exclude_binaries=True,
     name="Evo",
     console=False,  # 不显示黑色终端窗口；运行记录写在 %LOCALAPPDATA%\Evo\logs\evo.log
-    icon=os.path.join(SPECPATH, "build", "icon", "evo.ico"),
+    icon=os.path.join(ROOT, "build", "icon", "evo.ico"),
     upx=False,  # 不压缩：压缩过的 exe 更容易被杀毒软件误报
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="Evo", upx=False)

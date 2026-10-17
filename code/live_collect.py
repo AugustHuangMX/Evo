@@ -12,13 +12,13 @@
 - 经验值页、开局画面、大厅（见 config/screens.json）：开局画面用来分隔每一局（见 ScreenWatcher）
 - 其他画面：什么都不做（大部分时间都是这样）
 
-数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python storage.py 查看），
+数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
 - 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留"待确认"的局要用的
 - 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅也存，进入时一张、离开前最后一帧一张
 - 设置页的"保留全部截图"开关：每局结束时看一眼，改了从下一局开始生效（见 collect 里的 round_end）
 
-运行：python live_collect.py
+运行：python code/live_collect.py
 停止：在终端按 Ctrl+C，或到达 --minutes 设定的时长后自动停止
 """
 
@@ -365,7 +365,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                     last_seen, warned = tick, False
                 elif not warned and tick - last_seen > NO_SCREEN_WARNING_MINUTES * 60:
                     log(f"⚠ 已经 {NO_SCREEN_WARNING_MINUTES} 分钟没认出任何画面（大厅、开局、总结页、经验值页）。"
-                        "如果这段时间打完过对局，可能是游戏更新了界面：用 python screens.py 截图.png 检查，必要时重新生成参照图")
+                        "如果这段时间打完过对局，可能是游戏更新了界面：用 python code/screens.py 截图.png 检查，必要时重新生成参照图")
                     warned = True
             engine.release_if_idle()
 
@@ -413,7 +413,7 @@ def main():
                     deadline=time.monotonic() + args.minutes * 60)
     mem_now, mem_peak = memory_mb()
     print(f"\n本次共保存 {saved} 局。内存: 现在 {mem_now:.0f} MB，峰值 {mem_peak:.0f} MB")
-    print("查看数据库里的记录: python storage.py")
+    print("查看数据库里的记录: python code/storage.py")
 
 
 if __name__ == "__main__":

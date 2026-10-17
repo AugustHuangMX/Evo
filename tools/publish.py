@@ -1,8 +1,8 @@
 """发布新版本。先改 storage.py 的 APP_VERSION 和 release/更新内容.txt 并提交，然后：
 
-    python publish.py --dry-run   试一遍：准备压缩包、预览官网要改的地方，不上传任何东西
-    python publish.py             第一段：上传压缩包和官网，逐项核对
-    python publish.py --live      第二段：上传 latest.json，开着"自动检查新版本"的 Evo 开始提醒更新
+    python tools/publish.py --dry-run   试一遍：准备压缩包、预览官网要改的地方，不上传任何东西
+    python tools/publish.py             第一段：上传压缩包和官网，逐项核对
+    python tools/publish.py --live      第二段：上传 latest.json，开着"自动检查新版本"的 Evo 开始提醒更新
 
 为什么分两段：latest.json 一换，所有开着自动检查的 Evo 都会提醒更新，收不回来。
 所以先把压缩包、官网都传好、核对过，人也看过了，再做最后一步。
@@ -37,11 +37,12 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 import release
 from release import DIST, README_NAME, Stop, git, sha256
 from storage import APP_VERSION
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹（本文件在 tools/ 里）
 INDEX = ROOT / "site" / "index.html"
 BUCKET = "evotracker"         # R2 存储桶，公开地址是 dl.evotracker.cn
 PAGES_PROJECT = "evotracker"  # Cloudflare Pages 项目，网址是 evotracker.cn
@@ -154,7 +155,7 @@ def prepare():
         print(f"    dist 里已经有提交 {head} 打的 {ZIP_NAME}，不用重新打包")
     else:
         print("    运行 release.py（检查提交、测试、打包、自检、压缩，要几分钟）", flush=True)
-        if subprocess.run([sys.executable, "release.py"], cwd=ROOT).returncode != 0:
+        if subprocess.run([sys.executable, "tools/release.py"], cwd=ROOT).returncode != 0:
             raise Stop("release.py 没有做完（原因见上面）")
         if not ready(head):
             raise Stop("release.py 做完了，但压缩包或 latest.json 和当前提交、版本号对不上")
@@ -256,14 +257,14 @@ def publish(dry_run):
                 break
             time.sleep(5)
         else:
-            raise Stop(f"{SITE_URL} 上还不是新的下载链接和 SHA-256，过一会儿重新运行 python publish.py 看看")
+            raise Stop(f"{SITE_URL} 上还不是新的下载链接和 SHA-256，过一会儿重新运行 python tools/publish.py 看看")
         print(f"    ✅ {SITE_URL} 的下载链接是 {ZIP_NAME}，SHA-256 也对")
 
     if dry_run:
-        print("\n试运行完成，没有上传任何东西。正式上传：python publish.py")
+        print("\n试运行完成，没有上传任何东西。正式上传：python tools/publish.py")
     else:
         print(f"\n第一段完成：{APP_VERSION} 的压缩包和官网都已经上线，但还没有任何 Evo 会提醒更新。")
-        print("自己从官网下载试一下；确认没问题后，最后一步：python publish.py --live")
+        print("自己从官网下载试一下；确认没问题后，最后一步：python tools/publish.py --live")
 
 
 # ---------- 第二段 ----------
@@ -271,14 +272,14 @@ def publish(dry_run):
 def go_live(yes):
     step(7, "核对线上的压缩包和官网")
     if not (ZIP.is_file() and LATEST.is_file()):
-        raise Stop(f"dist 里没有 {ZIP_NAME} 或 latest.json：先运行 python publish.py")
+        raise Stop(f"dist 里没有 {ZIP_NAME} 或 latest.json：先运行 python tools/publish.py")
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
     if latest.get("version") != APP_VERSION:
-        raise Stop(f"dist/latest.json 写的是 {latest.get('version')}，不是 {APP_VERSION}：先运行 python publish.py")
+        raise Stop(f"dist/latest.json 写的是 {latest.get('version')}，不是 {APP_VERSION}：先运行 python tools/publish.py")
     if remote_info(ZIP_URL) != (ZIP.stat().st_size, md5(ZIP)):
-        raise Stop(f"线上的 {ZIP_NAME} 和本机的不一样（或者还没传）：先运行 python publish.py")
+        raise Stop(f"线上的 {ZIP_NAME} 和本机的不一样（或者还没传）：先运行 python tools/publish.py")
     if not site_is_new(sha256(ZIP)):
-        raise Stop("官网还不是这个版本：先运行 python publish.py")
+        raise Stop("官网还不是这个版本：先运行 python tools/publish.py")
     print("    ✅ 压缩包和官网都是这个版本")
     if remote_bytes(LATEST_URL) == LATEST.read_bytes():
         print(f"\n线上的 latest.json 已经是 {APP_VERSION}，不用再传")

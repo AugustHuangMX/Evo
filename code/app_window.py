@@ -7,7 +7,7 @@
   四边和四角的细条同理，交给 Windows 改大小
 - 最小化 / 最大化 / 关闭是网页里的按钮，通过 window.pywebview.api 调用下面的 WindowApi
 
-单独试：python app_window.py http://127.0.0.1:5000/   （先另外启动面板：python panel_app.py --no-browser）
+单独试：python code/app_window.py http://127.0.0.1:5000/   （先另外启动面板：python code/panel_app.py --no-browser）
 """
 
 import ctypes

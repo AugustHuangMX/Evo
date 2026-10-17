@@ -8,8 +8,8 @@
 
 游戏更新后界面变了，参照图可能就不像了：重新截一张，用下面的命令重新生成。没有参照图的画面每次都直接跑识别（和以前一样）。
 
-检查截图：      python screens.py 截图1.png [截图2.png ...]   （打印每种画面的外观相似度和最后的结论）
-重新生成参照图：python screens.py --save-template summary 截图.png   （按配置里的 template_box 截一块）
+检查截图：      python code/screens.py 截图1.png [截图2.png ...]   （打印每种画面的外观相似度和最后的结论）
+重新生成参照图：python code/screens.py --save-template summary 截图.png   （按配置里的 template_box 截一块）
 """
 
 import argparse

@@ -3,7 +3,7 @@
 只读取进程名（和任务管理器看到的一样），不打开、不读写游戏进程（原则 1）。
 用 Windows 自带的功能（ctypes 调用 Toolhelp32），不需要安装别的包。
 
-用法：python game_detect.py   → 打印游戏现在是否在运行
+用法：python code/game_detect.py   → 打印游戏现在是否在运行
 """
 
 import ctypes

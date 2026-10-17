@@ -16,7 +16,7 @@ import os
 import sys
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parent.parent  # 本文件在 code/ 里，上一层是项目文件夹
 POINTER_FILE = PROJECT_DIR / "installed_data_location.txt"  # install.py 写，内容是安装版的数据文件夹
 
 

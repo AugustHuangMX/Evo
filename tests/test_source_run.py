@@ -55,7 +55,7 @@ def imported_evo_app():
     code = ("import json, os, evo_app, paths; "
             "print(json.dumps([evo_app.INSTALLED_DATA, str(paths.DATA_DIR), os.environ.get('EVO_DATA_DIR')], default=str))")
     env = {k: v for k, v in os.environ.items() if k not in ("EVO_DATA_DIR", "EVO_CAPTURES_DIR")}
-    out = subprocess.run([sys.executable, "-c", code], cwd=PROJECT, env={**env, "PYTHONIOENCODING": "utf-8"},
+    out = subprocess.run([sys.executable, "-c", code], cwd=PROJECT / "code", env={**env, "PYTHONIOENCODING": "utf-8"},
                          capture_output=True, text=True, encoding="utf-8", check=True)
     return json.loads(out.stdout)
 
@@ -72,7 +72,7 @@ def probe(environ):
     """在另一个 Python 进程里看路径（paths.py 一导入就决定，同一个进程里改不了）。只读，不写文件。"""
     env = {k: v for k, v in os.environ.items() if k not in ("EVO_DATA_DIR", "EVO_CAPTURES_DIR")}
     env.update(environ, PYTHONIOENCODING="utf-8")
-    out = subprocess.run([sys.executable, "-c", PROBE], cwd=PROJECT, env=env, capture_output=True, text=True,
+    out = subprocess.run([sys.executable, "-c", PROBE], cwd=PROJECT / "code", env=env, capture_output=True, text=True,
                          encoding="utf-8", check=True)
     return json.loads(out.stdout)
 

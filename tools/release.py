@@ -1,4 +1,4 @@
-"""做发布用的压缩包：python release.py  →  dist/Evo-<版本号>-win64.zip 和同名的 .sha256 文件
+"""做发布用的压缩包：python tools/release.py  →  dist/Evo-<版本号>-win64.zip 和同名的 .sha256 文件
 
 按顺序做下面几件事，任何一步出问题就停下：
 1. 检查代码都已提交：压缩包要对应一个确定的提交，没提交的改动不会被悄悄打进去
@@ -10,9 +10,9 @@
 7. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt
 
 版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己的 %LOCALAPPDATA%\\Evo。
-只是想试一下流程、还有没提交的改动时：python release.py --allow-dirty（文件名会带上 -dirty，不要发布这种；也不写 latest.json）
+只是想试一下流程、还有没提交的改动时：python tools/release.py --allow-dirty（文件名会带上 -dirty，不要发布这种；也不写 latest.json）
 
-做好以后用 python publish.py 上传和核对（压缩包、官网、最后 latest.json，见 publish.py 开头）。
+做好以后用 python tools/publish.py 上传和核对（压缩包、官网、最后 latest.json，见 publish.py 开头）。
 它按下面的顺序做——上传到 R2（dl.evotracker.cn）：先传压缩包，确认能下载、SHA-256 对得上，最后再传 latest.json——
 latest.json 一换，所有开着自动检查的 Evo 就会提醒更新，所以压缩包必须先到位：
     wrangler r2 object put evotracker/Evo-<版本号>-win64.zip --file dist/Evo-<版本号>-win64.zip --remote
@@ -31,9 +31,10 @@ import zipfile
 from datetime import date
 from pathlib import Path
 
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 from storage import APP_VERSION
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹（本文件在 tools/ 里）
 DIST = ROOT / "dist"
 APP = DIST / "Evo"
 README = ROOT / "release" / "使用说明.txt"
@@ -140,7 +141,7 @@ def main():
         run_tests()
 
         step(3, "打包（build.py）")
-        subprocess.run([sys.executable, "build.py"], cwd=ROOT, check=True)
+        subprocess.run([sys.executable, "tools/build.py"], cwd=ROOT, check=True)
         if (APP / "data_location.txt").exists():
             raise Stop("dist/Evo 里有 data_location.txt，别人的数据会被指到你电脑上的文件夹，不能发布")
 
@@ -178,7 +179,7 @@ def main():
     if dirty:
         print("⚠ 这次有没提交的改动，只能自己试，不要发布")
     else:
-        print("\n上传：python publish.py（先传压缩包和官网、逐项核对；最后 python publish.py --live 传 latest.json）")
+        print("\n上传：python tools/publish.py（先传压缩包和官网、逐项核对；最后 python tools/publish.py --live 传 latest.json）")
     return 0
 
 

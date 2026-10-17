@@ -8,7 +8,7 @@
 - 打开菜单、选传奇的画面也可能被存下来，没关系，整理参照图时会挑掉
 
 用法：
-1. 运行 python legend_capture.py，然后进游戏、去靶场
+1. 运行 python tools/legend_capture.py，然后进游戏、去靶场
 2. 每换一个传奇，等 1–2 秒，听到"嘀"一声就是存好了，再换下一个（在靶场长按 Esc 换传奇）
 3. 全部换完，回到终端按 Ctrl+C 停止（或到达 --minutes 设定的时长后自动停止）
 
@@ -24,6 +24,7 @@ import cv2
 import dxcam
 import numpy as np
 
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 from paths import CAPTURES_DIR
 from process_info import set_low_priority
 from screens import gray_crop

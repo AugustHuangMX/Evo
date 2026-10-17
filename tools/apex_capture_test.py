@@ -3,7 +3,7 @@
 检查三件事：能不能截到（有没有报错）、是不是黑屏、每次截图耗时多少。
 结果写进 results.csv（可以直接用 Stata 的 import delimited 打开），并定期保存 PNG 样本。
 
-运行：python apex_capture_test.py
+运行：python tools/apex_capture_test.py
 停止：在终端按 Ctrl+C，或到达 --minutes 设定的时长后自动停止
 
 本脚本只做被动截屏：不碰游戏进程，不模拟按键，不注册键盘钩子。
@@ -23,6 +23,7 @@ import mss
 import mss.tools
 import numpy as np
 
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 from paths import CAPTURES_DIR
 from process_info import set_low_priority
 

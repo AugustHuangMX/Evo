@@ -12,7 +12,7 @@ import subprocess
 import sys
 from unittest import mock
 
-from fake_game import ROOT, FakeCamera, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
+from fake_game import CODE, FakeCamera, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
 
 import ocr
 
@@ -23,7 +23,7 @@ HEAVY = ("cv2", "numpy", "rapidocr", "onnxruntime", "dxcam")  # 只该在记录�
 def tray_imports():
     """托盘程序（含面板）加载了哪些不该加载的库。"""
     code = f"import sys, evo_app, panel_app; print(','.join(m for m in {HEAVY!r} if m in sys.modules))"
-    out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True)
+    out = subprocess.run([sys.executable, "-c", code], cwd=CODE, capture_output=True, text=True, check=True)
     return [m for m in out.stdout.strip().split(",") if m]
 
 

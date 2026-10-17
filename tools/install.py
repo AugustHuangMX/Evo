@@ -1,6 +1,6 @@
-"""把打包好的 Evo 安装到固定位置，并在桌面和开始菜单建快捷方式。先运行 python build.py，再运行：
+"""把打包好的 Evo 安装到固定位置，并在桌面和开始菜单建快捷方式。先运行 python tools/build.py，再运行：
 
-    python install.py "E:\\Evo Tracker" --data "E:\\Evo Tracker Data"
+    python tools/install.py "E:\\Evo Tracker" --data "E:\\Evo Tracker Data"
 
 - 把 dist/Evo 整个复制到安装文件夹。以前装过的话先删掉旧的程序文件——只删里面有 Evo.exe 的文件夹，免得误删别的东西
 - --data：数据文件夹（数据库、截图、日志）。写进安装文件夹里的 data_location.txt，Evo.exe 启动时据此找数据；
@@ -17,10 +17,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 from game_detect import process_names
 from source_run import POINTER_FILE
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹（本文件在 tools/ 里）
 DIST = ROOT / "dist" / "Evo"
 
 
@@ -48,7 +49,7 @@ def main():
     data = args.data.resolve() if args.data else None
 
     if not (DIST / "Evo.exe").is_file():
-        sys.exit("还没有打包：先运行 python build.py")
+        sys.exit("还没有打包：先运行 python tools/build.py")
     if target == ROOT or ROOT in target.parents:
         sys.exit(f"不能装在项目文件夹 {ROOT} 里面")
     if data is not None and (data == target or target in data.parents or data in target.parents):

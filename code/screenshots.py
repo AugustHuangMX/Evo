@@ -75,7 +75,7 @@ def recording_folder():
     """正在记录的截图文件夹，没在记录返回 None。
     记录子程序（evo_app.py 里名叫 evo-collect 的进程）和面板都在托盘程序里，所以面板看得到它在不在运行；
     在运行时，它的文件夹就是 captures/live/ 里最新的那个（文件夹名是开始记录的时间）。
-    单独运行面板（python panel_app.py）时看不到，当作没在记录。"""
+    单独运行面板（python code/panel_app.py）时看不到，当作没在记录。"""
     if not any(p.name == "evo-collect" for p in multiprocessing.active_children()):
         return None
     folders = finished_folders()

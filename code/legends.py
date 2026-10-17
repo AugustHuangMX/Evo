@@ -6,8 +6,8 @@
 
 注意：观战时左下角是被观战的人，不是自己，阵亡后不要在这里读。
 
-检查截图：  python legends.py 截图1.png [截图2.png ...]   （打印最像的 3 个传奇、相似度和结论）
-生成参照图：python legends.py --save-template <传奇编号> 截图.png   （如 caustic；按配置里的 face_box 截脸）
+检查截图：  python code/legends.py 截图1.png [截图2.png ...]   （打印最像的 3 个传奇、相似度和结论）
+生成参照图：python code/legends.py --save-template <传奇编号> 截图.png   （如 caustic；按配置里的 face_box 截脸）
 """
 
 import argparse

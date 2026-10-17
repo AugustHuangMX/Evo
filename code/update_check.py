@@ -15,7 +15,7 @@ latest.json 由 release.py 在发布时生成，和安装包一起传到 R2：
 - update_last_check：上次检查的时间和结果（设置页显示）
 
 测试时可以用环境变量 EVO_UPDATE_URL 换成本机的测试地址。
-用法：python update_check.py   → 检查一次并打印结果
+用法：python code/update_check.py   → 检查一次并打印结果
 """
 
 import json

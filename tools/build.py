@@ -1,4 +1,4 @@
-"""打包成 Windows 程序：python build.py  →  dist/Evo/Evo.exe
+"""打包成 Windows 程序：python tools/build.py  →  dist/Evo/Evo.exe
 
 1. 生成程序图标 build/icon/evo.ico（用 assets/icon/ 里的图标，裁掉四周透明空白；没有就用面板左上角的盾牌）
 2. 用 PyInstaller 按 evo.spec 打包（文件夹模式：一个很小的 Evo.exe + _internal 文件夹）
@@ -14,7 +14,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
+
+ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹（本文件在 tools/ 里）
 ICON = ROOT / "build" / "icon" / "evo.ico"
 DIST = ROOT / "dist" / "Evo"
 ICON_SIZES = [(s, s) for s in (16, 24, 32, 48, 64, 128, 256)]
@@ -53,7 +55,7 @@ def add_licenses():
 
 def main():
     make_icon()
-    subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "evo.spec"], cwd=ROOT, check=True)
+    subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "tools/evo.spec"], cwd=ROOT, check=True)
     add_licenses()
     files = [p for p in DIST.rglob("*") if p.is_file()]
     size = sum(p.stat().st_size for p in files)

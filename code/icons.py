@@ -4,7 +4,7 @@
 文件不在的话，用一个盾牌临时代替。
 
 面板总览页的段位图标也在这里生成：原图（游戏里的段位徽章）放在 assets/ranks/，
-换赛季、换图标后运行 python icons.py，重新生成 panel/static/ranks/ 里的小图和铭牌位置。
+换赛季、换图标后运行 python code/icons.py，重新生成 panel/static/ranks/ 里的小图和铭牌位置。
 """
 
 import json

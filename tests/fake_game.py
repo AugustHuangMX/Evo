@@ -20,12 +20,14 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹
+CODE = ROOT / "code"  # 程序代码
 SHOTS = ROOT / "captures"  # 截图在这里（用源码运行时的数据文件夹）
 
 _TEMP = Path(tempfile.mkdtemp(prefix="evo-test-"))
 atexit.register(shutil.rmtree, _TEMP, ignore_errors=True)
 os.environ["EVO_DATA_DIR"] = str(_TEMP)  # paths.py 一导入就决定数据文件夹，所以必须在导入项目代码之前设置
-sys.path.insert(0, str(ROOT))
+os.environ.pop("EVO_CAPTURES_DIR", None)  # 截图也跟着临时文件夹走，绝不写进项目的 captures/
+sys.path.insert(0, str(CODE))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402

@@ -3,13 +3,14 @@
 数字是随机生成的，但尽量像真的：伤害和击杀相关、名次越好生存时间越长、
 排位局按"名次分 + 击杀分 − 入场费"算 RP。每次运行结果都一样（固定了随机种子）。
 
-运行：python demo_data.py
-然后：python panel_app.py --db data/demo.db
+运行：python tools/demo_data.py
+然后：python code/panel_app.py --db data/demo.db
 """
 
 import random
 from datetime import datetime, timedelta
 
+import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 import storage
 from paths import DB_DIR, data_absolute
 

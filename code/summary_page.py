@@ -2,8 +2,8 @@
 
 识别规则（区域坐标、格式、合理范围）写在 config/summary.json 里，不写死在代码中。
 
-单独试：python summary_page.py <截图路径>
-例如：  python summary_page.py captures/samples/vlcsnap-2026-10-16-18h26m12s173.png
+单独试：python code/summary_page.py <截图路径>
+例如：  python code/summary_page.py captures/samples/vlcsnap-2026-10-16-18h26m12s173.png
 加上 --save-crops，会把裁出来的小块存到 captures/debug_crops/，可以看看 OCR 实际看到了什么。
 """
 

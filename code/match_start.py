@@ -5,7 +5,7 @@
 - 地图：和已知地图名单比较，足够相似就采用（OCR 偶尔把"奥"读成繁体"奧"）；都不像就不填
 读不出的项为 None，同时返回原文，方便把新地图、新模式加进配置。
 
-用法：python match_start.py 截图1.png [截图2.png ...]
+用法：python code/match_start.py 截图1.png [截图2.png ...]
 """
 
 import argparse
