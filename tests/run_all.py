@@ -10,10 +10,11 @@
 import time
 
 import fake_game  # noqa: F401  要在项目代码之前导入（设置临时数据文件夹）
+import test_light
 import test_replay
 import test_summary_page
 
-TESTS = {"总结页停留": test_summary_page, "整晚重放": test_replay}
+TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）": test_light, "整晚重放": test_replay}
 
 
 def main():

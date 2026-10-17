@@ -1,6 +1,7 @@
 """实战采集：打游戏时在后台运行，自动识别每一局的总结页并存进数据库。
 
-每秒截一次屏（只截屏，不碰游戏），只检查几个小区域里的关键字：
+每秒截一次屏（只截屏，不碰游戏），判断是不是下面几种画面（见 screens.py：先比外观，不到 1 毫秒；像了才用识别引擎
+读关键字确认）。识别模型用到时才加载，闲置 2 分钟后释放（打游戏的大部分时间用不到）：
 - 总结页（中间卡片上有"击杀/助攻/击倒"）：改成每 0.3 秒检查一次，读全了就存一局（见 SummaryWatcher）
 - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上这一局的 RP、段位，名次缺的话也补上。
   没有总结页的局（第 2 名、冠军）只靠经验值页单独记一局。怎么归到同一局见 post_match.py
@@ -28,33 +29,17 @@ import dxcam
 
 import storage
 from match_start import read_match_start
-from ocr import SMALL_CROP_PARAMS, create_engine, load_config, read_lines
+from ocr import SMALL_CROP_PARAMS, LazyEngine, load_config
 from paths import CAPTURES_DIR
 from post_match import PostMatch
 from process_info import memory_mb, set_low_priority
+from screens import ScreenDetector
 from summary_page import KEY_FIELDS, read_summary, show, summary_to_match
 from xp_page import read_xp
 
 LATE_FIELDS = ("placement", "squad_kills")  # 总结页上晚 1–2 秒才滑进来的项
-
-
-def has_keywords(engine, frame, spec, cfg):
-    """识别 spec["roi"] 这一小块，看 spec["keywords"] 里的字是不是全都在。"""
-    text = "".join(t for t, _ in read_lines(engine, frame, spec["roi"], cfg))
-    return all(k in text for k in spec["keywords"])
-
-
-def is_summary(engine, frame, cfg):
-    """当前画面是不是总结页：识别一个小区域，看关键字在不在。"""
-    return has_keywords(engine, frame, cfg["detect"], cfg)
-
-
-def which_screen(engine, frame, screens):
-    """当前画面是不是 config/screens.json 里的某个画面，是的话返回它的名字（如 "xp"），都不是返回 None。"""
-    for name, spec in screens["screens"].items():
-        if has_keywords(engine, frame, spec, {**screens, **spec}):
-            return name
-    return None
+MODEL_IDLE_SECONDS = 120  # 识别模型闲置这么久就释放
+NO_SCREEN_WARNING_MINUTES = 45  # 这么久一个画面都没认出来，在日志里提醒（可能是游戏更新了界面，参照图过时了）
 
 
 def same_match(a, b, min_fields=4):
@@ -218,12 +203,16 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     post = PostMatch(conn, log=log)
 
     camera = dxcam.create(output_color="BGR", processor_backend="numpy")
-    engine = create_engine(SMALL_CROP_PARAMS)
+    # clock 用 lambda 包一层：测试时会把本文件的 time 换成假时钟
+    engine = LazyEngine(SMALL_CROP_PARAMS, MODEL_IDLE_SECONDS, clock=lambda: time.monotonic(), log=log)
+    detector = ScreenDetector(engine, screens)
     summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout)
     other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"), post, run_dir, log)
     log(f"屏幕: {camera.width}x{camera.height}")
     log(f"数据库: {Path(db_path).resolve()}")
     log(f"截图保存到: {run_dir.resolve()}")
+    if detector.missing:
+        log(f"⚠ 这些画面没有参照图，每次都要跑识别：{'、'.join(detector.missing)}（见 screens.py）")
     log("开始记录，到总结页时会自动保存。")
 
     def keep_going():
@@ -232,6 +221,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     def total():
         return summary.saved + post.inserted
 
+    frames, last_seen, warned = 0, time.monotonic(), False  # 截了几帧；最近一次认出画面的时刻
     try:
         while keep_going():
             tick = time.monotonic()
@@ -243,10 +233,19 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 frame = None
 
             if frame is not None:
+                frames += 1
                 now = datetime.now()
-                on_summary = is_summary(engine, frame, cfg)
+                screen = detector.detect(frame)
+                on_summary = screen == "summary"
                 summary.update(on_summary, frame, now)
-                other.update(None if on_summary else which_screen(engine, frame, screens), frame, now)
+                other.update(None if on_summary else screen, frame, now)
+                if screen is not None:
+                    last_seen, warned = tick, False
+                elif not warned and tick - last_seen > NO_SCREEN_WARNING_MINUTES * 60:
+                    log(f"⚠ 已经 {NO_SCREEN_WARNING_MINUTES} 分钟没认出任何画面（大厅、开局、总结页、经验值页）。"
+                        "如果这段时间打完过对局，可能是游戏更新了界面：用 python screens.py 截图.png 检查，必要时重新生成参照图")
+                    warned = True
+            engine.release_if_idle()
 
             if status is not None:
                 status["saved"] = total()
@@ -261,7 +260,9 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         camera.release()
         conn.close()
         saved = total()
-        del engine, camera, summary, other  # 释放识别模型和截屏，交还内存
+        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
+            f"加载识别模型 {engine.loads} 次；内存峰值 {memory_mb()[1]:.0f} MB")
+        del engine, detector, camera, summary, other  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved

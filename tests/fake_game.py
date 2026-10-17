@@ -58,16 +58,18 @@ def load(path):
 
 
 class FakeCamera:
-    """假摄像头：按顺序交出画面；交出最后一帧后就喊停（相当于托盘程序让记录停下）。"""
+    """假摄像头：按顺序交出画面；交出最后一帧后就喊停（相当于托盘程序让记录停下）。
+    showing：现在屏幕上是哪一帧（测试里用来统计"在哪种画面上跑了识别"）。"""
 
     width, height = 2560, 1440
+    showing = None
 
     def __init__(self, frames, picture, stop):
         self.frames, self.picture, self.stop = frames, picture, stop
         self.i, self.current = 0, None
 
     def grab(self, new_frame_only=False):
-        self.current = self.frames[self.i]
+        self.current = FakeCamera.showing = self.frames[self.i]
         self.i += 1
         if self.i == len(self.frames):
             self.stop.set()

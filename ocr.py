@@ -5,7 +5,9 @@
 全程不联网：直接指定安装包里自带的模型文件，RapidOCR 的下载代码不会被执行。
 """
 
+import gc
 import json
+import time
 from pathlib import Path
 
 import cv2
@@ -43,6 +45,36 @@ def create_engine(extra_params=None):
     }
     params.update(extra_params or {})
     return RapidOCR(params=params)
+
+
+class LazyEngine:
+    """用到时才创建识别引擎，闲置一段时间后释放（release_if_idle），把模型占的内存还给系统。
+    打游戏的大部分时间用不到识别（screens.py 的外观检查就排除了），不必一直占着约 40 MB。
+    用法和 create_engine() 返回的引擎一样：engine(图片)。
+    clock：取当前时间的函数（秒），测试时可以换成假时钟。"""
+
+    def __init__(self, params=None, idle_seconds=120, clock=time.monotonic, log=None):
+        self.params, self.idle_seconds, self.clock = params, idle_seconds, clock
+        self.log = log or (lambda message: None)
+        self._engine, self._last_used = None, 0.0
+        self.loads = self.calls = 0  # 加载过几次模型、识别过几次（统计用）
+
+    def __call__(self, img, **kwargs):
+        if self._engine is None:
+            start = time.perf_counter()
+            self._engine = create_engine(self.params)
+            self.loads += 1
+            self.log(f"加载识别模型（用时 {(time.perf_counter() - start) * 1000:.0f} 毫秒）")
+        self.calls += 1
+        self._last_used = self.clock()
+        return self._engine(img, **kwargs)
+
+    def release_if_idle(self):
+        """闲置超过 idle_seconds 秒就释放模型。"""
+        if self._engine is not None and self.clock() - self._last_used > self.idle_seconds:
+            self._engine = None
+            gc.collect()
+            self.log(f"识别模型闲置了 {self.idle_seconds} 秒，已释放")
 
 
 def load_config(name):
