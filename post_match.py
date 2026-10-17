@@ -14,6 +14,7 @@
   这时这一局要不要确认已经定了（经验值页补上名次后会取消待确认）
 """
 
+import ranks
 import storage
 from paths import data_relative
 
@@ -49,7 +50,7 @@ def xp_conflicts(reading, xp_time, summary, summary_time):
 def rank_text(reading):
     if reading["rank_tier"] is None:
         return "-"
-    return f"{reading['rank_tier']} {reading['rank_division']} {reading['rank_progress']}"
+    return f"{ranks.rank_name(reading['rank_tier'], reading['rank_division'])} {reading['rank_progress']}"
 
 
 class PostMatch:

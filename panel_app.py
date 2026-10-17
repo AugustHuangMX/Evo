@@ -21,9 +21,10 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 
 import app_settings
+import ranks
 import storage
 import update_check
-from paths import CAPTURES_DIR, CONFIG_DIR, PANEL_DIR, data_absolute
+from paths import CAPTURES_DIR, PANEL_DIR, data_absolute
 from post_match import XP_ONLY_NOTE
 
 PER_PAGE = 20
@@ -50,12 +51,8 @@ REVIEW_FIELDS = {
 }
 
 # ---- 总览页 ----
-_XP_CFG = json.loads((CONFIG_DIR / "xp.json").read_text(encoding="utf-8"))
-TIERS, DIVISIONS = _XP_CFG["tiers"], _XP_CFG["divisions"]  # 段位从低到高；每个段位里的段从低到高（IV → I）
-DIVISION_POINTS = 1000  # 每段的排位点数（经验值页进度条的终点）
 TIER_BADGE = {"菜鸟": ("R", "rookie"), "青铜": ("B", "bronze"), "白银": ("S", "silver"), "黄金": ("G", "gold"),
               "白金": ("P", "platinum"), "钻石": ("D", "diamond"), "大师": ("M", "master"), "Apex 猎杀者": ("A", "predator")}
-NO_DIVISION = {"大师", "Apex 猎杀者"}  # 游戏里这两个段位不分段：面板上不显示段数
 try:  # 段位图标的铭牌位置（python icons.py 生成）；没有图标的段位（菜鸟）用上面的字母方块
     RANK_PLATES = json.loads((PANEL_DIR / "static" / "ranks" / "ranks.json").read_text(encoding="utf-8"))
 except (OSError, ValueError):
@@ -275,56 +272,29 @@ def view(row):
 # ---------- 总览页的统计 ----------
 
 def rank_score(row):
-    """把段位换算成一条连续的分数线（每段 1000 分），用来画走势图。没有段位数据返回 None。"""
-    tier, division, progress = row["rank_tier"], row["rank_division"], row["rank_progress"]
-    if tier not in TIERS or division not in DIVISIONS or progress is None:
-        return None
-    return (TIERS.index(tier) * len(DIVISIONS) + DIVISIONS.index(division)) * DIVISION_POINTS + progress
-
-
-def next_division(tier, division):
-    """下一段的名字：钻石 II → 钻石 I；钻石 I → 大师。"""
-    d = DIVISIONS.index(division)
-    if d + 1 < len(DIVISIONS):
-        return f"{tier} {DIVISIONS[d + 1]}"
-    t = TIERS.index(tier)
-    return TIERS[t + 1] if t + 1 < len(TIERS) else None
+    """把段位换算成一条连续的分数线（每段的起点见 config/ranks.json），用来画走势图。没有段位数据返回 None。"""
+    return ranks.score(row["rank_tier"], row["rank_division"], row["rank_progress"])
 
 
 def rank_card(rows):
-    """最近一次读到的段位。"""
+    """最近一次读到的段位：段位名和段内的排位点数。不显示分母、进度条和"距下一段还差"
+    （2026-10-17 用户决定：游戏里每段要多少分不一样，有的还没核实）。"""
     row = next((r for r in reversed(rows) if rank_score(r) is not None), None)
     if row is None:
         return None
     tier, division = row["rank_tier"], row["rank_division"]
     letter, css = TIER_BADGE.get(tier, ("?", "unknown"))
-    whole = tier in NO_DIVISION  # 大师、猎杀者：只写段位名，也没有"距下一段还差"
-    progress = row["rank_progress"]
+    whole = not ranks.has_divisions(tier)  # 大师、猎杀者：只写段位名
     return {
-        "badge": letter if whole else f"{letter}{len(DIVISIONS) - DIVISIONS.index(division)}",
+        "badge": letter if whole else f"{letter}{len(ranks.DIVISIONS) - ranks.DIVISIONS.index(division)}",
         "icon": f"ranks/{css}.webp" if css in RANK_PLATES else None,
         "plate": RANK_PLATES.get(css),  # 段数写在徽章底部的铭牌上，和游戏里一样
         "division": None if whole else division,
         "tier_class": css,
-        "name": tier if whole else f"{tier} {division}",
-        "progress": progress,
-        "division_points": DIVISION_POINTS,
-        "percent": min(100, progress / DIVISION_POINTS * 100),
-        "next_name": None if whole else next_division(tier, division),
-        "to_next": max(0, DIVISION_POINTS - progress),
+        "name": ranks.rank_name(tier, division),
+        "progress": row["rank_progress"],
         "as_of": time_text(row["ended_at"]),
     }
-
-
-def division_name(score):
-    """分数线上从 score 开始的是哪一段：如 钻石 IV 的起点 → "钻石 IV"，大师的起点 → "大师"。
-    不分段的段位里面没有分界线（"大师 III"的起点等），返回 None。"""
-    t, d = divmod(score // DIVISION_POINTS, len(DIVISIONS))
-    if not 0 <= t < len(TIERS):
-        return ""
-    if TIERS[t] in NO_DIVISION:
-        return TIERS[t] if d == 0 else None
-    return f"{TIERS[t]} {DIVISIONS[d]}"
 
 
 def rp_chart(rows):
@@ -334,8 +304,9 @@ def rp_chart(rows):
     if len(points) < 2:
         return None
     low, high = min(points), max(points)
-    target = (points[-1] // DIVISION_POINTS + 1) * DIVISION_POINTS  # 下一段的起点
-    if target - high <= max(200, high - low):  # 快升段了：把下一段的分数线也画进来；离得远就不画，免得折线被压扁
+    bounds = ranks.boundaries()
+    target = next((b for b, _ in bounds if b > points[-1]), None)  # 下一段的起点（已经是最高段时没有）
+    if target is not None and target - high <= max(200, high - low):  # 快升段了：把下一段的分数线也画进来；离得远就不画，免得折线被压扁
         high = max(high, target)
     pad = max(20, (high - low) * 0.1)
     low, high = low - pad, high + pad
@@ -343,12 +314,8 @@ def rp_chart(rows):
     def y(score):
         return CHART_H - (score - low) / (high - low) * CHART_H
 
-    first_line = math.ceil(low / DIVISION_POINTS) * DIVISION_POINTS
-    lines = []
-    for b in range(first_line, int(high) + 1, DIVISION_POINTS):
-        name = division_name(b)
-        if name is not None:  # 大师里面不画分界线
-            lines.append({"y": round(y(b), 1), "top": round(y(b) / CHART_H * 100, 1), "name": name})
+    lines = [{"y": round(y(b), 1), "top": round(y(b) / CHART_H * 100, 1), "name": name}
+             for b, name in bounds if low <= b <= high]
     xs = [i / (len(points) - 1) * CHART_W for i in range(len(points))]
     line = " ".join(f"{x:.1f},{y(s):.1f}" for x, s in zip(xs, points))
     return {

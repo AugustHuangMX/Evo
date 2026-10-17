@@ -36,15 +36,9 @@
       {% endif %}
       <div>
         <div class="rank-name">{{ rank.name }}</div>
-        <div class="rank-points"><span class="num" data-count>{{ rank.progress }}</span><span class="unit num"> / {{ rank.division_points }}</span><span class="unit"> 排位点数</span></div>
+        <div class="rank-points"><span class="num" data-count>{{ rank.progress }}</span><span class="unit"> 排位点数</span></div>
       </div>
     </div>
-    {% if rank.next_name %}
-    <div class="rank-next">
-      <span>距{{ rank.next_name }}</span><span>还差 <span class="num" data-count>{{ rank.to_next }}</span></span>
-    </div>
-    <div class="bar"><div class="bar-fill tier-{{ rank.tier_class }}" style="width: {{ rank.percent }}%"></div></div>
-    {% endif %}
     {% else %}
     <div class="label">当前段位</div>
     <div class="rank-empty">还没有段位数据。每局结束后切到经验值页、等数字停下再离开，这里就会显示段位。</div>

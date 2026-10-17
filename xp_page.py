@@ -14,6 +14,7 @@ import argparse
 import re
 from pathlib import Path
 
+import ranks
 from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image, read_lines
 
 CONFIG_NAME = "xp.json"
@@ -47,23 +48,31 @@ def split_count_points(digits):
     return options[0] if len(options) == 1 else None
 
 
-def current_rank(next_text, cfg):
-    """由"下一段位：钻石 I"推出当前段位（钻石, II）；"下一段位：大师" → (钻石, I)。读不懂返回 None。"""
+def current_rank(next_text):
+    """由"下一段位：钻石 I"推出当前段位（钻石, II）；"下一段位：大师" → (钻石, I)；
+    "下一段位：Apex 猎杀者" → (大师, None)（大师不分段）。段位名和顺序见 config/ranks.json。读不懂返回 None。"""
     name = next_text.split(":")[-1].replace(" ", "")
-    tiers, divisions = cfg["tiers"], cfg["divisions"]
-    tier = next((t for t in sorted(tiers, key=len, reverse=True) if name.startswith(t)), None)
+    tiers, divisions = ranks.TIERS, ranks.DIVISIONS
+    keys = {t: t.replace(" ", "").lower() for t in tiers}  # 比较时不管空格和大小写（"Apex猎杀者"）
+    tier = next((t for t in sorted(tiers, key=lambda t: len(keys[t]), reverse=True)
+                 if name.lower().startswith(keys[t])), None)
     if tier is None:
         return None
-    roman = "".join(ROMAN.get(c, c) for c in name[len(tier):])
+    roman = "".join(ROMAN.get(c, c) for c in name[len(keys[tier]):])
     t = tiers.index(tier)
-    if roman == "":  # 下一段位不分段（如大师）：当前是上一个段位的最高段
-        return (tiers[t - 1], divisions[-1]) if t > 0 else None
+
+    def top_of_previous():  # 当前是上一个段位的最高段（不分段的段位没有段）
+        if t == 0:
+            return None
+        prev = tiers[t - 1]
+        return prev, (divisions[-1] if ranks.has_divisions(prev) else None)
+
+    if roman == "":  # 下一段位不分段（如大师）
+        return top_of_previous()
     if roman not in divisions:
         return None
     d = divisions.index(roman)
-    if d > 0:
-        return tier, divisions[d - 1]
-    return (tiers[t - 1], divisions[-1]) if t > 0 else None
+    return (tier, divisions[d - 1]) if d > 0 else top_of_previous()
 
 
 def read_xp(engine, img, cfg):
@@ -119,7 +128,7 @@ def read_xp(engine, img, cfg):
     if placement is None:
         problems.append(f"名次：没读到（OCR 原文：{raw['placement'] or '无'}）")
 
-    rank = current_rank(raw["next_rank"], cfg) if raw["next_rank"] else None
+    rank = current_rank(raw["next_rank"]) if raw["next_rank"] else None
     kills, assists = count_points("kills"), count_points("assists")
     result = {
         "rp_delta": rp,
@@ -150,7 +159,7 @@ def main():
     for path in args.images:
         r, problems = read_xp(engine, load_image(path), cfg)
         rp = "-" if r["rp_delta"] is None else f"{r['rp_delta']:+d}"
-        rank = f"{r['rank_tier']} {r['rank_division']} {r['rank_progress']}" if r["rank_tier"] else "-"
+        rank = f"{ranks.rank_name(r['rank_tier'], r['rank_division'])} {r['rank_progress']}" if r["rank_tier"] else "-"
         print(f"{path.name:36s} RP {rp:>5s}  第 {show(r['placement']):>2s} 名  "
               f"计分击杀 {show(r['kills'])}  计分助攻 {show(r['assists'])}  段位 {rank}")
         for p in problems:
