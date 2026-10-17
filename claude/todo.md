@@ -54,7 +54,7 @@
   - [ ] 第 2 步 其余内容和面板截图：2026-10-17 已用 ui-ux-pro-max 重新设计成一页式初稿（首屏 + 窗口截图、功能、使用方法、只看不动、下载、常见问题、结尾、页脚），等你看过再定稿。还剩：SmartScreen 示意图、`_headers`、404 页。截图做法：把 `data/demo.db` 复制到临时文件夹改名 `evo.db`，用 `EVO_DATA_DIR` + `--db` 启动面板，Edge 无界面截图时加 `--force-dark-mode --force-prefers-reduced-motion`（不然动画没播完）
   - [ ] 第 3 步 `release.py` 打包 zip + SHA-256，Windows 沙盒里试装
   - [ ] 第 4 步 公开仓库前检查
-  - [ ] 第 5 步 上线（Cloudflare Pages、R2、填真实下载链接）
+  - [ ] 第 5 步 上线（Cloudflare Pages、R2、填真实下载链接）。`site/` 不在 GitHub 上，所以 Pages 不能连仓库自动发布，改用"直接上传"：在 Cloudflare 后台新建 Pages 项目时选上传文件夹，把 `site/` 拖进去；以后每次改完网页再上传一次（不需要 Node.js）
   - [ ] 第 6 步 国内多地实测
 - [ ] **仓库首页说明 README**：是什么、怎么装、怎么用、原则（只看不动、全本地）、截图、许可证
 - [ ] **安装包和自动更新**：现在是 `install.py` 复制文件夹，给别人用要有正式的安装程序
