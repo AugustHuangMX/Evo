@@ -1,4 +1,4 @@
-"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行，不联网。
+"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；唯一会联网的是"检查更新"（update_check.py，可以关掉）。
 
 运行：python panel_app.py                    读正式数据库 data/evo.db
 演示：python panel_app.py --db data/demo.db   读伪数据（先运行 python demo_data.py 生成）
@@ -20,7 +20,9 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
+import app_settings
 import storage
+import update_check
 from paths import CAPTURES_DIR, CONFIG_DIR, PANEL_DIR, data_absolute
 from post_match import XP_ONLY_NOTE
 
@@ -103,6 +105,10 @@ def template_globals():
         "db_name": Path(app.config["DB"]).name,
         "nav": NAV,
         "switch": page_switch(),
+        # 检查更新：还没问过要不要自动检查 → 页面顶部问一次；已知有新版本 → 顶部提示条
+        "ask_update": app_settings.get("update_auto") is None,
+        "update_offer": update_check.available(),
+        "version": storage.APP_VERSION,
     }
 
 
@@ -511,6 +517,9 @@ def settings():
         shot_size=size_text(shot_bytes),
         version=storage.APP_VERSION,
         source_url=SOURCE_URL,
+        update_auto=app_settings.get("update_auto") is True,
+        last_check=app_settings.get("update_last_check"),
+        newest=update_check.known_newer(),
     )
 
 
@@ -538,6 +547,53 @@ def clear_data():
     storage.delete_all_matches(db())
     flash(f"已清空 {total} 局战绩。清空前的数据备份在 {backup}", "ok")
     return redirect(url_for("settings"))
+
+
+# ---------- 检查更新（update_check.py；Evo 唯一会联网的功能） ----------
+
+def back_to_page():
+    """页面顶部的提问、提示条上的按钮点完后，回到原来的页面。只允许跳回本面板的几个页面。"""
+    base, _, query = request.form.get("next", "").partition("?")
+    if base not in [url_for(endpoint) for endpoint, _ in NAV]:
+        return redirect(url_for("overview"))
+    return redirect(base + ("?" + query if query else ""))
+
+
+@app.post("/update/auto")
+def update_auto():
+    """要不要自动检查新版本：第一次打开时的提问，和设置页的开关。"""
+    on = request.form.get("auto") == "1"
+    app_settings.set_value("update_auto", on)
+    if on:
+        # 马上在后台查一次（最多几秒），页面不用等；托盘程序之后每天查一次
+        threading.Thread(target=update_check.check, name="update-check-now", daemon=True).start()
+        flash("已开启自动检查：Evo 每天联网检查一次有没有新版本。", "ok")
+    else:
+        flash("已关闭自动检查。需要时可以在设置页手动检查更新。", "ok")
+    return back_to_page()
+
+
+@app.post("/update/check")
+def check_update():
+    """设置页的"检查更新"按钮：现在就查一次（最多等几秒），结果显示在页面顶部。"""
+    result = update_check.check()
+    if not result["ok"]:
+        flash(f"没查到版本信息：{result['error']}。稍后再试一次。", "error")
+    elif result["newer"]:
+        version = result["latest"]["version"]
+        app_settings.set_value("update_dismissed", None)  # 你主动查的：之前点过"以后再说"也重新显示
+        app_settings.set_value("update_notified", version)  # 你已经看到了，托盘不用再弹通知
+        flash(f"发现新版本 {version}，点\"下载\"去官网下载。", "ok")
+    else:
+        flash(f"已经是最新版本（{storage.APP_VERSION}）。", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/update/dismiss")
+def dismiss_update():
+    """提示条上的"以后再说"：这个版本不再提示（出了更新的版本会再提示）。"""
+    app_settings.set_value("update_dismissed", request.form.get("version", ""))
+    return back_to_page()
 
 
 _icon_png = None

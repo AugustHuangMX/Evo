@@ -4,10 +4,12 @@
 """
 
 import json
+import threading
 
 from paths import DATA_DIR
 
 SETTINGS_PATH = DATA_DIR / "settings.json"
+_lock = threading.Lock()  # 托盘的后台线程和面板会同时写（如检查更新），一次只让一个改，免得互相覆盖
 
 
 def load():
@@ -22,7 +24,8 @@ def get(key, default=None):
 
 
 def set_value(key, value):
-    data = load()
-    data[key] = value
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SETTINGS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with _lock:
+        data = load()
+        data[key] = value
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

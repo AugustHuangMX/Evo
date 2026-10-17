@@ -30,6 +30,9 @@
   --warn-btn-text: #241B05;
   --dashed: #4A5160;
   --danger-border: #6B2A2E;
+  --info-text: #8EC0FF;
+  --info-bg: #0F1A2B;
+  --info-border: #24456E;
   --p1-bg: #FF5A5A; --p1-fg: #2A0A0A;
   --p2-bg: #B07CFF; --p2-fg: #1E0B3A;
   --p3-bg: #4C9AFF; --p3-fg: #06172F;
@@ -63,6 +66,9 @@
   --warn-btn-text: #241B05;
   --dashed: #C9C9C3;
   --danger-border: #E3B4B4;
+  --info-text: #1D4F99;
+  --info-bg: #EEF4FC;
+  --info-border: #BCD3F0;
   --p1-bg: #D93636; --p1-fg: #FFFFFF;
   --p2-bg: #7A3FD1; --p2-fg: #FFFFFF;
   --p3-bg: #2266CC; --p3-fg: #FFFFFF;
@@ -140,6 +146,22 @@ a { color: inherit; text-decoration: none; }
 .flash-ok { color: var(--good); }
 .flash-error { color: var(--bad); border-color: var(--danger-border); }
 .banner-warn { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid var(--warn-border); background: var(--warn-bg); border-radius: 6px; color: var(--warn-text); }
+/* 有新版本的提示条：蓝色，和"待确认"的黄色分开 */
+.banner-info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 8px 8px 16px; border: 1px solid var(--info-border);
+  background: var(--info-bg); border-radius: 6px; color: var(--info-text); }
+.banner-info svg { flex: none; }
+.banner-info form { margin: 0; }
+.banner-link { font-weight: 500; text-decoration: underline; text-underline-offset: 3px; padding: 6px 4px; }
+.banner-link:hover { text-decoration-thickness: 2px; }
+.btn-text { font: inherit; padding: 6px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.btn-text:hover { color: var(--text); background: color-mix(in srgb, var(--info-text) 12%, transparent); }
+/* 第一次打开时的提问：要不要自动检查新版本 */
+.card.ask-card { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; padding: 20px 24px; border-left: 4px solid var(--p3-bg); }
+.ask-text { flex: 1 1 420px; min-width: 0; }
+.ask-card h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.ask-card p { margin: 0; line-height: 1.7; }
+.ask-actions { display: flex; gap: 8px; }
+.ask-actions form { margin: 0; }
 
 /* ---------- 筛选栏 ---------- */
 .filters, .filter-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
@@ -157,7 +179,7 @@ select, input[type="text"] {
 .check input { width: 16px; height: 16px; accent-color: var(--warn-btn); }
 
 /* ---------- 按钮 ---------- */
-.btn { font: inherit; display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--card); color: var(--text); cursor: pointer; }
+.btn { font: inherit; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; padding: 8px 16px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--card); color: var(--text); cursor: pointer; }
 .btn:hover { border-color: var(--muted); }
 .btn.disabled { color: var(--muted); opacity: 0.5; cursor: default; }
 .btn-warn { border: none; background: var(--warn-btn); color: var(--warn-btn-text); font-weight: 500; padding: 9px 20px; }
@@ -305,6 +327,20 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .principles li { padding-left: 14px; border-left: 4px solid; border-radius: 2px; }
 .principles .pr-1 { border-color: var(--seg-other); } .principles .pr-2 { border-color: var(--p3-bg); }
 .principles .pr-3 { border-color: var(--p2-bg); } .principles .pr-4 { border-color: var(--p1-bg); }
+/* 开关（自动检查新版本）：不只靠颜色，旁边写着"已开启 / 已关闭" */
+.switch { font: inherit; display: inline-flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 4px; border: 0; border-radius: 4px;
+  background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.setting > form { margin: 0; flex: none; }
+.switch-track { position: relative; width: 40px; height: 22px; border-radius: 999px; border: 1px solid var(--dashed); background: var(--inset); }
+.switch-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); }
+.switch:hover .switch-track { border-color: var(--muted); }
+.switch[aria-checked="true"] { color: var(--text); }
+.switch[aria-checked="true"] .switch-track { background: var(--p3-bg); border-color: var(--p3-bg); }
+.switch[aria-checked="true"] .switch-knob { transform: translateX(18px); background: #FFFFFF; }
+.switch:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.update-new { margin-top: 8px; font-size: 13px; }
+.update-notes { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+.btn[aria-busy="true"] { cursor: progress; }
 .source-link { color: var(--p3-bg); }
 .source-link:hover { text-decoration: underline; }
 
@@ -327,6 +363,8 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
   transition: color 0.15s, background-color 0.15s, border-color 0.15s;
 }
 .matches tr.row { transition: background-color 0.12s; }
+.btn-text, .switch-track { transition: color 0.15s, background-color 0.15s, border-color 0.15s; }
+.switch-knob { transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.18s; }
 .icon-btn:hover { color: var(--text); border-color: var(--muted); }
 .banner-warn:hover { border-color: var(--warn-text); }
 .btn:active, .icon-btn:active { transform: translateY(1px); }

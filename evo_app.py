@@ -106,6 +106,37 @@ def listen_for_show(callback):
     threading.Thread(target=loop, name="show-signal", daemon=True).start()
 
 
+UPDATE_FIRST_DELAY = 15  # 秒：启动后等一会儿再检查新版本，不和打开窗口抢
+UPDATE_EVERY = 24 * 3600  # 之后每天检查一次
+
+
+def start_update_checker(log, notify, stop):
+    """用户同意了自动检查新版本（设置 update_auto）才联网：启动 15 秒后查一次，之后每天一次。
+    发现新版本时用托盘通知提醒，同一个版本只提醒一次；窗口顶部的提示条由面板根据检查结果显示。"""
+
+    def loop():
+        if stop.wait(UPDATE_FIRST_DELAY):
+            return
+        while True:
+            if app_settings.get("update_auto") is True:
+                import update_check
+
+                result = update_check.check()
+                if not result["ok"]:
+                    log(f"检查新版本：没查到（{result['error']}）")
+                elif result["newer"]:
+                    version = result["latest"]["version"]
+                    log(f"检查新版本：发现 {version}")
+                    # 点过"以后再说"的版本、已经提醒过的版本都不再弹通知
+                    if update_check.available() and app_settings.get("update_notified") != version:
+                        notify(f"发现 Evo 新版本 {version}，打开 Evo 查看更新内容。", "Evo 有新版本")
+                        app_settings.set_value("update_notified", version)
+            if stop.wait(UPDATE_EVERY):
+                return
+
+    threading.Thread(target=loop, name="update-check", daemon=True).start()
+
+
 def tell_user(text):
     """打包后没有终端，用弹窗告诉用户；用源码运行时打印到终端。"""
     if FROZEN:
@@ -427,8 +458,11 @@ def main():
     def toggle_pause(_icon, _item):
         recorder.toggle_pause()
 
+    stop_update_checker = threading.Event()
+
     def quit_app(_icon, _item):
         log("正在退出……")
+        stop_update_checker.set()
         recorder.quit()
         panel.close()
         icon.stop()
@@ -444,6 +478,7 @@ def main():
         ic.visible = True
         recorder.start()
         listen_for_show(lambda: panel.open())  # 再次双击 Evo 时弹出窗口
+        start_update_checker(log, icon.notify, stop_update_checker)  # 用户同意了才联网检查新版本
         if not args.background:
             panel.open(window=not args.no_window)  # 一打开 Evo 就弹出窗口，而不是只在托盘里
 

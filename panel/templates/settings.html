@@ -80,6 +80,58 @@
       </div>
     </section>
 
+    <section class="card settings-card" aria-labelledby="h-update">
+      <h2 id="h-update">更新</h2>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="update-auto-name">自动检查新版本</div>
+          <div class="setting-desc">每天联网一次，只下载官网上公开的版本号文件，不发送任何战绩、截图或电脑信息。有新版本只提醒，不会自动下载</div>
+        </div>
+        <form method="post" action="{{ url_for('update_auto') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="auto" value="{{ '0' if update_auto else '1' }}">
+          <input type="hidden" name="next" value="{{ url_for('settings') }}">
+          <button type="submit" class="switch" id="update-switch" role="switch"
+                  aria-checked="{{ 'true' if update_auto else 'false' }}" aria-labelledby="update-auto-name">
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if update_auto else '已关闭' }}</span>
+          </button>
+        </form>
+      </div>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name">当前版本 <span class="num">{{ version }}</span></div>
+          <div class="setting-desc">
+            {%- if not last_check %}还没有检查过
+            {%- else %}上次检查：{{ last_check.checked_at }} ·
+              {% if not last_check.ok %}没查到（{{ last_check.error }}）
+              {%- elif last_check.newer %}有新版本 {{ last_check.latest.version }}
+              {%- else %}已经是最新版本{% endif %}
+            {%- endif %}
+          </div>
+          {% if newest %}
+          <div class="update-new">
+            新版本 <span class="num">{{ newest.version }}</span>{% if newest.date %} · {{ newest.date }} 发布{% endif %}
+            {% if newest.notes %}
+            <ul class="update-notes">
+              {% for note in newest.notes %}<li>{{ note }}</li>{% endfor %}
+            </ul>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        <div class="setting-actions">
+          {% if newest %}
+          <a class="btn btn-primary" href="{{ newest.page }}" target="_blank" rel="noopener noreferrer">去官网下载 ↗</a>
+          {% endif %}
+          <form method="post" action="{{ url_for('check_update') }}" id="check-form">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button type="submit" class="btn" id="check-btn">检查更新</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
     <p class="setting-desc coming">开机自动启动、每局结束后的通知、性能模式等功能还在开发中，做好后会出现在这里。</p>
   </div>
 
@@ -88,7 +140,7 @@
     <div class="setting-desc">版本 <span class="num">{{ version }}</span> · MIT 开源许可</div>
     <ul class="principles">
       <li class="pr-1"><div class="setting-name">只看不动</div><div class="setting-desc">只读取屏幕画面，不接触游戏进程，不模拟任何操作</div></li>
-      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不联网，不上传，没有账号</div></li>
+      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不上传任何数据，没有账号；只有"检查更新"会联网，可以关掉</div></li>
       <li class="pr-3"><div class="setting-name">轻量</div><div class="setting-desc">后台运行占用低，不影响游戏帧数</div></li>
       <li class="pr-4"><div class="setting-name">开源</div><div class="setting-desc">所有代码公开，任何人都可以检查</div></li>
     </ul>
@@ -104,5 +156,20 @@
   syncThemeSelect();
   themeSelect.addEventListener("change", function () { evoSetTheme(themeSelect.value); });
   document.addEventListener("evo-theme", syncThemeSelect);  // 右上角按钮切换后，下拉框跟着变
+
+  // 自动检查的开关：点下去先把圆点滑过去，再提交保存（页面会重新打开）
+  var updateSwitch = document.getElementById("update-switch");
+  updateSwitch.addEventListener("click", function () {
+    var on = updateSwitch.getAttribute("aria-checked") !== "true";
+    updateSwitch.setAttribute("aria-checked", on ? "true" : "false");
+    updateSwitch.querySelector(".switch-state").textContent = on ? "已开启" : "已关闭";
+  });
+  // 检查更新要联网，最多等几秒：按钮先变成"正在检查…"，免得以为没反应
+  document.getElementById("check-form").addEventListener("submit", function () {
+    var btn = document.getElementById("check-btn");
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    btn.textContent = "正在检查…";
+  });
 </script>
 {% endblock %}

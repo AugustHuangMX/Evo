@@ -17,7 +17,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 ## 项目原则（不可违背）
 
 1. **只看不动**：只做被动截屏（DXGI 桌面复制，如 dxcam）。绝不注入游戏、不读写游戏内存、不 hook 渲染、不在游戏画面上绘制浮层、不模拟任何键盘鼠标输入、不注册全局键盘钩子。Apex PC 版自 2026-09-29 起使用 EA Javelin 反作弊，比之前的 EAC 更敏感。
-2. **全本地**：核心功能不联网。不上传任何数据，没有账号系统，没有遥测。原始截图识别完即删，只保留需要用户确认的少量截图。
+2. **全本地**：核心功能不联网。不上传任何数据，没有账号系统，没有遥测。原始截图识别完即删，只保留需要用户确认的少量截图。唯一的例外是"检查新版本"（`update_check.py`，2026-10-17 用户决定）：第一次打开时问用户要不要自动检查（每天一次），设置页可以关掉、也可以手动检查；只下载 `dl.evotracker.cn/latest.json` 这个公开文件，请求里只带 Evo 的版本号，不发送任何数据；有新版本只提醒，不自动下载安装。
 3. **轻量**：
    - 后台运行内存 < 100 MB，识别时峰值 < 300 MB，空闲时 CPU 接近 0%
    - 不影响游戏帧数（用 CapFrameX / PresentMon 实测平均帧数和 1% low）
@@ -48,7 +48,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
   - 打游戏用安装好的 Evo（数据在 `E:\Evo Tracker Data`）；用源码运行时数据仍在项目文件夹，两边互不干扰。不要直接运行 `dist\Evo\Evo.exe`：它开着时没法重新打包
   - 图标由用户设计（蓝色胶囊 + 上升柱状图），文件是 `assets/icon/evo.png`（要求见 `assets/icon/` 里的 README）；程序自动裁掉四周透明空白（`icons.py`）。托盘、exe、窗口标题栏、面板左上角的标志、浏览器标签页都用它（2026-10-17 用户决定，取代设计稿里的红色盾牌）
   - 打包命令：`python build.py`（用 `evo.spec`，PyInstaller 6.22，只在开发时用）→ `dist/Evo/Evo.exe`。自己电脑上生成的 exe 不会触发 SmartScreen（只有从网上下载的才会）
-  - 发布：`python release.py` 做压缩包和 SHA-256（要求代码都已提交）。官网和下载都在 Cloudflare：网页是 Pages 项目 `evotracker`（evotracker.cn，"直接上传"类型，不能改成连接 GitHub；`site/` 只在本机），下载文件在 R2 存储桶 `evotracker`（dl.evotracker.cn）。上传网页：`wrangler pages deploy site --project-name evotracker --branch main`。Wrangler 是 Cloudflare 的命令行工具，要 Node.js（2026-10-17 用户同意安装，只装在开发电脑上、不进 Evo 安装包；Evo 和面板本身仍不用 Node.js）
+  - 发布：`python release.py` 做压缩包和 SHA-256（要求代码都已提交）。官网和下载都在 Cloudflare：网页是 Pages 项目 `evotracker`（evotracker.cn，"直接上传"类型，不能改成连接 GitHub；`site/` 只在本机），下载文件在 R2 存储桶 `evotracker`（dl.evotracker.cn）。上传网页：`wrangler pages deploy site --project-name evotracker --branch main`。发新版本：`release.py` 还会写 `dist/latest.json`（更新内容来自 `release/更新内容.txt`）；先传压缩包、确认能下载，**最后**再传 latest.json（它一换，开着自动检查的 Evo 就会提醒更新），命令见 release.py 开头。Wrangler 是 Cloudflare 的命令行工具，要 Node.js（2026-10-17 用户同意安装，只装在开发电脑上、不进 Evo 安装包；Evo 和面板本身仍不用 Node.js）
   - 打包后排查问题：`Evo.exe --check-image 截图.png` 自检（结果写进 logs/evo.log）；`--background` 启动时只进托盘、不弹窗口（留给开机自启）；`--no-window` 只启动面板服务（测试用）
   - 启动行为（2026-10-17 用户要求）：打开 Evo 就立刻弹出窗口（约 1 秒），不能只在托盘里，否则像没打开成功。Evo 已经在运行时再双击，就让它把窗口弹出来（Windows 命名事件），不再弹"已经在运行"的提示。关掉窗口 Evo 仍在托盘里记录（和 Outplayed、Blitz 一样），第一次关时弹一条 Windows 通知说明，只提示一次（记在数据文件夹的 `settings.json`）。"只能运行一个"按数据文件夹区分
   - 托盘用 pystray（LGPLv3，用户同意）：我们的代码仍是 MIT。发布 exe 时要附上 pystray 的许可证原文，并让它以普通 .py 文件的形式放在程序文件夹里（不压进程序内部），方便别人替换

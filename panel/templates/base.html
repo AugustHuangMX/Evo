@@ -69,6 +69,43 @@
 </header>
 
 <main class="page{{ ' page-enter' if switch.enter }}">
+{% if update_offer %}
+{# 有新版本：只提醒，下载由你自己去官网（链接在系统浏览器里打开） #}
+<div class="banner-info" role="status">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 16 V8"></path><path d="M8.5 11.5 L12 8 L15.5 11.5"></path></svg>
+  <span class="grow">Evo 有新版本 <span class="num">{{ update_offer.version }}</span>，你现在用的是 <span class="num">{{ version }}</span></span>
+  <a class="banner-link" href="{{ update_offer.page }}" target="_blank" rel="noopener noreferrer">查看更新内容并下载 ↗</a>
+  <form method="post" action="{{ url_for('dismiss_update') }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <input type="hidden" name="version" value="{{ update_offer.version }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <button type="submit" class="btn-text">以后再说</button>
+  </form>
+</div>
+{% endif %}
+{% if ask_update %}
+{# 第一次打开时问一次：要不要自动检查新版本（这是 Evo 唯一会联网的功能） #}
+<section class="card ask-card" aria-labelledby="h-ask-update">
+  <div class="ask-text">
+    <h2 id="h-ask-update">要不要自动检查新版本？</h2>
+    <p class="setting-desc">开启后，Evo 每天联网一次，只下载官网上一个公开的版本号文件，不发送任何战绩、截图或电脑信息。有新版本时提醒你，下不下载由你决定。以后可以在"设置"里随时更改。</p>
+  </div>
+  <div class="ask-actions">
+    <form method="post" action="{{ url_for('update_auto') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="auto" value="1">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <button type="submit" class="btn btn-primary">自动检查</button>
+    </form>
+    <form method="post" action="{{ url_for('update_auto') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="auto" value="0">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <button type="submit" class="btn">不用了</button>
+    </form>
+  </div>
+</section>
+{% endif %}
 {% for category, message in get_flashed_messages(with_categories=true) %}
 <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
 {% endfor %}

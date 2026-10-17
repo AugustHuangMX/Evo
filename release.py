@@ -7,13 +7,21 @@
 4. 用打包好的 Evo.exe 自检一张总结页截图，确认识别模型、参照图都打进去了（截图只在开发者电脑上，没有就跳过）
 5. 压缩：最外层是一个 Evo 文件夹，附上《使用说明（先看这个）.txt》（原文在 release/使用说明.txt）
 6. 算 SHA-256：写在官网上，下载的人可以核对文件有没有被改过
+7. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt
 
 版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己的 %LOCALAPPDATA%\\Evo。
-只是想试一下流程、还有没提交的改动时：python release.py --allow-dirty（文件名会带上 -dirty，不要发布这种）
+只是想试一下流程、还有没提交的改动时：python release.py --allow-dirty（文件名会带上 -dirty，不要发布这种；也不写 latest.json）
+
+上传到 R2（dl.evotracker.cn）：先传压缩包，确认能下载、SHA-256 对得上，最后再传 latest.json——
+latest.json 一换，所有开着自动检查的 Evo 就会提醒更新，所以压缩包必须先到位：
+    wrangler r2 object put evotracker/Evo-<版本号>-win64.zip --file dist/Evo-<版本号>-win64.zip --remote
+    wrangler r2 object put evotracker/latest.json --file dist/latest.json --remote --cache-control "max-age=300"
+latest.json 只让 CDN 缓存 5 分钟（max-age=300），换了以后很快就能被查到
 """
 
 import argparse
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -29,6 +37,8 @@ DIST = ROOT / "dist"
 APP = DIST / "Evo"
 README = ROOT / "release" / "使用说明.txt"
 README_NAME = "使用说明（先看这个）.txt"
+NOTES = ROOT / "release" / "更新内容.txt"
+DOWNLOAD_PAGE = "https://evotracker.cn/#download"
 CHECK_IMAGE = ROOT / "captures" / "live" / "20261016_211452" / "05_222749.png"
 CHECK_EXPECT = "总结页 第 8 名，击杀/助攻/击倒 3/0/3，伤害 688"  # 这张截图的正确结果
 
@@ -43,7 +53,7 @@ def git(*args):
 
 
 def step(n, text):
-    print(f"\n[{n}/6] {text}", flush=True)
+    print(f"\n[{n}/7] {text}", flush=True)
 
 
 def check_clean(allow_dirty):
@@ -100,6 +110,20 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def write_latest(today):
+    """写 dist/latest.json（格式见 update_check.py）。更新内容：release/更新内容.txt 里每行一条，# 开头的行不算。"""
+    notes = [line.strip() for line in NOTES.read_text(encoding="utf-8").splitlines()
+             if line.strip() and not line.strip().startswith("#")] if NOTES.is_file() else []
+    if len(notes) > 10 or any(len(n) > 200 for n in notes):
+        raise Stop(f"{NOTES.name} 最多 10 条、每条不超过 200 字（Evo 只显示这么多）")
+    latest = {"version": APP_VERSION, "date": today, "page": DOWNLOAD_PAGE, "notes": notes}
+    target = DIST / "latest.json"
+    target.write_text(json.dumps(latest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"    {target}：版本 {APP_VERSION}，{len(notes)} 条更新内容")
+    for note in notes:
+        print(f"      · {note}")
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="做发布用的压缩包（打包、自检、压缩、算 SHA-256）")
@@ -125,8 +149,8 @@ def main():
         step(5, "压缩")
         name = f"Evo-{APP_VERSION}{'-dirty' if dirty else ''}-win64.zip"
         target = DIST / name
-        readme = README.read_text(encoding="utf-8").format(version=APP_VERSION, date=f"{date.today():%Y-%m-%d}",
-                                                           commit=commit)
+        today = f"{date.today():%Y-%m-%d}"
+        readme = README.read_text(encoding="utf-8").format(version=APP_VERSION, date=today, commit=commit)
         count = make_zip(target, readme)
         size = target.stat().st_size
         print(f"    {target}（{count} 个文件，{size / 2**20:.0f} MB）")
@@ -135,6 +159,12 @@ def main():
         digest = sha256(target)
         (DIST / f"{name}.sha256").write_text(f"{digest}  {name}\n", encoding="utf-8")
         print(f"    {digest}")
+
+        step(7, "写版本号文件 latest.json")
+        if dirty:
+            print("    ⏭ 跳过：有没提交的改动，这次的压缩包不能发布")
+        else:
+            write_latest(today)
     except Stop as e:
         print(f"\n❌ 停下了：{e}")
         return 1
@@ -146,6 +176,8 @@ def main():
     print(f"SHA-256：{digest}")
     if dirty:
         print("⚠ 这次有没提交的改动，只能自己试，不要发布")
+    else:
+        print("\n上传：先传压缩包，确认能下载，最后传 latest.json（顺序和命令见 release.py 开头的说明）")
     return 0
 
 
