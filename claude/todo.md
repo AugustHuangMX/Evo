@@ -51,7 +51,7 @@
 ## 五、公开发布前
 
 - [ ] **官网**（2026-10-17 定的方案）：网页放仓库的 `site/`，用 Cloudflare Pages 发布；下载文件放 Cloudflare R2（`dl.` 子域名，流量免费），GitHub Releases 作备用；域名在阿里云买、DNS 交给 Cloudflare，服务器不在大陆所以不用备案。只做中文。先发未签名的预览版 zip，同时申请 SignPath 免费签名。国内访问：页面不加载任何外部资源、中文用系统字体、不用 `pages.dev` 地址、不加统计代码。第 1 步（骨架和首屏）已完成，见 progress.md
-  - [ ] 第 2 步 其余内容（特点、安全说明、下载与安装、常见问题、隐私与代码签名、页脚）和面板截图
+  - [ ] 第 2 步 其余内容和面板截图：2026-10-17 已用 ui-ux-pro-max 重新设计成一页式初稿（首屏 + 窗口截图、功能、使用方法、只看不动、下载、常见问题、结尾、页脚），等你看过再定稿。还剩：SmartScreen 示意图、`_headers`、404 页。截图做法：把 `data/demo.db` 复制到临时文件夹改名 `evo.db`，用 `EVO_DATA_DIR` + `--db` 启动面板，Edge 无界面截图时加 `--force-dark-mode --force-prefers-reduced-motion`（不然动画没播完）
   - [ ] 第 3 步 `release.py` 打包 zip + SHA-256，Windows 沙盒里试装
   - [ ] 第 4 步 公开仓库前检查
   - [ ] 第 5 步 上线（Cloudflare Pages、R2、填真实下载链接）
