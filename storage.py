@@ -14,7 +14,7 @@ from pathlib import Path
 
 from paths import DB_PATH
 
-APP_VERSION = "0.0.1"
+APP_VERSION = "0.1.0"
 SCHEMA_VERSION = 1  # 以后表结构变了就加 1，程序据此自动升级旧数据库
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
