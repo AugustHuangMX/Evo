@@ -370,6 +370,7 @@ def check_images(paths, log):
     """识别几张截图，把结果写进日志。打包后用来确认识别模型和配置都在；以后排查问题也能用。"""
     from match_start import read_match_start
     from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image
+    from player_name import PlayerNameReader
     from screens import ScreenDetector
     from summary_page import read_summary, show
     from xp_page import read_xp
@@ -390,7 +391,9 @@ def check_images(paths, log):
         if screen == "summary":
             results, problems = read_summary(engine, img, cfg)
             v = {k: show(r["value"]) for k, r in results.items()}
-            text = f"总结页 第 {v['placement']} 名，击杀/助攻/击倒 {v['kda']}，伤害 {v['damage']}，生存 {v['survival_time']}"
+            name = PlayerNameReader(engine).read(img, "summary")
+            text = (f"总结页 第 {v['placement']} 名，击杀/助攻/击倒 {v['kda']}，伤害 {v['damage']}，生存 {v['survival_time']}，"
+                    f"玩家名 {name[0] if name else '没读到'}")
         elif screen == "xp":
             r, problems = read_xp(engine, img, xp_cfg)
             text = f"经验值页 RP {r['rp_delta']}，第 {r['placement']} 名，段位 {r['rank_tier']} {r['rank_division']} {r['rank_progress']}"
