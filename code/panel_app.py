@@ -188,8 +188,11 @@ def page_switch():
 
 @app.template_global()
 def url_with(**changes):
-    """在当前网址的筛选条件基础上，改动其中几项（值为 None 表示去掉这一项）。"""
+    """在当前网址的筛选条件基础上，改动其中几项（值为 None 表示去掉这一项）。
+    改了展开哪一局（open）时，"详情与修改"（detail）也收起，除非同时指定了 detail。"""
     args = request.args.to_dict()
+    if "open" in changes and "detail" not in changes:
+        args.pop("detail", None)
     for key, value in changes.items():
         if value is None:
             args.pop(key, None)
@@ -264,10 +267,24 @@ def view(row):
         "rp_class": "none" if rp is None else ("good" if rp >= 0 else "bad"),
         "needs_review": bool(row["needs_review"]),
         "review_note": row["review_note"],
+        "xp_only": XP_ONLY_NOTE in (row["review_note"] or ""),  # 没有总结页的局：也就读不到队友
         "has_evidence": bool(row["evidence_path"]),
         "evidence_recorded": screenshots.recorded(row["evidence_path"]),  # 记录程序存的截图：确认、删除这一局时会删掉
         "form": {name: "" if row[name] is None else row[name] for name in EDITABLE},
         "warn_fields": warn_fields(row["review_note"]) if row["needs_review"] else set(),
+    }
+
+
+def mate_view(mate):
+    """队友表的一行（见 storage.MATE_COLUMNS），整理成战绩页展开后显示的文字。"""
+    return {
+        "name": mate["name"],
+        "player_id": mate["player_id"],
+        "kda": " / ".join(dash(mate[k]) for k in ("kills", "assists", "knockdowns")),
+        "damage": dash(mate["damage"], "{:,}"),
+        "survival": storage.mmss(mate["survival_time"]).replace("-", "—"),
+        "revives": dash(mate["revives"]),
+        "respawns": dash(mate["respawns"]),
     }
 
 
@@ -439,6 +456,11 @@ def matches():
     rows = [view(r) for r in rows]
     if only_review and open_id is None and rows:
         open_id = rows[0]["id"]  # "只看待确认"时，自动展开第一局
+    # 点开一局：先只展开两名队友；识别截图和修改表单要再点"详情与修改"（detail=1）。待确认的局直接全部展开
+    for r in rows:
+        if r["id"] == open_id:
+            r["mates"] = [mate_view(m) for m in storage.teammates_of(db(), open_id)]
+            r["show_detail"] = r["needs_review"] or request.args.get("detail") == "1"
 
     return render_template(
         "matches.html",
@@ -722,7 +744,7 @@ def select_account():
     base, _, query = request.form.get("next", "").partition("?")
     if base not in [url_for(endpoint) for endpoint, _ in NAV]:
         base = url_for("overview")
-    args = {k: v for k, v in parse_qsl(query) if k not in ("page", "open", "legend")}
+    args = {k: v for k, v in parse_qsl(query) if k not in ("page", "open", "detail", "legend")}
     return redirect(base + ("?" + urlencode(args) if args else ""))
 
 

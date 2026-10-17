@@ -68,7 +68,8 @@
     {% set is_open = (r.id == open_id) %}
     <tr id="m{{ r.id }}" class="row {{ 'review' if r.needs_review }} {{ 'open' if is_open }}"
         data-href="{{ url_with(open=None if is_open else r.id) }}">
-      <td class="first"><a class="badge {{ r.badge }}" href="{{ url_with(open=None if is_open else r.id) }}" aria-label="展开第 {{ r.id }} 号对局">{{ r.placement }}</a></td>
+      <td class="first"><a class="badge {{ r.badge }}" href="{{ url_with(open=None if is_open else r.id) }}"
+          aria-expanded="{{ 'true' if is_open else 'false' }}" aria-label="{{ '收起' if is_open else '展开' }}第 {{ r.id }} 号对局的队友">{{ r.placement }}</a></td>
       <td class="muted">{{ r.time }}</td>
       <td>{{ r.mode }}</td>
       <td>{{ r.map }}</td>
@@ -79,6 +80,41 @@
       <td class="right num last rp-{{ r.rp_class }}">{{ r.rp }}</td>
     </tr>
     {% if is_open %}
+    {# 两名队友：列和表头对齐，左边一条连接线表示属于上面这一局（名字悬停时显示 ID） #}
+    {% for m in r.mates %}
+    <tr class="mate-row {{ 'review' if r.needs_review }}">
+      <td class="first"><span class="branch {{ 'end' if loop.last }}" aria-hidden="true"></span></td>
+      <td colspan="3" class="mate-name">
+        <span class="sr-only">队友</span>
+        {% if m.name %}<span class="name"{% if m.player_id %} title="ID {{ m.player_id }}"{% endif %}>{{ m.name }}</span>
+        {% else %}<span class="muted"{% if m.player_id %} title="ID {{ m.player_id }}"{% endif %}>名字没读到</span>{% endif %}
+        <span class="mate-extra">急救 {{ m.revives }} · 重生 {{ m.respawns }}</span>
+      </td>
+      <td class="muted">—</td>
+      <td class="right num">{{ m.kda }}</td>
+      <td class="right num">{{ m.damage }}</td>
+      <td class="right num">{{ m.survival }}</td>
+      <td class="last"></td>
+    </tr>
+    {% else %}
+    <tr class="mate-row {{ 'review' if r.needs_review }}">
+      <td class="first"><span class="branch end" aria-hidden="true"></span></td>
+      <td colspan="8" class="mate-none">{{ '这局没有总结页（第 2 名、冠军时没有这一页），读不到队友' if r.xp_only else '没有队友的数据' }}</td>
+    </tr>
+    {% endfor %}
+    {% if not r.needs_review %}
+    <tr class="mate-foot">
+      <td colspan="9" class="first last">
+        <a class="btn-text detail-toggle" href="{{ url_with(open=r.id, detail=None if r.show_detail else '1') }}"
+           aria-expanded="{{ 'true' if r.show_detail else 'false' }}">
+          {{ '收起详情' if r.show_detail else '详情与修改' }}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="{{ 'M6 15 L12 9 L18 15' if r.show_detail else 'M6 9 L12 15 L18 9' }}"></path></svg>
+        </a>
+      </td>
+    </tr>
+    {% endif %}
+    {% endif %}
+    {% if is_open and r.show_detail %}
     <tr class="detail-row {{ 'review' if r.needs_review }}">
       <td colspan="9">
         <div class="detail {{ 'detail-review' if r.needs_review }}">
@@ -152,11 +188,11 @@
       window.location = tr.dataset.href;
     });
   });
-  // 展开了某一局：截图加载完后，平滑地滚动到刚好能看到整个详情（已经看得到就不动）
-  var detail = document.querySelector(".detail-row");
-  if (detail && !document.querySelector(".flash")) {
+  // 展开了某一局：截图加载完后，平滑地滚动到刚好能看到展开的全部内容（队友，和打开了的详情；已经看得到就不动）
+  var expanded = document.querySelectorAll(".mate-row, .mate-foot, .detail-row");
+  if (expanded.length && !document.querySelector(".flash")) {
     window.addEventListener("load", function () {
-      detail.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
+      expanded[expanded.length - 1].scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
     });
   }
 </script>

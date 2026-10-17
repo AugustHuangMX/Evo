@@ -13,5 +13,12 @@
     "survival_time": {"label": "生存时间",     "roi": [748, 543, 180, 45],  "expect": "duration"},
     "revives":       {"label": "急救次数",     "roi": [748, 613, 180, 40],  "expect": "integer",  "range": [0, 99]},
     "respawns":      {"label": "重生次数",     "roi": [748, 683, 180, 40],  "expect": "integer",  "range": [0, 99]}
+  },
+  "teammates": {
+    "_说明": "队友（见 teammates.py；2026-10-17 用户决定记录队友的名字、ID 和数据）：总结页左右两张卡片和中间那张版式相同，只是左右平移 offsets。数据项用上面 fields 里同名项的区域平移；名字和 ID 的区域按中间卡片写（自己那张卡片下面没有 ID）。读不准的项留空，不标待确认。2026-10-17 用 2560x1440 实战截图量的：左右卡片的文字比中间那张偏 -708 / +707 像素",
+    "offsets": {"left": -530, "right": 530},
+    "fields": ["kda", "damage", "survival_time", "revives", "respawns"],
+    "name": {"roi": [748, 300, 222, 34]},
+    "player_id": {"roi": [736, 922, 300, 38], "length": [15, 25]}
   }
 }

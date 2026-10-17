@@ -16,14 +16,14 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 
 | 内容 | 文件 | 里面有什么 |
 |---|---|---|
-| 战绩数据库 | `data\evo.db` | 每一局的开始和结束时间、你自己的游戏名、模式、地图、传奇、名次、击杀/助攻/击倒、伤害、生存时间、急救和重生次数、排位分（RP）变化、段位、"待确认"标记和你写的修正说明、对应截图的位置、Evo 的版本号；以及你自己的几个游戏名分别属于哪个账号（多账号功能用） |
+| 战绩数据库 | `data\evo.db` | 每一局的开始和结束时间、你自己的游戏名、模式、地图、传奇、名次、击杀/助攻/击倒、伤害、生存时间、急救和重生次数、排位分（RP）变化、段位、"待确认"标记和你写的修正说明、对应截图的位置、Evo 的版本号；以及你自己的几个游戏名分别属于哪个账号（多账号功能用）；0.2.0 之后的版本还有总结页上两名队友的游戏名、卡片下面的 ID 和他们这一局的击杀/助攻/击倒、伤害、生存时间、急救和重生次数 |
 | 截图 | `captures\` | 记录时保存的游戏画面（见下面第二节）。预览版目前会保留全部截图，用来改进识别准确率；一晚可能有几百 MB |
 | 运行记录 | `logs\evo.log` | Evo 什么时候开始和停止记录、屏幕分辨率、数据文件在电脑上的路径（路径里可能有你的 Windows 用户名）、识别结果、你的游戏名、内存占用、出错信息。文件最多约 4 MB，写满后自动覆盖最旧的内容 |
 | 设置 | `settings.json` | 你在设置页选的选项、是否开启自动检查更新、上次检查的时间和结果、哪些提示已经显示过 |
 | 窗口缓存 | `webview\` | Evo 窗口（WebView2）自己的缓存，只和 Evo 的本地页面有关 |
 | 数据库备份 | `data\evo.db.bak-…` | 只在你点"清空所有战绩"时自动生成，防止误删 |
 
-数据库里只存**你自己**的数据：Evo 不会把队友或对手的名字、ID、段位写进数据库。
+数据库里只存**你自己和你的队友**的数据：0.2.0 之后的版本会从总结页读出两名队友的游戏名、卡片下面的 ID 和他们这一局的数据，用来在战绩页显示你和谁一起打、各打得怎么样（0.2.0 及以前的版本不存队友）。Evo 不会把对手的名字、ID 写进数据库，也不存任何人的段位。
 
 ## 二、截图里可能有什么
 
@@ -118,6 +118,7 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 **This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.**
 
 - **All data stays on your computer.** Evo captures the screen while the game is running and saves match results, screenshots, a log file and settings in its local data folder (shown in Evo's Settings page; `%LOCALAPPDATA%\Evo` by default). Nothing is uploaded. There is no account system, no analytics, no telemetry, no ads and no automatic crash reporting.
+- **Teammates (versions after 0.2.0).** From the post-match summary screen, Evo also saves your two teammates' in-game names, the IDs shown under their cards, and their stats for that match (kills/assists/knockdowns, damage, survival time, revives, respawns), so the Matches page can show who you played with. Opponents' names and IDs are not saved, and nobody's rank is saved.
 - **Screenshots** show the whole screen at that moment, so they may contain other players' in-game names and anything else on screen (for example a Discord or Steam overlay). They stay on your computer.
 - **Update check (the only network feature, opt-in; added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once a day while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json`. The request contains only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates by itself.
 - **The Evo window** shows a local page served on `127.0.0.1` only, and loads nothing from the internet. It uses Microsoft Edge WebView2, whose diagnostic data is governed by your Windows privacy settings.

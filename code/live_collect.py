@@ -2,7 +2,8 @@
 
 每秒截一次屏（只截屏，不碰游戏），判断是不是下面几种画面（见 screens.py：先比外观，不到 1 毫秒；像了才用识别引擎
 读关键字确认）。识别模型用到时才加载，闲置 2 分钟后释放（打游戏的大部分时间用不到）：
-- 总结页（中间卡片上有"击杀/助攻/击倒"）：改成每 0.3 秒检查一次，读全了就存一局（见 SummaryWatcher）
+- 总结页（中间卡片上有"击杀/助攻/击倒"）：改成每 0.3 秒检查一次，读全了就存一局（见 SummaryWatcher），
+  同一帧再读左右两张卡片上的队友（见 teammates.py）
 - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上这一局的 RP、段位，名次缺的话也补上。
   没有总结页的局（第 2 名、冠军）只靠经验值页单独记一局。怎么归到同一局见 post_match.py
 - 开局画面：读本局的模式和地图（见 match_start.py），两项都读到就不再读
@@ -42,6 +43,7 @@ from post_match import PostMatch
 from process_info import memory_mb, set_low_priority
 from screens import ScreenDetector
 from summary_page import KEY_FIELDS, read_summary, show, summary_to_match
+from teammates import describe, read_teammates
 from xp_page import read_xp
 
 LATE_FIELDS = ("placement", "squad_kills")  # 总结页上晚 1–2 秒才滑进来的项
@@ -135,6 +137,10 @@ class SummaryWatcher:
                  f"击杀/助攻/击倒 {show(values['kda'])}，伤害 {show(values['damage'])}")
         for p in problems:
             self.log(f"           ⚠ {p}")
+        mates = read_teammates(self.engine, frame, self.cfg)  # 读不准的项留空，不因为队友标待确认
+        storage.save_teammates(self.conn, match_id, mates)
+        for mate in mates:
+            self.log(f"           队友 {describe(mate)}")
         name = self.names.on_summary(frame) if self.names else None
         self.post.on_summary_saved(match_id, values, when, name)
 

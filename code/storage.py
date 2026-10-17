@@ -2,7 +2,7 @@
 
 数据库文件在数据文件夹的 data/evo.db（位置见 paths.py；在项目里时已被 .gitignore 排除，不会上传）。
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
-另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节。
+另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节；一张队友表 teammates（每局最多两行）。
 
 查看最近的记录：python code/storage.py
 导出成 CSV：    python code/storage.py --export data/matches.csv
@@ -17,7 +17,7 @@ from pathlib import Path
 from paths import DB_PATH
 
 APP_VERSION = "0.2.0"
-SCHEMA_VERSION = 3  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+SCHEMA_VERSION = 4  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -56,11 +56,30 @@ NAME_TABLE = """CREATE TABLE IF NOT EXISTS player_names (
   confirmed INTEGER NOT NULL DEFAULT 0  -- 1 = 已确认；0 = 新名字，等你在弹窗里回答"是不是同一个人"
 )"""
 
+# 队友表：总结页左右两张卡片上的队友，一局最多两行（见 teammates.py）。读不准的项为空。
+# Stata 类比：一份长格式数据（每局 × 每个队友一行），按 match_id merge m:1 到每一局
+MATE_COLUMNS = ("name", "player_id", "kills", "assists", "knockdowns", "damage", "survival_time", "revives", "respawns")
+MATE_TABLE = """CREATE TABLE IF NOT EXISTS teammates (
+  match_id INTEGER NOT NULL,  -- 哪一局（matches.match_id）
+  slot TEXT NOT NULL,  -- left / right：总结页上左边还是右边的卡片
+  name TEXT,  -- 队友的游戏名
+  player_id TEXT,  -- 卡片下面的 ID（数字串，开头的 0 要留着）
+  kills INTEGER,
+  assists INTEGER,
+  knockdowns INTEGER,
+  damage INTEGER,
+  survival_time INTEGER,  -- 秒
+  revives INTEGER,
+  respawns INTEGER,
+  PRIMARY KEY (match_id, slot)
+)"""
+
 # 旧数据库怎么升级：版本号 → 升到这个版本要执行的 SQL。只加列、加表，已有的数据不动
 # （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）
 MIGRATIONS = {
     2: ["ALTER TABLE matches ADD COLUMN player_name TEXT"],  # 2026-10-17 多账号：每局的玩家名
     3: [NAME_TABLE],  # 2026-10-17 多账号：账号对照表
+    4: [MATE_TABLE],  # 2026-10-17 队友：总结页上两名队友的数据
 }
 
 
@@ -78,6 +97,7 @@ def _upgrade(conn):
             cols = ",\n  ".join(f"{name} {kind}" for name, kind in COLUMNS.items())
             conn.execute(f"CREATE TABLE IF NOT EXISTS matches (\n  {cols}\n)")
             conn.execute(NAME_TABLE)
+            conn.execute(MATE_TABLE)
         else:
             for v in range(version + 1, SCHEMA_VERSION + 1):
                 for sql in MIGRATIONS[v]:
@@ -183,7 +203,23 @@ def update_match(conn, match_id, fields):
 
 def delete_match(conn, match_id):
     conn.execute("DELETE FROM matches WHERE match_id = ?", (match_id,))
+    conn.execute("DELETE FROM teammates WHERE match_id = ?", (match_id,))
     conn.commit()
+
+
+def save_teammates(conn, match_id, mates):
+    """存一局的队友（覆盖这一局原来的）。mates：teammates.read_teammates 的结果，每人一个字典，键是 slot 和 MATE_COLUMNS。"""
+    conn.execute("DELETE FROM teammates WHERE match_id = ?", (match_id,))
+    for mate in mates:
+        conn.execute(f"INSERT INTO teammates (match_id, slot, {', '.join(MATE_COLUMNS)}) "
+                     f"VALUES (?, ?, {', '.join('?' for _ in MATE_COLUMNS)})",
+                     [match_id, mate["slot"], *(mate.get(k) for k in MATE_COLUMNS)])
+    conn.commit()
+
+
+def teammates_of(conn, match_id):
+    """一局的队友，左边的在前。没有记录队友（只有经验值页的局、加队友功能以前的局）返回空列表。"""
+    return conn.execute("SELECT * FROM teammates WHERE match_id = ? ORDER BY slot", (match_id,)).fetchall()
 
 
 def backup_db(conn, path):
@@ -198,6 +234,7 @@ def backup_db(conn, path):
 def delete_all_matches(conn):
     """删除所有对局，返回删了几局。"""
     n = conn.execute("DELETE FROM matches").rowcount
+    conn.execute("DELETE FROM teammates")
     conn.commit()
     return n
 

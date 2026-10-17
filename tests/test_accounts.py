@@ -157,7 +157,7 @@ def switch_checks():
     page = client.get("/matches").get_data(as_text=True)
     out["main"] = (total(page), legends(page), "有 1 局识别结果不确定" in page)
     first = storage.query_matches(conn, names=["Main"])[0][0]["match_id"]
-    out["detail"] = "玩家名 Main" in client.get(f"/matches?open={first}").get_data(as_text=True)
+    out["detail"] = "玩家名 Main" in client.get(f"/matches?open={first}&detail=1").get_data(as_text=True)
     overview = client.get("/").get_data(as_text=True)
     out["main_overview"] = 'class="rank-name"' in overview and "段位按账号分开" not in overview
     client.post("/account", data={"token": token, "account": "all", "next": "/"})

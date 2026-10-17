@@ -1,6 +1,8 @@
 # ===== 项目数据（只存在本地，绝不提交）=====
 # 截图（测试也用这里的截图，不提交：太大，而且有其他玩家的名字和 ID。见 tests/run_all.py）
 captures/
+# 整晚重放的队友答案：有队友的名字和 ID，和截图一样只留在本机（找不到时这项检查跳过，见 tests/test_replay.py）
+tests/replay_20261016_teammates.csv
 # 数据库等运行数据
 data/
 *.db

@@ -40,6 +40,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 BLACK = np.zeros((1440, 2560, 3), np.uint8)  # 代表"别的画面"（对局中、观战等）：什么都认不出
 _runs = itertools.count(1)
+last_db = None  # 最近一次 run_collect 用的临时数据库
 
 
 class MissingShots(Exception):
@@ -98,12 +99,14 @@ class FakeClock:
 def run_collect(frames, picture, **options):
     """把 frames 依次当作屏幕画面喂给 live_collect.collect()。picture(帧) 返回这一帧的图片。
     options 原样交给 collect()（如 summary_timeout=1）。
-    返回 (数据库里的全部对局, 每次等待的记录 [(帧, 秒数)], 日志的每一行)。"""
+    返回 (数据库里的全部对局, 每次等待的记录 [(帧, 秒数)], 日志的每一行)。
+    这次用的临时数据库记在 fake_game.last_db（要查别的表时用，如队友表）。"""
+    global last_db
     stop = threading.Event()
     camera = FakeCamera(frames, picture, stop)
     clock = FakeClock(camera)
     log = []
-    db = _TEMP / f"run{next(_runs)}.db"
+    db = last_db = _TEMP / f"run{next(_runs)}.db"
     with mock.patch.object(live_collect.dxcam, "create", lambda **kw: camera), \
             mock.patch.object(live_collect, "time", clock):
         live_collect.collect(db_path=db, stop=stop, log=log.append, **options)

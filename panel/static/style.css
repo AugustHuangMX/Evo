@@ -236,11 +236,32 @@ table.matches { width: 100%; min-width: 900px; border-collapse: collapse; }
 .p2 { background: var(--p2-bg); color: var(--p2-fg); }
 .p3 { background: var(--p3-bg); color: var(--p3-fg); }
 .p4 { background: var(--p4-bg); color: var(--p4-fg); }
+/* 白天主题里第 11 名以后的徽章和展开、悬停时的行底色一样（都是 #E7E7E2），加一圈细边免得看不见 */
+.matches tr.row:hover .p4, .matches tr.open .p4 { box-shadow: inset 0 0 0 1px var(--dashed); }
 .p-none { border: 1px dashed var(--dashed); color: var(--muted); }
 .tag-review { margin-left: 6px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--warn-pill-bg); border: 1px solid var(--warn-pill-border); color: var(--warn-text); }
 .rp-good { color: var(--good); }
 .rp-bad { color: var(--bad); }
 .rp-none { color: var(--muted); }
+
+/* ---------- 展开的队友（点一局后出现的两行）----------
+   层级靠大小、粗细、颜色深浅区分，不靠彩色：比自己那行矮、字小一号、数字细一级；
+   左边一条连接线从名次徽章下面引出来，表示"属于上面这一局" */
+.mate-row, .mate-foot { background: var(--nav-on-bg); }
+.matches .mate-row > td { padding-top: 7px; padding-bottom: 7px; font-size: 13px; }
+.mate-row .num { font-weight: 500; }
+.mate-row .first { position: relative; }
+/* 竖线从名次徽章的中线（20 + 44 / 2 = 42px）往下，横线一直连到名字前面（这一格的右边缘） */
+.branch { position: absolute; left: 42px; right: 0; top: -8px; bottom: 0; }
+.branch::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--dashed); }
+.branch.end::before { bottom: calc(50% - 4px); }
+.branch::after { content: ""; position: absolute; left: 0; right: 0; top: calc(50% + 4px); border-top: 1px solid var(--dashed); }
+.mate-name .name { font-weight: 500; }
+.mate-extra { margin-left: 12px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.mate-none { color: var(--muted); }
+.matches .mate-foot > td { padding-top: 2px; padding-bottom: 10px; text-align: right; }
+.detail-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; text-decoration: none; }
+.detail-toggle:focus-visible { outline: 2px solid var(--info-text); outline-offset: 2px; }
 
 /* ---------- 展开的详情和修正表单 ---------- */
 .detail-row > td { padding: 0 20px 20px; }
@@ -418,6 +439,9 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 
 /* 3. 新出现的东西：展开的详情、提示消息；弹窗从下往上淡入，背后的遮罩淡入 */
 .detail, .flash { animation: evo-drop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.mate-row, .mate-foot { animation: evo-drop 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }  /* 队友两行依次落下 */
+.mate-row + .mate-row { animation-delay: 40ms; }
+.mate-foot { animation-delay: 80ms; }
 .dialog[open] { animation: evo-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .dialog[open]::backdrop { animation: evo-fade-in 220ms both; }
 .choice { transition: border-color 0.15s, background-color 0.15s; }
