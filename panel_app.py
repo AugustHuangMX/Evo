@@ -112,9 +112,31 @@ def template_globals():
         "ask_update": app_settings.get("update_auto") is None,
         "update_offer": update_check.available(),
         "version": storage.APP_VERSION,
-        # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"
+        # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"；有 2 个以上账号时，右上角切换账号
         "name_question": name_question(),
+        "account_view": account_view(),
     }
+
+
+def account_view():
+    """现在看的是哪个账号（每次网页请求算一次）。返回字典：
+    accounts（所有账号）、current（看的账号；None = 不分账号）、all（选了"全部账号"）、
+    names（筛选对局用的玩家名；None = 不按账号筛选）。
+    只有 1 个账号（或还没认出过玩家名）时不分账号，和以前一样显示全部（包括还没认出玩家名的局）。
+    有 2 个以上时：这个窗口里选过就看选的那个；没选过（每次打开窗口）看最近玩过的账号——在小号上打完、打开 Evo 看到的就是小号。"""
+    if "account_view" in g:
+        return g.account_view
+    everyone = storage.accounts(db())
+    view = {"accounts": everyone, "current": None, "all": False, "names": None}
+    if len(everyone) >= 2:
+        choice = session.get("account")
+        if choice == "all":
+            view["all"] = True
+        else:
+            current = next((a for a in everyone if a["id"] == choice), None) or max(everyone, key=lambda a: a["last"])
+            view.update(current=current, names=current["raw"])
+    g.account_view = view
+    return view
 
 
 def name_question():
@@ -219,6 +241,7 @@ def view(row):
     rp = row["rp_delta"]
     return {
         "id": row["match_id"],
+        "player_name": row["player_name"] or "—",
         "placement": dash(row["placement"], "#{}"),
         "badge": badge_class(row["placement"]),
         "time": time_text(row["ended_at"]),
@@ -393,7 +416,8 @@ def day_start(now):
 @app.route("/")
 def overview():
     range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
-    rows = storage.all_matches(db())
+    names = account_view()["names"]
+    rows = storage.all_matches(db(), names)
     in_range = rows[-30:] if range_key == "30" else rows
     since = f"{day_start(datetime.now()):%Y-%m-%d %H:%M:%S}"
     today = [r for r in rows if (r["ended_at"] or "") >= since]
@@ -410,7 +434,7 @@ def overview():
         stats=stat_cards(in_range),
         recent=[view(r) for r in reversed(rows[-5:])],
         legends=legend_bars(in_range),
-        review_count=storage.count_review(db()),
+        review_count=storage.count_review(db(), names),
         total=len(rows),
     )
 
@@ -422,8 +446,9 @@ def matches():
     legend = request.args.get("legend") or None
     page = max(1, request.args.get("page", 1, type=int))
     open_id = request.args.get("open", type=int)
+    names = account_view()["names"]
 
-    rows, total = storage.query_matches(db(), mode, only_review, legend, PER_PAGE, (page - 1) * PER_PAGE)
+    rows, total = storage.query_matches(db(), mode, only_review, legend, PER_PAGE, (page - 1) * PER_PAGE, names)
     rows = [view(r) for r in rows]
     if only_review and open_id is None and rows:
         open_id = rows[0]["id"]  # "只看待确认"时，自动展开第一局
@@ -440,9 +465,9 @@ def matches():
         modes=MODES,
         only_review=only_review,
         legend=legend,
-        legends=storage.distinct_values(db(), "legend"),
+        legends=storage.distinct_values(db(), "legend", names),
         open_id=open_id,
-        review_count=storage.count_review(db()),
+        review_count=storage.count_review(db(), names),
         editable=EDITABLE,
     )
 
@@ -557,6 +582,9 @@ def settings():
         update_auto=app_settings.get("update_auto") is True,
         last_check=app_settings.get("update_last_check"),
         newest=update_check.known_newer(),
+        accounts=[{**a, "last_text": time_text(a["last"]),
+                   "name_stats": [{**one, "last_text": time_text(one["last"])} for one in a["name_stats"]]}
+                  for a in account_view()["accounts"]],
     )
 
 
@@ -654,6 +682,46 @@ def answer_name():
     storage.answer_name(db(), name, target["id"])
     flash(f"已合并：{name} 和 {target['name']} 是同一个账号，共 {new['games'] + target['games']} 局", "ok")
     return back_to_page()
+
+
+@app.post("/account")
+def select_account():
+    """右上角切换账号：account = 账号编号或 "all"（全部账号）。记在这个窗口的会话里，关掉窗口后下次打开看最近玩过的账号。
+    回到原来的页面，去掉页码、展开的那一局和传奇筛选（换了账号，这些可能对不上了）。"""
+    choice = request.form.get("account", "")
+    session["account"] = "all" if choice == "all" else (int(choice) if choice.isdigit() else None)
+    base, _, query = request.form.get("next", "").partition("?")
+    if base not in [url_for(endpoint) for endpoint, _ in NAV]:
+        base = url_for("overview")
+    args = {k: v for k, v in parse_qsl(query) if k not in ("page", "open", "legend")}
+    return redirect(base + ("?" + urlencode(args) if args else ""))
+
+
+@app.post("/accounts/move")
+def move_name():
+    """设置页"账号"一栏：把一个名字改到别的账号下（account = 账号编号），或拆成单独一个账号（account = "new"）。
+    弹窗里选错了，在这里改回来。"""
+    name, choice = request.form.get("name", ""), request.form.get("account", "")
+    everyone = storage.accounts(db())
+    owner = next((a for a in everyone if any(storage.name_key(n) == storage.name_key(name) for n in a["names"])), None)
+    if owner is None:
+        abort(400)
+    if choice == "new":
+        if len(owner["names"]) == 1 and owner["confirmed"]:
+            flash(f"{name} 本来就是单独一个账号，没有改动", "ok")
+        else:
+            storage.answer_name(db(), name)
+            flash(f"已把 {name} {'拆成' if owner['confirmed'] else '记为'}单独一个账号", "ok")
+        return redirect(url_for("settings"))
+    target = next((a for a in everyone if a["confirmed"] and str(a["id"]) == choice), None)  # 只能并到已确认的账号
+    if target is None:
+        flash("没有保存：要并到的账号不存在", "error")
+    elif target["id"] == owner["id"]:
+        flash(f"{name} 本来就在这个账号下，没有改动", "ok")
+    else:
+        storage.answer_name(db(), name, target["id"])
+        flash(f"已把 {name} 并到 {target['name']} 的账号下", "ok")
+    return redirect(url_for("settings"))
 
 
 @app.post("/accounts/later")

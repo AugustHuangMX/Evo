@@ -36,6 +36,38 @@
       <div class="setting-desc rec-note">识别规则写在 <code>config/</code> 文件夹里，坐标按 1920 × 1080 校准，运行时按实际分辨率自动缩放。</div>
     </section>
 
+    {% if accounts %}
+    {# 多账号：每个玩家名一行，属于哪个账号可以改（弹窗里选错了，在这里改回来）。只能并到已确认的账号 #}
+    <section class="card settings-card" aria-labelledby="h-accounts">
+      <h2 id="h-accounts">账号</h2>
+      <p class="setting-desc accounts-intro">Evo 按游戏里显示的玩家名区分账号，改过名的同一个人可以并在一起；账号显示最近一局用的名字。认出新名字时会弹窗问你，选错了在这里改。</p>
+      {% for a in accounts %}
+      {% for one in a.name_stats %}
+      <form method="post" action="{{ url_for('move_name') }}" class="setting name-row">
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="name" value="{{ one.name }}">
+        <div class="setting-text">
+          <div class="setting-name"><span class="num">{{ one.name }}</span>{% if not a.confirmed %} <span class="tag-review">待确认</span>{% endif %}</div>
+          <div class="setting-desc"><span class="num">{{ one.games }}</span> 局 · 最近一局 {{ one.last_text }}{% if a.names|length > 1 %} · 和 {{ a.names|reject('equalto', one.name)|join('、') }} 是同一个账号{% endif %}</div>
+        </div>
+        <div class="setting-actions">
+          <label class="name-move">
+            <span class="account-label">属于</span>
+            <select name="account" aria-label="{{ one.name }} 属于哪个账号">
+              {% for t in accounts if t.confirmed %}
+              <option value="{{ t.id }}" {{ 'selected' if t.id == a.id }}>{{ t.name }}</option>
+              {% endfor %}
+              <option value="new" {{ 'selected' if not a.confirmed }}>单独一个账号</option>
+            </select>
+          </label>
+          <button type="submit" class="btn">保存</button>
+        </div>
+      </form>
+      {% endfor %}
+      {% endfor %}
+    </section>
+    {% endif %}
+
     <section class="card settings-card" aria-labelledby="h-data">
       <h2 id="h-data">数据与隐私</h2>
       <div class="setting">
@@ -140,7 +172,7 @@
     <div class="setting-desc">版本 <span class="num">{{ version }}</span> · MIT 开源许可</div>
     <ul class="principles">
       <li class="pr-1"><div class="setting-name">只看不动</div><div class="setting-desc">只读取屏幕画面，不接触游戏进程，不模拟任何操作</div></li>
-      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不上传任何数据，没有账号；只有"检查更新"会联网，可以关掉</div></li>
+      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不上传任何数据，不用注册登录；只有"检查更新"会联网，可以关掉</div></li>
       <li class="pr-3"><div class="setting-name">轻量</div><div class="setting-desc">后台运行占用低，不影响游戏帧数</div></li>
       <li class="pr-4"><div class="setting-name">开源</div><div class="setting-desc">所有代码公开，任何人都可以检查</div></li>
     </ul>

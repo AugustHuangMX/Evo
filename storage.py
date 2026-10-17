@@ -117,9 +117,13 @@ def recent_matches(conn, limit=20):
     return conn.execute("SELECT * FROM matches ORDER BY match_id DESC LIMIT ?", (limit,)).fetchall()
 
 
-def _where(mode=None, only_review=False, legend=None):
-    """把筛选条件拼成 SQL 的 WHERE 部分。值用 ? 占位，单独传入。"""
+def _where(mode=None, only_review=False, legend=None, names=None):
+    """把筛选条件拼成 SQL 的 WHERE 部分。值用 ? 占位，单独传入。
+    names：只要这几个玩家名的局（一个账号用过的所有写法，见 accounts 的 raw）；None = 不按账号分。"""
     clauses, params = [], []
+    if names is not None:
+        clauses.append(f"player_name IN ({', '.join('?' for _ in names)})" if names else "0")
+        params.extend(names)
     if mode:
         clauses.append("mode = ?")
         params.append(mode)
@@ -131,9 +135,9 @@ def _where(mode=None, only_review=False, legend=None):
     return (" WHERE " + " AND ".join(clauses) if clauses else ""), params
 
 
-def query_matches(conn, mode=None, only_review=False, legend=None, limit=20, offset=0):
+def query_matches(conn, mode=None, only_review=False, legend=None, limit=20, offset=0, names=None):
     """按条件查询，最新的在前。返回 (这一页的记录, 符合条件的总局数)。"""
-    where, params = _where(mode, only_review, legend)
+    where, params = _where(mode, only_review, legend, names)
     rows = conn.execute(
         f"SELECT * FROM matches{where} ORDER BY ended_at DESC, match_id DESC LIMIT ? OFFSET ?",
         [*params, limit, offset],
@@ -142,20 +146,24 @@ def query_matches(conn, mode=None, only_review=False, legend=None, limit=20, off
     return rows, total
 
 
-def all_matches(conn):
-    """所有对局，按时间从早到晚（总览页算统计、画走势图用）。"""
-    return conn.execute("SELECT * FROM matches ORDER BY ended_at, match_id").fetchall()
+def all_matches(conn, names=None):
+    """所有对局（names：只要这几个玩家名的），按时间从早到晚（总览页算统计、画走势图用）。"""
+    where, params = _where(names=names)
+    return conn.execute(f"SELECT * FROM matches{where} ORDER BY ended_at, match_id", params).fetchall()
 
 
-def count_review(conn):
-    return conn.execute("SELECT COUNT(*) FROM matches WHERE needs_review = 1").fetchone()[0]
+def count_review(conn, names=None):
+    where, params = _where(only_review=True, names=names)
+    return conn.execute(f"SELECT COUNT(*) FROM matches{where}", params).fetchone()[0]
 
 
-def distinct_values(conn, column):
-    """某一列出现过的所有不同取值（比如所有用过的传奇），用于筛选下拉框。"""
+def distinct_values(conn, column, names=None):
+    """某一列出现过的所有不同取值（比如所有用过的传奇），用于筛选下拉框。names：只看这几个玩家名的局。"""
     if column not in COLUMNS:
         raise ValueError(column)
-    rows = conn.execute(f"SELECT DISTINCT {column} FROM matches WHERE {column} IS NOT NULL ORDER BY {column}")
+    where, params = _where(names=names)
+    rows = conn.execute(f"SELECT DISTINCT {column} FROM matches{where}{' AND' if where else ' WHERE'} "
+                        f"{column} IS NOT NULL ORDER BY {column}", params)
     return [r[0] for r in rows]
 
 
@@ -232,7 +240,9 @@ def sync_names(conn):
 def accounts(conn):
     """所有账号（会先 sync_names），按第一次出现的时间排。每个账号是一个字典：
     id、name（显示的名字 = 最近一局用的名字）、names（用过的名字，最近的在前）、games（局数）、last（最近一局的时间）、
-    confirmed（False = 新名字，还没回答"是不是同一个人"）。还没认出玩家名的局不算在任何账号下。"""
+    confirmed（False = 新名字，还没回答"是不是同一个人"）、
+    name_stats（每个名字的 {name, games, last}，最近的在前）、raw（数据库里出现过的所有写法，按账号筛选对局时用）。
+    还没认出玩家名的局不算在任何账号下。"""
     sync_names(conn)
     table = {r["name_key"]: (r["account_id"], bool(r["confirmed"])) for r in conn.execute("SELECT * FROM player_names")}
     found = {}
@@ -242,29 +252,38 @@ def accounts(conn):
         if key not in table:
             continue
         account_id, confirmed = table[key]
-        a = found.setdefault(account_id, {"id": account_id, "confirmed": confirmed, "spellings": {}, "games": 0,
-                                          "first": r["first"] or "", "last": ""})
+        last = r["last"] or ""
+        a = found.setdefault(account_id, {"id": account_id, "confirmed": confirmed, "per_name": {}, "raw": [],
+                                          "games": 0, "first": r["first"] or "", "last": ""})
         a["games"] += r["games"]
         a["first"] = min(a["first"], r["first"] or "")
-        a["last"] = max(a["last"], r["last"] or "")
-        old = a["spellings"].get(key)
-        if old is None or (r["last"] or "") >= old[0]:  # 同一个名字有几种写法（空格不同）时，用最近的写法
-            a["spellings"][key] = (r["last"] or "", r["player_name"])
+        a["last"] = max(a["last"], last)
+        a["raw"].append(r["player_name"])
+        one = a["per_name"].setdefault(key, {"name": r["player_name"], "games": 0, "last": ""})
+        one["games"] += r["games"]
+        if last >= one["last"]:  # 同一个名字有几种写法（空格不同）时，显示最近的写法
+            one["name"], one["last"] = r["player_name"], last
     result = []
     for a in sorted(found.values(), key=lambda a: a["first"]):
-        names = [raw for _, raw in sorted(a.pop("spellings").values(), reverse=True)]
-        result.append({**a, "name": names[0], "names": names})
+        stats = sorted(a.pop("per_name").values(), key=lambda one: one["last"], reverse=True)
+        result.append({**a, "name": stats[0]["name"], "names": [one["name"] for one in stats], "name_stats": stats})
     return result
 
 
 def answer_name(conn, name, account_id=None):
-    """回答"这个新名字是不是同一个人"：account_id = 要合并到的账号（同一个人改了名）；None = 另一个账号（保持单独）。"""
+    """确定一个名字属于哪个账号（弹窗里回答"是不是同一个人"、设置页里改）：
+    account_id = 并到这个账号（同一个人改了名）；None = 单独一个账号（如果和别的名字在同一个账号里，就拆出来）。"""
     sync_names(conn)  # 名字刚出现、还没登记进对照表时，先登记，不然下面改不到
     key = name_key(name)
     if account_id is None:
-        conn.execute("UPDATE player_names SET confirmed = 1 WHERE name_key = ?", (key,))
-    else:
-        conn.execute("UPDATE player_names SET account_id = ?, confirmed = 1 WHERE name_key = ?", (account_id, key))
+        current = conn.execute("SELECT account_id FROM player_names WHERE name_key = ?", (key,)).fetchone()
+        if current is None:
+            return
+        shared = conn.execute("SELECT COUNT(*) FROM player_names WHERE account_id = ?", (current[0],)).fetchone()[0]
+        account_id = current[0]
+        if shared > 1:
+            account_id = conn.execute("SELECT MAX(account_id) + 1 FROM player_names").fetchone()[0]
+    conn.execute("UPDATE player_names SET account_id = ?, confirmed = 1 WHERE name_key = ?", (account_id, key))
     conn.commit()
 
 

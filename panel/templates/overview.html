@@ -19,7 +19,11 @@
 
 <div class="ov-top">
   <section class="card rank-card" aria-label="当前段位">
-    {% if rank %}
+    {% if account_view.all %}
+    {# 选了"全部账号"：几个账号的段位混在一起没有意义 #}
+    <div class="label">当前段位</div>
+    <div class="rank-empty">段位按账号分开。在右上角选一个账号，就能看到它的段位。</div>
+    {% elif rank %}
     <div class="label">当前段位 · 截至 {{ rank.as_of }}</div>
     <div class="rank-head">
       <div class="rank-badge tier-{{ rank.tier_class }} num">{{ rank.badge }}</div>
@@ -54,7 +58,9 @@
         {% endfor %}
       </div>
     </div>
-    {% if chart %}
+    {% if account_view.all %}
+    <div class="chart-empty">RP 走势按账号分开。在右上角选一个账号查看。</div>
+    {% elif chart %}
     <div class="chart">
       <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" preserveAspectRatio="none" role="img" aria-label="最近 {{ chart.count }} 局的段位分数走势">
         {% for l in chart.lines %}

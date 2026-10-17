@@ -41,9 +41,10 @@
     </label>
   </form>
 
+  {# 导出的总是全部对局（每局有 player_name 列，可以自己按账号筛选）；分账号显示时写明，免得以为只导出这个账号 #}
   <a class="btn btn-icon push-right" href="{{ url_for('export') }}">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4 L12 15"></path><path d="M7 10 L12 15 L17 10"></path><path d="M4 19 L20 19"></path></svg>
-    导出 CSV
+    导出 CSV{% if account_view.accounts|length >= 2 %}（全部账号）{% endif %}
   </a>
 </div>
 
@@ -91,7 +92,7 @@
             <div class="evidence-empty">没有保存截图</div>
             {% endif %}
             {% if r.review_note %}<div class="note">{{ r.review_note }}</div>{% endif %}
-            <div class="note">小队总击杀 {{ r.squad_kills }} · 急救 {{ r.revives }} · 重生 {{ r.respawns }}</div>
+            <div class="note">玩家名 {{ r.player_name }} · 小队总击杀 {{ r.squad_kills }} · 急救 {{ r.revives }} · 重生 {{ r.respawns }}</div>
           </div>
 
           <div class="edit">

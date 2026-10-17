@@ -6,6 +6,10 @@
 - 弹窗（用 Flask 自带的测试客户端，不开浏览器）：有新名字时弹出，名字很像的账号排在前面；没有口令不能提交；
   选"同一个人"后合并、不再弹、有提示；选"另一个账号"后单独一个账号；选了不存在的账号不保存；
   "稍后再问"后同一个窗口里不再弹，新开的窗口（新的会话）照样问；没有新名字时不弹
+- 切换账号：只有 1 个账号时不显示切换、全部照常显示（包括没认出玩家名的局）；2 个以上时默认看最近玩过的账号，
+  总览、战绩、传奇筛选、待确认数都只算这个账号；切换后换页面还记得，去掉页码和展开的那一局；
+  "全部账号"时段位和走势图提示选一个账号；每局详情里有玩家名
+- 设置页"账号"一栏：把名字并到别的账号、再拆回来；并到不存在的账号不保存
 
 运行：python tests/test_accounts.py
 """
@@ -111,10 +115,75 @@ def panel_checks():
     return out
 
 
+def switch_checks():
+    """切换账号和设置页的"账号"一栏。返回每一步看到的结果。"""
+    token = panel_app.app.config["TOKEN"]
+    out = {}
+
+    def total(page):
+        found = re.search(r"共 (\d+) 局", page)
+        return int(found[1]) if found else None
+
+    # 只有一个账号，另有一局没认出玩家名：不分账号
+    path, conn = new_db("single", [("ImperialHzd", "2026-10-16 21:00:00"), (None, "2026-10-16 22:00:00")])
+    conn.close()
+    panel_app.app.config.update(DB=path)
+    client = panel_app.app.test_client()
+    page = client.get("/matches").get_data(as_text=True)
+    out["single"] = ('id="account-select"' not in page, total(page))
+
+    # 主号 3 局（侵蚀，1 局待确认），小号 2 局（恶灵，最近玩的），1 局没认出玩家名
+    path, conn = new_db("two", [])
+    for player, ended, legend, review in [("Main", "2026-10-16 20:00:00", "侵蚀", 1), ("Main", "2026-10-16 21:00:00", "侵蚀", 0),
+                                          ("Main", "2026-10-16 22:00:00", "侵蚀", 0), (None, "2026-10-16 23:00:00", None, 0),
+                                          ("Alt", "2026-10-17 20:00:00", "恶灵", 0), ("Alt", "2026-10-17 21:00:00", "恶灵", 0)]:
+        storage.insert_match(conn, {"player_name": player, "ended_at": ended, "legend": legend, "needs_review": review,
+                                    "placement": 3, "rank_tier": "钻石", "rank_division": "II", "rank_progress": 500})
+    storage.accounts(conn)
+    storage.answer_name(conn, "Alt")  # 两个都是已确认的账号
+    ids = {a["name"]: a["id"] for a in storage.accounts(conn)}
+    panel_app.app.config.update(DB=path)
+    client = panel_app.app.test_client()
+
+    def legends(page):
+        return re.findall(r'<option value="([^"]+)"\s*>', page.split('name="legend"')[1].split("</select>")[0]) \
+            if 'name="legend"' in page else []
+
+    page = client.get("/matches").get_data(as_text=True)
+    out["default"] = ('id="account-select"' in page, total(page), legends(page), "需要你确认" in page)
+    moved = client.post("/account", data={"token": token, "account": str(ids["Main"]),
+                                          "next": "/matches?page=2&open=5&legend=恶灵&mode=ranked"})
+    out["redirect"] = moved.headers["Location"]
+    page = client.get("/matches").get_data(as_text=True)
+    out["main"] = (total(page), legends(page), "有 1 局识别结果不确定" in page)
+    first = storage.query_matches(conn, names=["Main"])[0][0]["match_id"]
+    out["detail"] = "玩家名 Main" in client.get(f"/matches?open={first}").get_data(as_text=True)
+    overview = client.get("/").get_data(as_text=True)
+    out["main_overview"] = 'class="rank-name"' in overview and "段位按账号分开" not in overview
+    client.post("/account", data={"token": token, "account": "all", "next": "/"})
+    overview = client.get("/").get_data(as_text=True)
+    out["all"] = (total(client.get("/matches").get_data(as_text=True)),
+                  "段位按账号分开" in overview and "RP 走势按账号分开" in overview)
+    out["fresh_window"] = total(panel_app.app.test_client().get("/matches").get_data(as_text=True))  # 新窗口：又是最近玩的小号
+
+    # 设置页：把小号的名字并到主号，再拆回来；并到不存在的账号
+    settings = client.get("/settings").get_data(as_text=True)
+    out["settings_card"] = 'id="h-accounts"' in settings and settings.count('action="/accounts/move"') == 2
+    client.post("/accounts/move", data={"token": token, "name": "Alt", "account": str(ids["Main"])})
+    out["moved"] = summary(conn)
+    client.post("/accounts/move", data={"token": token, "name": "Alt", "account": "new"})
+    out["split"] = summary(conn)
+    bad = client.post("/accounts/move", data={"token": token, "name": "Alt", "account": "999"}, follow_redirects=True)
+    out["bad"] = "要并到的账号不存在" in bad.get_data(as_text=True) and summary(conn) == out["split"]
+    conn.close()
+    return out
+
+
 def main():
-    print("多账号：账号对照表和新玩家名的弹窗")
+    print("多账号：账号对照表、新玩家名的弹窗、切换账号")
     t = table_checks()
     p = panel_checks()
+    s = switch_checks()
     return report({
         f"第一个名字自动成为账号，只差空格的算同一个名字（{t['first']}）": t["first"] == [("Imperial Hzd", 2, True)],
         f"新名字先单独算一个账号，等回答（{t['pending']}）":
@@ -134,6 +203,18 @@ def main():
             ("Imperial_Hzd", 3, True), ("Yukino2nd", 1, True)] and p["merged_page"],
         f"选\"另一个账号\"后单独一个账号，没有新名字时不弹（{p['separate']}）":
             p["separate"][-1] == ("Third", 1, True) and p["quiet"],
+        f"只有 1 个账号：不显示切换，没认出玩家名的局也照常显示（没有切换、局数：{s['single']}）": s["single"] == (True, 2),
+        f"2 个账号：显示切换，默认看最近玩的小号，局数、传奇筛选、待确认都只算它（{s['default']}）":
+            s["default"] == (True, 2, ["恶灵"], False),
+        f"切到主号：换页面后还记得（局数、传奇、待确认提示：{s['main']}），每局详情有玩家名":
+            s["main"] == (3, ["侵蚀"], True) and s["detail"] and s["main_overview"],
+        f"切换后回到原来的页面，去掉页码、展开的局和传奇筛选（{s['redirect']}）": s["redirect"] == "/matches?mode=ranked",
+        f"全部账号：所有局（含没认出玩家名的），段位和走势图提示选一个账号（{s['all']}）": s["all"] == (6, True),
+        f"新开的窗口又默认看最近玩的账号（局数 {s['fresh_window']}）": s["fresh_window"] == 2,
+        "设置页有\"账号\"一栏，每个名字一行": s["settings_card"],
+        f"设置页：把小号并到主号（{s['moved']}），再拆回来（{s['split']}）":
+            s["moved"] == [("Alt", 5, True)] and s["split"] == [("Main", 3, True), ("Alt", 2, True)],
+        "设置页：并到不存在的账号，不保存": s["bad"],
     })
 
 
