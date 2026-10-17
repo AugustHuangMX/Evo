@@ -337,17 +337,13 @@ class PanelServer:
 
 def check_images(paths, log):
     """识别几张截图，把结果写进日志。打包后用来确认识别模型和配置都在；以后排查问题也能用。"""
-    import json
+    from live_collect import is_summary, which_screen
+    from match_start import read_match_start
+    from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image
+    from summary_page import read_summary, show
+    from xp_page import read_xp
 
-    from live_collect import SCREENS_PATH, is_summary, which_screen
-    from match_start import MATCH_START_CONFIG_PATH, read_match_start
-    from ocr_probe import create_engine
-    from summary_demo import CONFIG_PATH, SMALL_CROP_PARAMS, load_image, read_summary, show
-    from xp_page import XP_CONFIG_PATH, read_xp
-
-    cfgs = [json.loads(p.read_text(encoding="utf-8"))
-            for p in (CONFIG_PATH, SCREENS_PATH, XP_CONFIG_PATH, MATCH_START_CONFIG_PATH)]
-    cfg, screens, xp_cfg, start_cfg = cfgs
+    cfg, screens, xp_cfg, start_cfg = (load_config(n) for n in ("summary.json", "screens.json", "xp.json", "match_start.json"))
     engine = create_engine(SMALL_CROP_PARAMS)
     for path in paths:
         img = load_image(path)

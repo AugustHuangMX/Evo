@@ -22,7 +22,6 @@
 
 import argparse
 import gc
-import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -31,32 +30,32 @@ import cv2
 import dxcam
 
 import storage
-from apex_capture_test import set_low_priority
-from ocr_probe import create_engine, memory_mb
-from match_start import MATCH_START_CONFIG_PATH, read_match_start
-from paths import CAPTURES_DIR, CONFIG_DIR
+from match_start import read_match_start
+from ocr import SMALL_CROP_PARAMS, create_engine, load_config, read_lines
+from paths import CAPTURES_DIR
 from post_match import PostMatch
-from summary_demo import CONFIG_PATH, KEY_FIELDS, SMALL_CROP_PARAMS, crop, read_summary, show, summary_to_match
-from xp_page import XP_CONFIG_PATH, read_xp
+from process_info import memory_mb, set_low_priority
+from summary_page import KEY_FIELDS, read_summary, show, summary_to_match
+from xp_page import read_xp
 
-SCREENS_PATH = CONFIG_DIR / "screens.json"
 LATE_FIELDS = ("placement", "squad_kills")  # 总结页上晚 1–2 秒才滑进来的项
+
+
+def has_keywords(engine, frame, spec, cfg):
+    """识别 spec["roi"] 这一小块，看 spec["keywords"] 里的字是不是全都在。"""
+    text = "".join(t for t, _ in read_lines(engine, frame, spec["roi"], cfg))
+    return all(k in text for k in spec["keywords"])
 
 
 def is_summary(engine, frame, cfg):
     """当前画面是不是总结页：识别一个小区域，看关键字在不在。"""
-    spec = cfg["detect"]
-    result = engine(crop(frame, spec["roi"], cfg))
-    text = "".join(result.txts or ())
-    return all(k in text for k in spec["keywords"])
+    return has_keywords(engine, frame, cfg["detect"], cfg)
 
 
 def which_screen(engine, frame, screens):
     """当前画面是不是 config/screens.json 里的某个画面，是的话返回它的名字（如 "xp"），都不是返回 None。"""
     for name, spec in screens["screens"].items():
-        result = engine(crop(frame, spec["roi"], {**screens, **spec}))
-        text = "".join(result.txts or ())
-        if all(k in text for k in spec["keywords"]):
+        if has_keywords(engine, frame, spec, {**screens, **spec}):
             return name
     return None
 
@@ -84,10 +83,10 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     status：字典，记下的局数会实时写进 status["saved"]（托盘图标显示用）
     返回这次一共记下了几局。"""
     set_low_priority()
-    cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    screens = json.loads(SCREENS_PATH.read_text(encoding="utf-8"))
-    xp_cfg = json.loads(XP_CONFIG_PATH.read_text(encoding="utf-8"))
-    start_cfg = json.loads(MATCH_START_CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg = load_config("summary.json")
+    screens = load_config("screens.json")
+    xp_cfg = load_config("xp.json")
+    start_cfg = load_config("match_start.json")
     run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     conn = storage.connect(db_path)

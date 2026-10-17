@@ -1,6 +1,6 @@
 """运行全部测试：python tests/run_all.py（约 1 分钟）
 
-什么时候跑：改了识别（summary_demo.py、xp_page.py、match_start.py）、记录程序（live_collect.py、post_match.py）
+什么时候跑：改了识别（ocr.py、summary_page.py、xp_page.py、match_start.py）、记录程序（live_collect.py、post_match.py）
 或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；

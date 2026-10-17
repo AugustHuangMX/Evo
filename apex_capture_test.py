@@ -11,11 +11,9 @@
 
 import argparse
 import csv
-import ctypes
 import platform
 import sys
 import time
-from ctypes import wintypes
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
@@ -26,6 +24,7 @@ import mss.tools
 import numpy as np
 
 from paths import CAPTURES_DIR
+from process_info import set_low_priority
 
 METHODS = ("dxcam", "mss")
 STATUSES = ("ok", "black", "none", "error")
@@ -44,16 +43,6 @@ def parse_args():
     parser.add_argument("--minutes", type=float, default=30, help="最多运行几分钟，到时自动停止（默认 30）")
     parser.add_argument("--out", type=Path, default=CAPTURES_DIR / "capture_test", help="结果保存到哪个文件夹")
     return parser.parse_args()
-
-
-def set_low_priority():
-    """把本程序设为"低于正常"优先级，CPU 紧张时让游戏优先。"""
-    BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
-    kernel32 = ctypes.windll.kernel32
-    # 明确声明参数类型：别的代码（如 ocr_probe.memory_mb）也会设置 GetCurrentProcess 的返回类型，不声明会出错
-    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
-    kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-    kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS)
 
 
 def primary_monitor(sct):

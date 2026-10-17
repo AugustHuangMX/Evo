@@ -9,22 +9,19 @@
 """
 
 import argparse
-import json
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from ocr_probe import create_engine
-from paths import CONFIG_DIR
-from summary_demo import SMALL_CROP_PARAMS, crop, load_image
+from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image, read_lines
 
-MATCH_START_CONFIG_PATH = CONFIG_DIR / "match_start.json"
+CONFIG_NAME = "match_start.json"
 
 
 def read_text(engine, img, spec, cfg):
-    result = engine(crop(img, spec["roi"], cfg))
-    lines = [(t, s) for t, s in zip(result.txts or (), result.scores or ()) if s >= cfg["min_score"]]
-    return " ".join(t for t, _ in lines).strip()
+    """一个小块里置信度够高的各行，用空格连起来。"""
+    lines = read_lines(engine, img, spec["roi"], cfg)
+    return " ".join(t for t, s in lines if s >= cfg["min_score"]).strip()
 
 
 def closest_map(text, cfg):
@@ -54,7 +51,7 @@ def main():
     parser.add_argument("images", type=Path, nargs="+", help="开局画面截图")
     args = parser.parse_args()
 
-    cfg = json.loads(MATCH_START_CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg = load_config(CONFIG_NAME)
     engine = create_engine(SMALL_CROP_PARAMS)
     for path in args.images:
         r = read_match_start(engine, load_image(path), cfg)

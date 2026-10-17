@@ -1,26 +1,24 @@
-"""最小 demo：从一张赛后"总结"页截图里读出名次、击杀/助攻/击倒、伤害等数据。
+"""识别赛后总结页：从截图里读出名次、小队总击杀、击杀/助攻/击倒、伤害、生存时间、急救、重生。
 
-只裁出配置文件里指定的几小块去识别，不识别整张图，所以更快、更省内存。
 识别规则（区域坐标、格式、合理范围）写在 config/summary.json 里，不写死在代码中。
 
-运行：python summary_demo.py <截图路径>
-例如：python summary_demo.py captures/samples/vlcsnap-2026-10-16-18h26m12s173.png
+单独试：python summary_page.py <截图路径>
+例如：  python summary_page.py captures/samples/vlcsnap-2026-10-16-18h26m12s173.png
 加上 --save-crops，会把裁出来的小块存到 captures/debug_crops/，可以看看 OCR 实际看到了什么。
 """
 
 import argparse
-import json
 import re
 import time
 from pathlib import Path
 
 import cv2
-import numpy as np
 
-from ocr_probe import create_engine, memory_mb
-from paths import CAPTURES_DIR, CONFIG_DIR, data_relative
+from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image
+from paths import CAPTURES_DIR, data_relative
+from process_info import memory_mb
 
-CONFIG_PATH = CONFIG_DIR / "summary.json"
+CONFIG_NAME = "summary.json"
 CROPS_DIR = CAPTURES_DIR / "debug_crops"
 KEY_FIELDS = ("placement", "kda", "damage")  # 这几项有任何问题，整局标记"待确认"
 
@@ -31,38 +29,6 @@ STATUS_TEXT = {
     "parse_fail": "格式不对",
     "out_of_range": "超出合理范围",
 }
-
-# 小块只有一两百像素宽：长边超过 960 才缩小，否则保持原样
-# （默认规则是"短边小于 736 就放大到 736"，会把小块放大十几倍，又慢又占内存）
-SMALL_CROP_PARAMS = {
-    "Det.limit_type": "max",
-    "Det.limit_side_len": 960,
-    # 小块里没有字时，RapidOCR 会打印一条警告；实战采集时每秒都会刷屏，所以只显示错误
-    "Global.log_level": "error",
-}
-
-
-def load_image(path):
-    """读图片，返回 BGR 格式。用 imdecode 而不是 imread，这样路径里有中文也能读。"""
-    img = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if img is None:
-        raise ValueError(f"读不了这张图片: {path}")
-    return img
-
-
-def crop(img, roi, cfg):
-    """按基准分辨率下的坐标裁出一块并放大。截图分辨率不同时，按比例换算坐标。"""
-    base, upscale = cfg["base_resolution"], cfg["upscale"]
-    h, w = img.shape[:2]
-    sx, sy = w / base[0], h / base[1]
-    x, y, rw, rh = roi
-    piece = img[round(y * sy) : round((y + rh) * sy), round(x * sx) : round((x + rw) * sx)]
-    # 统一放大到"基准尺寸 × upscale"，不同分辨率的截图得到同样大小的小块
-    piece = cv2.resize(piece, (rw * upscale, rh * upscale), interpolation=cv2.INTER_CUBIC)
-    if cfg.get("grayscale"):
-        # 转灰度：实验发现彩色（橙色）数字容易把斜杠读成 1，灰度下读得更准
-        piece = cv2.cvtColor(cv2.cvtColor(piece, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
-    return piece
 
 
 def clean(text, replace):
@@ -190,7 +156,7 @@ def main():
     parser.add_argument("--save-crops", action="store_true", help="把裁出来的小块存到 captures/debug_crops/")
     args = parser.parse_args()
 
-    cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg = load_config(CONFIG_NAME)
     img = load_image(args.image)
     if args.save_crops:
         CROPS_DIR.mkdir(parents=True, exist_ok=True)

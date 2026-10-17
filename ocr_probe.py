@@ -10,65 +10,13 @@
 """
 
 import argparse
-import ctypes
 import time
-from ctypes import wintypes
 from pathlib import Path
 
-import rapidocr
-from rapidocr import RapidOCR
+from ocr import create_engine
+from process_info import memory_mb
 
-MODEL_DIR = Path(rapidocr.__file__).parent / "models"
 LOW_SCORE = 0.9  # 置信度低于这个值的结果，在表格里标出来
-
-
-class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
-    _fields_ = [
-        ("cb", wintypes.DWORD),
-        ("PageFaultCount", wintypes.DWORD),
-        ("PeakWorkingSetSize", ctypes.c_size_t),
-        ("WorkingSetSize", ctypes.c_size_t),
-        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-        ("QuotaPagedPoolUsage", ctypes.c_size_t),
-        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-        ("PagefileUsage", ctypes.c_size_t),
-        ("PeakPagefileUsage", ctypes.c_size_t),
-    ]
-
-
-def memory_mb():
-    """返回本程序当前内存占用和历史峰值（MB），和任务管理器里看到的"内存"是同一种口径。"""
-    kernel32 = ctypes.windll.kernel32
-    psapi = ctypes.windll.psapi
-    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
-    psapi.GetProcessMemoryInfo.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(PROCESS_MEMORY_COUNTERS),
-        wintypes.DWORD,
-    ]
-    counters = PROCESS_MEMORY_COUNTERS()
-    counters.cb = ctypes.sizeof(counters)
-    psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb)
-    return counters.WorkingSetSize / 2**20, counters.PeakWorkingSetSize / 2**20
-
-
-def create_engine(extra_params=None):
-    """创建 OCR 引擎。extra_params 可以追加或覆盖设置，例如识别小块时改变缩放规则。"""
-    params = {
-        # 直接指定自带模型，不走"找不到就下载"的逻辑
-        "Det.model_path": str(MODEL_DIR / "PP-OCRv6_det_small.onnx"),
-        "Rec.model_path": str(MODEL_DIR / "PP-OCRv6_rec_small.onnx"),
-        "Cls.model_path": str(MODEL_DIR / "ch_ppocr_mobile_v2.0_cls_mobile.onnx"),
-        # 游戏里的字不会倒过来，关掉方向判断，省时间和内存
-        "Global.use_cls": False,
-        "Global.log_level": "warning",
-        # 只用 1 个 CPU 线程，尽量不和游戏抢资源
-        "EngineConfig.onnxruntime.intra_op_num_threads": 1,
-        "EngineConfig.onnxruntime.inter_op_num_threads": 1,
-    }
-    params.update(extra_params or {})
-    return RapidOCR(params=params)
 
 
 def to_rect(box):

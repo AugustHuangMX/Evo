@@ -11,15 +11,12 @@ RP 的算法：战斗合计 + 奖励合计 + 定级合计（定级合计已减�
 """
 
 import argparse
-import json
 import re
 from pathlib import Path
 
-from ocr_probe import create_engine
-from paths import CONFIG_DIR
-from summary_demo import SMALL_CROP_PARAMS, crop, load_image
+from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image, read_lines
 
-XP_CONFIG_PATH = CONFIG_DIR / "xp.json"
+CONFIG_NAME = "xp.json"
 
 POINTS = re.compile(r"([+-]?\d+)\s*排位点")  # "130 排位点数"、"-65排位点数"
 COUNT_POINTS = re.compile(r"(\d+)(?:\s+(\d+))?\s*排位点")  # "2 40排位点数"；连在一起时是 "00排位点数"
@@ -33,8 +30,7 @@ def normalize(text):
 
 def read_text(engine, img, spec, cfg):
     """识别一个小块，返回 (文字, 置信度)。小块里有几行时取置信度最高的一行。"""
-    result = engine(crop(img, spec["roi"], cfg))
-    lines = list(zip(result.txts or (), result.scores or ()))
+    lines = read_lines(engine, img, spec["roi"], cfg)
     if not lines:
         return "", None
     text, score = max(lines, key=lambda x: x[1])
@@ -149,7 +145,7 @@ def main():
     parser.add_argument("--raw", action="store_true", help="同时打印每个小块读到的原文")
     args = parser.parse_args()
 
-    cfg = json.loads(XP_CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg = load_config(CONFIG_NAME)
     engine = create_engine(SMALL_CROP_PARAMS)
     for path in args.images:
         r, problems = read_xp(engine, load_image(path), cfg)
