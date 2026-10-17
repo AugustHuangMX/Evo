@@ -12,7 +12,8 @@
 版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己的 %LOCALAPPDATA%\\Evo。
 只是想试一下流程、还有没提交的改动时：python release.py --allow-dirty（文件名会带上 -dirty，不要发布这种；也不写 latest.json）
 
-上传到 R2（dl.evotracker.cn）：先传压缩包，确认能下载、SHA-256 对得上，最后再传 latest.json——
+做好以后用 python publish.py 上传和核对（压缩包、官网、最后 latest.json，见 publish.py 开头）。
+它按下面的顺序做——上传到 R2（dl.evotracker.cn）：先传压缩包，确认能下载、SHA-256 对得上，最后再传 latest.json——
 latest.json 一换，所有开着自动检查的 Evo 就会提醒更新，所以压缩包必须先到位：
     wrangler r2 object put evotracker/Evo-<版本号>-win64.zip --file dist/Evo-<版本号>-win64.zip --remote
     wrangler r2 object put evotracker/latest.json --file dist/latest.json --remote --cache-control "max-age=300"
@@ -177,7 +178,7 @@ def main():
     if dirty:
         print("⚠ 这次有没提交的改动，只能自己试，不要发布")
     else:
-        print("\n上传：先传压缩包，确认能下载，最后传 latest.json（顺序和命令见 release.py 开头的说明）")
+        print("\n上传：python publish.py（先传压缩包和官网、逐项核对；最后 python publish.py --live 传 latest.json）")
     return 0
 
 
