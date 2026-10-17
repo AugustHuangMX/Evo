@@ -9,13 +9,13 @@
 - 对局中：每 3 秒看一眼左下角自己的头像，认出用的是哪个传奇（见 legends.py 和 LegendWatcher，不用识别模型）
 - 玩家名（区分账号，见 player_name.py 和 NameWatcher）：总结页存这一局时读中间卡片上的名字；
   这次记录还不知道名字时，对局中在认出自己传奇的那一帧读头像旁边的名字（知道了就不再读）
-- 经验值页、开局画面、大厅（见 config/screens.json）：进入时存一张截图，离开前最后一帧再存一张（见 ScreenWatcher）。
-  开局画面用来分隔每一局
+- 经验值页、开局画面、大厅（见 config/screens.json）：开局画面用来分隔每一局（见 ScreenWatcher）
 - 其他画面：什么都不做（大部分时间都是这样）
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python storage.py 查看），
-截图存在 captures/live/<开始时间>/。
-测试阶段截图都保留，用来做测试集；正式版只保留"待确认"的截图（原则 2）。
+截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
+- 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留"待确认"的局要用的
+- 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅也存，进入时一张、离开前最后一帧一张
 
 运行：python live_collect.py
 停止：在终端按 Ctrl+C，或到达 --minutes 设定的时长后自动停止
@@ -30,6 +30,7 @@ from pathlib import Path
 import cv2
 import dxcam
 
+import screenshots
 import storage
 from legends import LegendDetector
 from match_start import read_match_start
@@ -144,17 +145,19 @@ class SummaryWatcher:
 
 
 class ScreenWatcher:
-    """经验值页、开局画面、大厅（见 config/screens.json）：进入时存一张截图，离开前最后一帧再存一张。
+    """经验值页、开局画面、大厅（见 config/screens.json）。
     离开经验值页时识别最后一帧（数字有动画，最后一帧才是最终结果）；进入开局画面表示上一局彻底结束；
-    在开局画面读本局的模式和地图，读到就不再读。"""
+    在开局画面读本局的模式和地图，读到就不再读。
+    截图：保留全部时，进入时存一张、离开前最后一帧再存一张；否则只存经验值页离开前的最后一帧
+    （没有总结页的局要拿它当识别依据），大厅、开局画面不存。"""
 
-    def __init__(self, engine, screens, xp_cfg, start_cfg, post, run_dir, log):
+    def __init__(self, engine, screens, xp_cfg, start_cfg, post, run_dir, log, keep_all=True):
         self.engine, self.screens, self.xp_cfg, self.start_cfg = engine, screens, xp_cfg, start_cfg
-        self.post, self.run_dir, self.log = post, run_dir, log
+        self.post, self.run_dir, self.log, self.keep_all = post, run_dir, log, keep_all
         self.current = None  # 现在停在哪个画面（None = 都不是）
         self.last = None  # 这个画面最近的一帧和时间，离开时存下来
         self.frames = 0  # 在这个画面已经看到了几帧
-        self.enter_path = None  # 进入这个画面时存的截图
+        self.enter_path = None  # 进入这个画面时存的截图（没存为 None）
 
     def update(self, screen, frame, now):
         """每截一帧调用一次。screen：这一帧是哪个画面（如 "xp"），都不是则为 None。"""
@@ -162,10 +165,13 @@ class ScreenWatcher:
             self.leave()
             if screen == "match_start":
                 self.post.finish()
-            if screen is not None:
+            self.enter_path = None
+            if screen is not None and self.keep_all:
                 self.enter_path = self.run_dir / f"{screen}_{now:%H%M%S}_enter.png"
                 save_png(self.enter_path, frame)
                 self.log(f"[{now:%H:%M:%S}] 进入{self._label(screen)}，已存截图")
+            elif screen is not None:
+                self.log(f"[{now:%H:%M:%S}] 进入{self._label(screen)}")
             self.current, self.frames = screen, 0
         if screen is not None:
             self.last = (frame.copy(), now)
@@ -174,12 +180,13 @@ class ScreenWatcher:
             self.post.on_match_start(read_match_start(self.engine, frame, self.start_cfg), now)
 
     def leave(self):
-        """离开当前画面：存下最后一帧（只看到一帧时，进入时已经存过了）；如果是经验值页，识别最后一帧。"""
+        """离开当前画面：存下最后一帧（保留全部时，只看到一帧的话进入时已经存过了；否则只存经验值页）；
+        如果是经验值页，识别最后一帧。"""
         if self.current is None:
             return
         last_frame, last_time = self.last
         path = self.enter_path
-        if self.frames > 1:
+        if (self.frames > 1) if self.keep_all else (self.current == "xp"):
             path = self.run_dir / f"{self.current}_{last_time:%H%M%S}_leave.png"
             save_png(path, last_frame)
             self.log(f"[{last_time:%H:%M:%S}] 离开{self._label(self.current)}，已存最后一帧")
@@ -262,13 +269,14 @@ class NameWatcher:
 
 
 def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.0,
-            stop=None, deadline=None, log=print, status=None):
+            stop=None, deadline=None, log=print, status=None, keep_all=None):
     """采集主循环：一直截屏、识别、记录，直到下面任何一种情况发生，然后安全收尾（没存完的局存下、释放截屏和识别模型）：
     - stop（threading.Event）被设置：托盘程序在游戏关闭、暂停或退出时用它喊停
     - 到达 deadline（time.monotonic() 的时刻）
     - 在终端按 Ctrl+C
     log：输出一行文字的函数（终端里是 print，托盘程序里写进日志文件）
     status：字典，记下的局数会实时写进 status["saved"]（托盘图标显示用）
+    keep_all：保留全部截图；None = 按 screenshots.keep_all() 决定（测试时直接指定）
     返回这次一共记下了几局。"""
     set_low_priority()
     cfg = load_config("summary.json")
@@ -276,8 +284,19 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     conn = storage.connect(db_path)
+    keep = screenshots.keep_all() if keep_all is None else keep_all
+    tidied = {"deleted": 0, "freed": 0}  # 这次记录识别完删掉的截图
+
+    def tidy():
+        """一局彻底结束：删掉这次记录里不需要的截图（只留"待确认"的局要用的）。"""
+        deleted, freed = screenshots.tidy(conn, run_dir)
+        if deleted:
+            tidied["deleted"] += deleted
+            tidied["freed"] += freed
+            log(f"           识别完删掉 {deleted} 张截图（{freed / 2 ** 20:.0f} MB）")
+
     name_cfg = load_config("player_name.json")
-    post = PostMatch(conn, log=log, name_slip=name_cfg["slip_similarity"])
+    post = PostMatch(conn, log=log, name_slip=name_cfg["slip_similarity"], on_round_end=None if keep else tidy)
 
     camera = dxcam.create(output_color="BGR", processor_backend="numpy")
     # clock 用 lambda 包一层：测试时会把本文件的 time 换成假时钟
@@ -285,12 +304,13 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     detector = ScreenDetector(engine, screens)
     names = NameWatcher(PlayerNameReader(engine, name_cfg), post, name_cfg["max_hud_reads"])
     summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout, names)
-    other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"), post, run_dir, log)
+    other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"), post, run_dir, log,
+                          keep_all=keep)
     legend_detector = LegendDetector()
     legend = LegendWatcher(legend_detector, post, on_own_hud=names.on_own_hud)
     log(f"屏幕: {camera.width}x{camera.height}")
     log(f"数据库: {Path(db_path).resolve()}")
-    log(f"截图保存到: {run_dir.resolve()}")
+    log(f"截图保存到: {run_dir.resolve()}（{'保留全部' if keep else '识别完就删，只留待确认的局要用的'}）")
     if detector.missing:
         log(f"⚠ 这些画面没有参照图，每次都要跑识别：{'、'.join(detector.missing)}（见 screens.py）")
     if legend_detector.missing:
@@ -343,10 +363,15 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         post.finish()
         camera.release()
         conn.close()
+        left = len(list(run_dir.glob("*.png")))
+        if not left:
+            run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
         saved = total()
         log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
             f"加载识别模型 {engine.loads} 次；认传奇 {legend.checks} 次；读玩家名 {names.reads} 次"
             f"（对局中 {names.hud_reads} 次），玩家名 {post.player_name or '没认出'}；内存峰值 {memory_mb()[1]:.0f} MB")
+        log(f"截图：留下 {left} 张" + ("（保留全部）" if keep else
+                                     f"（待确认的局要用的），识别完删掉 {tidied['deleted']} 张（{tidied['freed'] / 2 ** 20:.0f} MB）"))
         del engine, detector, camera, summary, other, legend, legend_detector, names  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:

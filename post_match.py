@@ -10,6 +10,8 @@
 - 对局中认出的传奇（见 live_collect.LegendWatcher）也一样，存这一局时一起写进去（存中文名，面板直接显示）
 - 玩家名（区分账号用，见 player_name.py）：整次记录通用，不随每局清掉（换账号要重启游戏）。
   存一局时还不知道名字的（比如第一局就没有总结页），等认出名字后补上
+- 一局彻底结束（finish）时调用 on_round_end：记录程序在这里删掉不需要的截图（见 screenshots.py）。
+  这时这一局要不要确认已经定了（经验值页补上名次后会取消待确认）
 """
 
 import storage
@@ -51,8 +53,8 @@ def rank_text(reading):
 
 
 class PostMatch:
-    def __init__(self, conn, log=print, name_slip=0.8):
-        self.conn, self.log = conn, log
+    def __init__(self, conn, log=print, name_slip=0.8, on_round_end=None):
+        self.conn, self.log, self.on_round_end = conn, log, on_round_end
         self.inserted = 0  # 由这里新记下的局数（只有经验值页的局）
         self.info = {}  # 开局画面读到的这一局的模式、地图，对局中认出的传奇
         self.unknown_maps = set()  # 开局画面上读到、但不在已知地图名单里的文字
@@ -150,6 +152,8 @@ class PostMatch:
                          "如果是新地图，可以加进 config/match_start.json")
             self.info, self.unknown_maps = {}, set()
         self.reset()
+        if self.on_round_end is not None:
+            self.on_round_end()
 
     def _wait_for_name(self, match_id):
         """刚存下一局：还不知道玩家名的话，记下编号，认出名字后补上。"""
