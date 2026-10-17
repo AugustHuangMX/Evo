@@ -55,6 +55,10 @@ TIERS, DIVISIONS = _XP_CFG["tiers"], _XP_CFG["divisions"]  # 段位从低到高�
 DIVISION_POINTS = 1000  # 每段的排位点数（经验值页进度条的终点）
 TIER_BADGE = {"菜鸟": ("R", "rookie"), "青铜": ("B", "bronze"), "白银": ("S", "silver"), "黄金": ("G", "gold"),
               "白金": ("P", "platinum"), "钻石": ("D", "diamond"), "大师": ("M", "master"), "Apex 猎杀者": ("A", "predator")}
+try:  # 段位图标的铭牌位置（python icons.py 生成）；没有图标的段位（菜鸟）用上面的字母方块
+    RANK_PLATES = json.loads((PANEL_DIR / "static" / "ranks" / "ranks.json").read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    RANK_PLATES = {}
 DAY_START_HOUR = 5  # "今日"从早上 5 点算起：打到凌晨的局仍算前一天
 RANGES = {"30": "近 30 局", "all": "全部"}
 CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片宽度拉伸）
@@ -295,6 +299,9 @@ def rank_card(rows):
     progress = row["rank_progress"]
     return {
         "badge": f"{letter}{len(DIVISIONS) - DIVISIONS.index(row['rank_division'])}",
+        "icon": f"ranks/{css}.webp" if css in RANK_PLATES else None,
+        "plate": RANK_PLATES.get(css),  # 段数写在徽章底部的铭牌上，和游戏里一样
+        "division": row["rank_division"],
         "tier_class": css,
         "name": f"{row['rank_tier']} {row['rank_division']}",
         "progress": progress,

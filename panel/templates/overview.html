@@ -26,7 +26,14 @@
     {% elif rank %}
     <div class="label">当前段位 · 截至 {{ rank.as_of }}</div>
     <div class="rank-head">
+      {% if rank.icon %}
+      <div class="rank-emblem tier-{{ rank.tier_class }}" aria-hidden="true">
+        <img src="{{ url_for('static', filename=rank.icon) }}" alt="" width="96" height="96">
+        {% if rank.plate %}<span class="rank-numeral num" style="--x: {{ rank.plate.x }}%; --y: {{ rank.plate.y }}%; --h: {{ rank.plate.h }}">{{ rank.division }}</span>{% endif %}
+      </div>
+      {% else %}
       <div class="rank-badge tier-{{ rank.tier_class }} num">{{ rank.badge }}</div>
+      {% endif %}
       <div>
         <div class="rank-name">{{ rank.name }}</div>
         <div class="rank-points"><span class="num" data-count>{{ rank.progress }}</span><span class="unit num"> / {{ rank.division_points }}</span><span class="unit"> 排位点数</span></div>

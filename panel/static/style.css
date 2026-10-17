@@ -282,6 +282,13 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .rank-head { display: flex; align-items: center; gap: 18px; margin: 16px 0 24px; }
 .rank-badge { width: 68px; height: 68px; flex: none; border-radius: 8px; border: 2px solid var(--tier); color: var(--tier);
   background: color-mix(in srgb, var(--tier) 14%, transparent); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; }
+/* 段位图标（panel/static/ranks/，由 icons.py 生成）：段数写在底部铭牌上，位置和大小按铭牌（--x/--y/--h，占图标边长的百分比） */
+.rank-emblem { position: relative; width: 96px; height: 96px; flex: none; container-type: size; }
+.rank-emblem img { display: block; width: 100%; height: 100%; filter: drop-shadow(0 0 12px color-mix(in srgb, var(--tier) 32%, transparent)); }
+[data-theme="light"] .rank-emblem img { filter: drop-shadow(0 2px 5px rgb(0 0 0 / 0.22)); }
+.rank-numeral { position: absolute; left: var(--x); top: var(--y); transform: translate(-50%, -50%);
+  font-size: calc(var(--h) * 0.7cqh); font-weight: 700; line-height: 1; color: #fff; letter-spacing: 0.04em;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--tier) 70%, transparent); }
 .rank-name { font-size: 26px; font-weight: 700; line-height: 1.2; }
 .rank-points { font-size: 28px; font-weight: 600; line-height: 1.3; }
 .rank-points .unit { font-size: 15px; color: var(--muted); font-weight: 500; }
