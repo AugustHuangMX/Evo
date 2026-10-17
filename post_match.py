@@ -8,10 +8,13 @@
 - 开局画面读到的模式和地图，属于接下来这一局：存总结页或单独记一局时一起写进去。
   开局画面没读出模式、但经验值页有 RP 的局，记为排位（只有排位赛的经验值页才有排位点数）
 - 对局中认出的传奇（见 live_collect.LegendWatcher）也一样，存这一局时一起写进去（存中文名，面板直接显示）
+- 玩家名（区分账号用，见 player_name.py）：整次记录通用，不随每局清掉（换账号要重启游戏）。
+  存一局时还不知道名字的（比如第一局就没有总结页），等认出名字后补上
 """
 
 import storage
 from paths import data_relative
+from player_name import same_name, similarity
 
 RP_SOURCE_XP = "经验值页"
 XP_ONLY_NOTE = "没有总结页（第 2 名、冠军时没有这一页）：伤害、生存时间缺失；击杀/助攻是计入排位点数的次数，可能比实际少"
@@ -49,11 +52,14 @@ def rank_text(reading):
 
 
 class PostMatch:
-    def __init__(self, conn, log=print):
+    def __init__(self, conn, log=print, name_slip=0.8):
         self.conn, self.log = conn, log
         self.inserted = 0  # 由这里新记下的局数（只有经验值页的局）
         self.info = {}  # 开局画面读到的这一局的模式、地图，对局中认出的传奇
         self.unknown_maps = set()  # 开局画面上读到、但不在已知地图名单里的文字
+        self.player_name = None  # 这次记录认出的玩家名
+        self.name_slip = name_slip  # 和之前的名字这么像，就当作识别误差（见 config/player_name.json）
+        self.unnamed = []  # 这次记录里存下时还不知道玩家名的局，认出名字后补上
         self.reset()
 
     def reset(self):
@@ -84,13 +90,42 @@ class PostMatch:
         self.info["legend"] = legend
         self.log(f"[{when:%H:%M:%S}] 对局中：认出传奇 {legend}")
 
-    def on_summary_saved(self, match_id, values, when):
-        """总结页存进数据库之后调用。"""
+    def on_player_name(self, name, when, where):
+        """读到自己的玩家名之后调用（where：在哪读到的，写日志用）。
+        - 第一次读到：记下，并补上这次记录里之前存下、还不知道名字的局
+        - 和之前的一样（不管空格）：不用管
+        - 和之前的很像：当作识别误差，仍用之前的名字
+        - 完全不一样：换了账号（用终端运行时，一次记录可能跨过重启游戏），之后的局记在新名字下"""
+        old = self.player_name
+        if same_name(name, old):
+            return
+        if old is not None and similarity(name, old) >= self.name_slip:
+            self.log(f"[{when:%H:%M:%S}] {where}读到玩家名 {name}，和 {old} 很像，当作识别误差，仍记在 {old} 下")
+            return
+        self.player_name = name
+        if old is None:
+            self.log(f"[{when:%H:%M:%S}] {where}：认出玩家名 {name}")
+        else:
+            self.log(f"[{when:%H:%M:%S}] {where}：玩家名从 {old} 变成 {name}（换了账号？），之后的局记在 {name} 下")
+        if self.unnamed:
+            for match_id in self.unnamed:
+                storage.update_match(self.conn, match_id, {"player_name": name})
+            self.log(f"           之前存下的 {len(self.unnamed)} 局（编号 {'、'.join(map(str, self.unnamed))}）补上玩家名")
+            self.unnamed = []
+
+    def on_summary_saved(self, match_id, values, when, player_name=None):
+        """总结页存进数据库之后调用。player_name：总结页中间卡片上读到的名字（没读到为 None）。"""
         if self.match_id is not None:  # 没看到开局画面，又来了一局新的总结页：上一局先收尾
             self.finish()
         self.match_id, self.summary = match_id, (values, when)
-        if self.info:
-            storage.update_match(self.conn, match_id, dict(self.info))
+        if player_name is not None:
+            self.on_player_name(player_name, when, "总结页")
+        fields = dict(self.info)
+        if self.player_name is not None:
+            fields["player_name"] = self.player_name
+        if fields:
+            storage.update_match(self.conn, match_id, fields)
+        self._wait_for_name(match_id)
         self._use_xp()
 
     def on_xp(self, reading, problems, path, when):
@@ -116,6 +151,11 @@ class PostMatch:
                          "如果是新地图，可以加进 config/match_start.json")
             self.info, self.unknown_maps = {}, set()
         self.reset()
+
+    def _wait_for_name(self, match_id):
+        """刚存下一局：还不知道玩家名的话，记下编号，认出名字后补上。"""
+        if self.player_name is None:
+            self.unnamed.append(match_id)
 
     def _use_xp(self):
         if self.xp_done or self.xp is None or self.xp[1] or self.match_id is None:
@@ -166,10 +206,12 @@ class PostMatch:
             "mode": self.info.get("mode") or ("ranked" if rp is not None else None),
             "map": self.info.get("map"),
             "legend": self.info.get("legend"),
+            "player_name": self.player_name,
         }
         if verified:
             match.update({k: reading[k] for k in ("rank_tier", "rank_division", "rank_progress")})
         match_id = storage.insert_match(self.conn, match)
+        self._wait_for_name(match_id)
         self.inserted += 1
         rp_text = "-" if rp is None else f"{rp:+d}"
         self.log(f"[{when:%H:%M:%S}] 记下一局（编号 {match_id}，只有经验值页）：第 {reading['placement'] or '-'} 名，"

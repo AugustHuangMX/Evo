@@ -128,6 +128,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 - **对局中右上角**：剩余小队数/玩家数、击杀/助攻/击倒、伤害、段位徽章和本局实时 RP。**观战时显示的是被观战者的数据，不是自己的**
 - **大厅**：左下角显示段位 + 段内进度（如"钻石 I，48/1000 排位点数"）以及模式和地图（如"排位赛 / 三人赛 / 世界尽头"）。没有单一的"总 RP"数字。"前 5 名排位点数"是活动分数，不需要
 - **干扰**：游戏字幕框会遮挡画面中下部；录像右下角的 outplayed 水印只在录像里有
+- **账号（2026-10-17 查过）**：游戏里看不到自己的固定 ID。大厅左下角的 `SID：2:1019819:11662379:<UUID>` 不是账号编号（UUID 每次登录都变，前半串随游戏版本变）；总结页卡片下面的"ID：0160…"是固定的，但只显示队友的，自己那张是空的。自己的名字在总结页中间卡片和对局中头像旁边，所以按名字区分账号（`player_name.py`），改名后合并
 
 补充（2026-10-16 晚实测 12 局排位，2560×1440，截图在 `captures/live/20261016_211452/`）：
 - **总结页的名次和小队总击杀会晚 1–2 秒滑进来**，每次切到总结页都会重播这个动画。所以"连续两次读数相同"不够，要等名次等关键项都读到
@@ -140,7 +141,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 
 ## 数据（初步设计）
 
-`matches` 表：match_id, started_at, ended_at, mode（ranked/pubs/other）, map, legend, placement, kills, assists, knockdowns, damage, survival_time, revives, respawns, rp_delta, rp_source, rank_tier, rank_division, rank_progress, needs_review, review_note, evidence_path, app_version
+`matches` 表：match_id, started_at, ended_at, player_name（游戏里自己的名字，区分账号）, mode（ranked/pubs/other）, map, legend, placement, kills, assists, knockdowns, damage, survival_time, revives, respawns, rp_delta, rp_source, rank_tier, rank_division, rank_progress, needs_review, review_note, evidence_path, app_version
 
 - `rp_source`：本局 rp_delta 的来源（经验值页明细 / 实时 RP / 对账补算），对账时据此判断哪些局不太确定
 - `rank_tier` / `rank_division` / `rank_progress`：本局结束后的段位、段、段内进度（如 钻石 / I / 48）。读不到时用上一次读数 + rp_delta 推算

@@ -1,6 +1,6 @@
 """整晚重放：把 2026-10-16 晚实战时存下的截图按时间顺序喂给记录程序，检查最后记下的每一局对不对。
 
-测的是整条流程：认画面 → 读总结页 → 读经验值页 → 读开局画面的模式和地图 → 把同一局的数据归到一起。
+测的是整条流程：认画面 → 读总结页（含自己的玩家名）→ 读经验值页 → 读开局画面的模式和地图 → 把同一局的数据归到一起。
 正确答案在 replay_20261016.csv（来自截图人工核对；RP 和段位进度前后能串起来：942 → 939 → 967 → … → 964）。
 截图在 captures/live/20261016_211452/（不在仓库里，见 fake_game.py）。
 
@@ -18,7 +18,7 @@ NIGHT = "live/20261016_211452"
 ANSWERS = Path(__file__).with_name("replay_20261016.csv")
 LABELS = {"placement": "名次", "kills": "击杀", "assists": "助攻", "knockdowns": "击倒", "damage": "伤害",
           "rp_delta": "RP", "rank_tier": "段位", "rank_division": "段", "rank_progress": "段内进度",
-          "needs_review": "待确认", "mode": "模式", "map": "地图"}
+          "needs_review": "待确认", "mode": "模式", "map": "地图", "player_name": "玩家名"}
 
 
 def shot_time(path):

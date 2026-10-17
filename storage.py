@@ -15,13 +15,14 @@ from pathlib import Path
 from paths import DB_PATH
 
 APP_VERSION = "0.1.0"
-SCHEMA_VERSION = 1  # 以后表结构变了就加 1，程序据此自动升级旧数据库
+SCHEMA_VERSION = 2  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
     "match_id": "INTEGER PRIMARY KEY AUTOINCREMENT",  # 每局的编号，自动递增
     "started_at": "TEXT",  # 开局时间（等状态机做好才有）
     "ended_at": "TEXT",  # 识别到总结页的时间，如 2026-10-16 21:03:15
+    "player_name": "TEXT",  # 游戏里显示的自己的名字，区分账号用（见 player_name.py）
     "mode": "TEXT",
     "map": "TEXT",
     "legend": "TEXT",
@@ -45,18 +46,46 @@ COLUMNS = {
     "app_version": "TEXT",
 }
 
+# 旧数据库怎么升级：版本号 → 升到这个版本要执行的 SQL。只加列，已有的数据不动
+# （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）
+MIGRATIONS = {
+    2: ["ALTER TABLE matches ADD COLUMN player_name TEXT"],  # 2026-10-17 多账号
+}
+
+
+def _version(conn):
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _upgrade(conn):
+    """新数据库建表；旧数据库按 MIGRATIONS 一步步升级到 SCHEMA_VERSION。
+    先锁住数据库再看版本号：面板和记录程序同时打开一个旧数据库时，只会升级一次；中途出错就整个撤回。"""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        version = _version(conn)
+        if version == 0:
+            cols = ",\n  ".join(f"{name} {kind}" for name, kind in COLUMNS.items())
+            conn.execute(f"CREATE TABLE IF NOT EXISTS matches (\n  {cols}\n)")
+        else:
+            for v in range(version + 1, SCHEMA_VERSION + 1):
+                for sql in MIGRATIONS[v]:
+                    conn.execute(sql)
+        if version < SCHEMA_VERSION:
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+
 
 def connect(db_path=DB_PATH):
-    """打开数据库；第一次用时自动建表。"""
+    """打开数据库；第一次用时自动建表，旧版本的数据库自动升级。"""
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row  # 让查询结果可以按列名取值，比如 row["kills"]
-    if conn.execute("PRAGMA user_version").fetchone()[0] == 0:
-        cols = ",\n  ".join(f"{name} {kind}" for name, kind in COLUMNS.items())
-        conn.execute(f"CREATE TABLE IF NOT EXISTS matches (\n  {cols}\n)")
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        conn.commit()
+    if _version(conn) < SCHEMA_VERSION:
+        _upgrade(conn)
     return conn
 
 
@@ -154,8 +183,9 @@ def delete_all_matches(conn):
 
 
 def write_csv(conn, f):
-    """把全部数据按 CSV 格式写进一个已打开的文件（或内存里的文本缓冲）。"""
-    rows = conn.execute("SELECT * FROM matches ORDER BY match_id").fetchall()
+    """把全部数据按 CSV 格式写进一个已打开的文件（或内存里的文本缓冲）。
+    按 COLUMNS 的顺序取列：升级过的旧数据库里，新加的列排在最后，SELECT * 的顺序会和列名对不上。"""
+    rows = conn.execute(f"SELECT {', '.join(COLUMNS)} FROM matches ORDER BY match_id").fetchall()
     writer = csv.writer(f)
     writer.writerow(COLUMNS)
     writer.writerows([tuple(r) for r in rows])

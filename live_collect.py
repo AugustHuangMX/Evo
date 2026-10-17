@@ -7,6 +7,8 @@
   没有总结页的局（第 2 名、冠军）只靠经验值页单独记一局。怎么归到同一局见 post_match.py
 - 开局画面：读本局的模式和地图（见 match_start.py），两项都读到就不再读
 - 对局中：每 3 秒看一眼左下角自己的头像，认出用的是哪个传奇（见 legends.py 和 LegendWatcher，不用识别模型）
+- 玩家名（区分账号，见 player_name.py 和 NameWatcher）：总结页存这一局时读中间卡片上的名字；
+  这次记录还不知道名字时，对局中在认出自己传奇的那一帧读头像旁边的名字（知道了就不再读）
 - 经验值页、开局画面、大厅（见 config/screens.json）：进入时存一张截图，离开前最后一帧再存一张（见 ScreenWatcher）。
   开局画面用来分隔每一局
 - 其他画面：什么都不做（大部分时间都是这样）
@@ -33,6 +35,7 @@ from legends import LegendDetector
 from match_start import read_match_start
 from ocr import SMALL_CROP_PARAMS, LazyEngine, load_config
 from paths import CAPTURES_DIR
+from player_name import PlayerNameReader
 from post_match import PostMatch
 from process_info import memory_mb, set_low_priority
 from screens import ScreenDetector
@@ -62,9 +65,9 @@ class SummaryWatcher:
     就保存截图、把这一局写进数据库。还没读全就离开了、等太久、或者停止记录时，用读得最全的一次存下，标记"待确认"。
     在总结页和别的画面之间来回切换，同一局不重复存。"""
 
-    def __init__(self, engine, cfg, conn, post, run_dir, log, timeout):
+    def __init__(self, engine, cfg, conn, post, run_dir, log, timeout, names=None):
         self.engine, self.cfg, self.conn, self.post = engine, cfg, conn, post
-        self.run_dir, self.log, self.timeout = run_dir, log, timeout
+        self.run_dir, self.log, self.timeout, self.names = run_dir, log, timeout, names
         self.saved = 0  # 这次记录存下了几局
         self.visit = None  # 这一次停在总结页的情况：开始时间、上一次的读数、读得最全的一次
         self.done = False  # 这一次总结页已经存过了
@@ -130,7 +133,8 @@ class SummaryWatcher:
                  f"击杀/助攻/击倒 {show(values['kda'])}，伤害 {show(values['damage'])}")
         for p in problems:
             self.log(f"           ⚠ {p}")
-        self.post.on_summary_saved(match_id, values, when)
+        name = self.names.on_summary(frame) if self.names else None
+        self.post.on_summary_saved(match_id, values, when, name)
 
     def _record_best(self, note):
         """数字没等到读全：用这次停留里读得最全的一次存下（会标记待确认）。
@@ -192,12 +196,13 @@ class LegendWatcher:
     同一个传奇认出 2 次就记下（交给 PostMatch，存这一局时一起写进去），这一局就不再看了。
     - 开局画面：新的一局开始，之前认出的不算数（比如在靶场里认出的）
     - 阵亡后观战：左下角是被观战的人，整块还往上移了约 60，在自己头像的位置上认不出来，所以不会认成队友
-    - 刚开始记录时也看（可能正在对局中）"""
+    - 刚开始记录时也看（可能正在对局中）
+    on_own_hud(画面, 时间)：认出传奇的那一帧交给它（这一帧左下角肯定是自己，NameWatcher 在这里读玩家名）"""
 
     VOTES = 2  # 同一个传奇认出这么多次才算数
 
-    def __init__(self, detector, post, every=3.0):
-        self.detector, self.post, self.every = detector, post, every
+    def __init__(self, detector, post, every=3.0, on_own_hud=None):
+        self.detector, self.post, self.every, self.on_own_hud = detector, post, every, on_own_hud
         self.checks = 0  # 一共看了几次（统计用）
         self._restart()
 
@@ -220,10 +225,40 @@ class LegendWatcher:
         key = self.detector.identify(frame)
         if key is None:
             return
+        if self.on_own_hud is not None:
+            self.on_own_hud(frame, now)
         self.votes[key] = self.votes.get(key, 0) + 1
         if self.votes[key] >= self.VOTES:
             self.active = False
             self.post.on_legend(self.detector.name(key), now)
+
+
+class NameWatcher:
+    """认出自己的玩家名（见 player_name.py），用来区分账号。读到的名字交给 PostMatch，存每一局时写进去。
+    - 总结页：存这一局时读中间卡片上的名字（SummaryWatcher 调用 on_summary）
+    - 对局中：这次记录还不知道名字时（比如刚开始记录，第一局就是第 2 名、冠军，没有总结页），在认出自己传奇的
+      那一帧读头像旁边的名字（LegendWatcher 调用 on_own_hud；观战时认不出自己的传奇，所以不会读成别人）。
+      知道了就不再读，最多读 max_hud_reads 次：换账号要重启游戏，同一次记录里账号一般不会变；
+      这样打游戏时最多加载一次识别模型（原则 3）"""
+
+    def __init__(self, reader, post, max_hud_reads):
+        self.reader, self.post, self.max_hud_reads = reader, post, max_hud_reads
+        self.reads = self.hud_reads = 0  # 一共读了几次、其中对局中几次（统计用）
+
+    def on_summary(self, frame):
+        """读总结页中间卡片上的名字，读不到返回 None。"""
+        self.reads += 1
+        found = self.reader.read(frame, "summary")
+        return found[0] if found else None
+
+    def on_own_hud(self, frame, now):
+        if self.post.player_name is not None or self.hud_reads >= self.max_hud_reads:
+            return
+        self.reads += 1
+        self.hud_reads += 1
+        found = self.reader.read(frame, "hud")
+        if found:
+            self.post.on_player_name(found[0], now, "对局中")
 
 
 def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.0,
@@ -241,16 +276,18 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     conn = storage.connect(db_path)
-    post = PostMatch(conn, log=log)
+    name_cfg = load_config("player_name.json")
+    post = PostMatch(conn, log=log, name_slip=name_cfg["slip_similarity"])
 
     camera = dxcam.create(output_color="BGR", processor_backend="numpy")
     # clock 用 lambda 包一层：测试时会把本文件的 time 换成假时钟
     engine = LazyEngine(SMALL_CROP_PARAMS, MODEL_IDLE_SECONDS, clock=lambda: time.monotonic(), log=log)
     detector = ScreenDetector(engine, screens)
-    summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout)
+    names = NameWatcher(PlayerNameReader(engine, name_cfg), post, name_cfg["max_hud_reads"])
+    summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout, names)
     other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"), post, run_dir, log)
     legend_detector = LegendDetector()
-    legend = LegendWatcher(legend_detector, post)
+    legend = LegendWatcher(legend_detector, post, on_own_hud=names.on_own_hud)
     log(f"屏幕: {camera.width}x{camera.height}")
     log(f"数据库: {Path(db_path).resolve()}")
     log(f"截图保存到: {run_dir.resolve()}")
@@ -308,8 +345,9 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         conn.close()
         saved = total()
         log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
-            f"加载识别模型 {engine.loads} 次；认传奇 {legend.checks} 次；内存峰值 {memory_mb()[1]:.0f} MB")
-        del engine, detector, camera, summary, other, legend, legend_detector  # 释放识别模型和截屏，交还内存
+            f"加载识别模型 {engine.loads} 次；认传奇 {legend.checks} 次；读玩家名 {names.reads} 次"
+            f"（对局中 {names.hud_reads} 次），玩家名 {post.player_name or '没认出'}；内存峰值 {memory_mb()[1]:.0f} MB")
+        del engine, detector, camera, summary, other, legend, legend_detector, names  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved
