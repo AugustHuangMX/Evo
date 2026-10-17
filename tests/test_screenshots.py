@@ -62,14 +62,14 @@ def rule_checks():
     """什么时候保留全部截图。"""
     with keep_setting(False):
         off = screenshots.keep_all()
-        with mock.patch.object(screenshots, "DATA_DIR", screenshots.APP_DIR):
+        with mock.patch.object(screenshots, "PROJECT_CAPTURES", CAPTURES_DIR):  # 假装截图存在项目的 captures/
             project = screenshots.keep_all()
     with keep_setting(True):
         on = screenshots.keep_all()
     return {
         "开关关着（默认）：识别完就删": off is False,
         "开关打开：保留全部": on is True,
-        "数据文件夹就是项目文件夹（用源码运行）：不管开关，永远保留全部（项目里的截图是测试集）": project is True,
+        "截图存在项目的 captures/（用源码运行）：不管开关，永远保留全部（项目里的截图是测试集）": project is True,
     }
 
 
@@ -131,7 +131,7 @@ def panel_checks():
 
 def settings_checks():
     """设置页的开关和"删除已识别完的截图"按钮。"""
-    assert screenshots.DATA_DIR != screenshots.APP_DIR  # 只在 fake_game 设的临时数据文件夹里删，绝不碰项目里的测试集
+    assert not screenshots.in_project()  # 只在 fake_game 设的临时数据文件夹里删，绝不碰项目里的测试集
     live = CAPTURES_DIR / "live"
     old, older, now = live / "20261015_200000", live / "20261016_200000", live / "20991231_000000"  # now：最新的文件夹
     for one in (old, older, now):
@@ -172,7 +172,7 @@ def settings_checks():
 
     recording = [SimpleNamespace(name="evo-collect")]  # 假装记录子程序在运行
     with keep_setting(True), mock.patch.object(screenshots.multiprocessing, "active_children", lambda: recording):
-        with mock.patch.object(screenshots, "DATA_DIR", screenshots.APP_DIR):  # 用源码运行
+        with mock.patch.object(screenshots, "PROJECT_CAPTURES", CAPTURES_DIR):  # 假装截图存在项目的 captures/（用源码运行）
             locked_page = page()
             locked = (post("/settings/clean-shots").status_code, post("/settings/keep-shots", keep="0").status_code)
             locked_files = all(p.exists() for p in [done, lobby, *whole])

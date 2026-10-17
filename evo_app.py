@@ -12,7 +12,10 @@
 - 运行记录写在数据文件夹的 logs/evo.log（打包后没有终端窗口，出了问题看这里）
 
 运行：python evo_app.py
-测试：python evo_app.py --game notepad.exe   （把别的程序当作游戏，用来测试"开始/停止记录"）
+  用源码运行、这台电脑上装过 Evo 时：战绩记进安装版的数据文件夹（启动前先备份数据库），截图全部存进项目的 captures/，
+  见 source_run.py。所以源码版和安装版不能同时开
+测试：python evo_app.py --game notepad.exe   （把别的程序当作游戏，用来测试"开始/停止记录"；
+  不想碰正式数据就先设 EVO_DATA_DIR 指向一个测试用的文件夹）
 自检：python evo_app.py --check-image 截图.png   （识别截图，结果写进 logs/evo.log）
 """
 
@@ -31,14 +34,20 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from queue import Empty
 
-import pystray
-from PIL import Image, ImageDraw, ImageOps
+import source_run
 
-import app_settings
-import storage
-from game_detect import GAME_PROCESSES, game_running
-from icons import base_icon
-from paths import ASSETS_DIR, DATA_DIR, FROZEN, LOG_DIR
+# 用源码运行时：战绩记进安装版的数据文件夹，截图存进项目（见 source_run.py）。要在导入 paths 之前设好；
+# 只在直接运行本文件时这样（记录、窗口子程序会继承环境变量），被别的代码 import 时不改
+INSTALLED_DATA = source_run.use_installed_data() if __name__ == "__main__" else None
+
+import pystray  # noqa: E402
+from PIL import Image, ImageDraw, ImageOps  # noqa: E402
+
+import app_settings  # noqa: E402
+import storage  # noqa: E402
+from game_detect import GAME_PROCESSES, game_running  # noqa: E402
+from icons import base_icon  # noqa: E402
+from paths import ASSETS_DIR, CAPTURES_DIR, DATA_DIR, DB_PATH, FROZEN, LOG_DIR  # noqa: E402
 
 APP_NAME = "Evo"
 # 同一个数据文件夹只能运行一个 Evo（防止同一局被记两遍）；数据文件夹不同（比如测试用的临时文件夹）互不影响
@@ -135,6 +144,28 @@ def start_update_checker(log, notify, stop):
                 return
 
     threading.Thread(target=loop, name="update-check", daemon=True).start()
+
+
+SOURCE_BACKUPS = 5  # 源码运行前的数据库备份留最近几份
+
+
+def backup_before_source_run(log):
+    """用源码运行、战绩记进安装版的数据库时，先备份一份（正在改的代码万一写坏了正式数据，还能找回来）。
+    备份放在数据库旁边，叫 evo.db.bak-source-时间，只留最近几份。返回备份文件（没有数据库时返回 None）。"""
+    if not DB_PATH.is_file():
+        return None
+    import sqlite3
+
+    backup = DB_PATH.with_name(f"{DB_PATH.name}.bak-source-{time.strftime('%Y%m%d-%H%M%S')}")
+    conn = sqlite3.connect(DB_PATH)  # 不用 storage.connect：它会先升级表结构，备份要留升级前的样子
+    try:
+        storage.backup_db(conn, backup)
+    finally:
+        conn.close()
+    for old in sorted(DB_PATH.parent.glob(f"{DB_PATH.name}.bak-source-*"))[:-SOURCE_BACKUPS]:
+        old.unlink(missing_ok=True)
+    log(f"用源码运行：战绩记进安装版的数据库，启动前已备份到 {backup.name}；截图全部存进项目 {CAPTURES_DIR}")
+    return backup
 
 
 def tell_user(text):
@@ -429,13 +460,20 @@ def main():
 
     if already_running():
         # 再次双击 Evo：让已经在运行的那个把窗口弹出来，自己安静退出
-        if not ask_running_evo_to_show():
+        if INSTALLED_DATA is not None:
+            print("安装版 Evo 正在运行（和源码版用同一个数据文件夹，只能开一个），已让它弹出窗口。")
+            print("要用源码记录：先右键托盘图标 → 退出安装版，再运行 python evo_app.py")
+            ask_running_evo_to_show()
+        elif not ask_running_evo_to_show():
             tell_user("Evo 已经在运行了，请看任务栏右下角的托盘图标。")
         return
 
     logger = setup_logging()
     log = logger.info
-    log(f"Evo {storage.APP_VERSION} 启动。数据文件夹：{DATA_DIR}；把这些进程当作游戏：{'、'.join(args.game)}")
+    log(f"Evo {storage.APP_VERSION} 启动{'（源码运行）' if not FROZEN else ''}。数据文件夹：{DATA_DIR}；"
+        f"把这些进程当作游戏：{'、'.join(args.game)}")
+    if INSTALLED_DATA is not None:
+        backup_before_source_run(log)
 
     icons = load_icons()
     tips = {"waiting": "等待 Apex 启动", "recording": "正在记录", "paused": "已暂停记录"}

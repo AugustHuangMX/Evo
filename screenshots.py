@@ -4,7 +4,8 @@
   不需要确认的删掉、数据库里的截图位置清空；"待确认"的局留着，在战绩页对着改
   （为什么要等一局结束：总结页常常名次还没滑进来就先存下、标待确认，过一会儿经验值页补上名次才取消待确认）
 - "保留全部截图"（数据文件夹 settings.json 里的 keep_all_screenshots）：全部留着，和以前一样，用来攒测试集
-- 数据文件夹就是项目文件夹时（用源码运行、没设 EVO_DATA_DIR）：不管开关，永远保留全部——项目里的 captures/ 就是测试集
+- 截图存在项目的 captures/ 时（用源码运行；源码运行 evo_app.py 时战绩记进安装版、截图仍存进项目，见 source_run.py）：
+  不管开关，永远保留全部——项目里的 captures/ 就是测试集
 - 只删这次记录的文件夹里的截图，以前存下的不动
 - 战绩页确认（保存）或删除一局时，删掉这一局的截图（discard）
 - 设置页"删除已识别完的截图"按钮（clean_up）：以前存下的也按同样的规则删，正在记录的文件夹不动
@@ -14,14 +15,15 @@ import multiprocessing
 
 import app_settings
 import storage
-from paths import APP_DIR, CAPTURES_DIR, DATA_DIR, FROZEN, data_absolute
+from paths import APP_DIR, CAPTURES_DIR, FROZEN, data_absolute
 
 KEEP_ALL_KEY = "keep_all_screenshots"
+PROJECT_CAPTURES = APP_DIR / "captures"  # 用源码运行时项目里的截图文件夹（测试集）
 
 
 def in_project():
-    """数据文件夹就是项目文件夹（用源码运行、没设 EVO_DATA_DIR）：项目里的 captures/ 是测试集，一张都不删。"""
-    return not FROZEN and DATA_DIR == APP_DIR
+    """截图存在项目的 captures/（用源码运行）：那里是测试集，一张都不删。"""
+    return not FROZEN and CAPTURES_DIR.resolve() == PROJECT_CAPTURES.resolve()
 
 
 def keep_all():

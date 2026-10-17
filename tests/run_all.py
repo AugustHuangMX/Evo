@@ -17,11 +17,13 @@ import test_player_name
 import test_ranks
 import test_replay
 import test_screenshots
+import test_source_run
 import test_summary_page
 
 TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）": test_light, "整晚重放": test_replay,
          "传奇识别": test_legends, "玩家名（区分账号）": test_player_name, "多账号（对照表和弹窗）": test_accounts,
-         "截图留不留": test_screenshots, "段位": test_ranks}
+         "截图留不留": test_screenshots, "段位": test_ranks,
+         "源码运行（战绩记进安装版）": test_source_run}
 
 
 def main():

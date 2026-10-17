@@ -8,7 +8,10 @@
   - 打包后，Evo.exe 旁边有 data_location.txt：用里面写的文件夹（安装时写入，见 install.py）
   - 打包后，没有这个文件：%LOCALAPPDATA%\\Evo
   - 用源码运行：项目文件夹（开发时和以前一样）
-数据库里记的截图路径是相对于 DATA_DIR 的，整个数据文件夹搬家后照样能找到。
+  - 例外：用源码运行 evo_app.py、这台电脑上装过 Evo 时，用安装版的数据文件夹（见 source_run.py，靠 EVO_DATA_DIR）
+- 截图 captures/ 一般在数据文件夹里；设置了环境变量 EVO_CAPTURES_DIR 时用它
+  （用源码运行 evo_app.py 时设成项目的 captures/，见 source_run.py）
+数据库里记的截图路径是相对于 DATA_DIR 的，整个数据文件夹搬家后照样能找到（不在数据文件夹里的截图记完整路径）。
 """
 
 import os
@@ -42,7 +45,8 @@ PANEL_DIR = APP_DIR / "panel"
 ASSETS_DIR = APP_DIR / "assets"  # 图标等
 DB_DIR = DATA_DIR / "data"
 DB_PATH = DB_DIR / "evo.db"
-CAPTURES_DIR = DATA_DIR / "captures"
+CAPTURES_DIR = (Path(os.environ["EVO_CAPTURES_DIR"]).resolve() if os.environ.get("EVO_CAPTURES_DIR")
+                else DATA_DIR / "captures")
 LOG_DIR = DATA_DIR / "logs"  # 托盘程序的运行记录（没有终端窗口，出了问题看这里）
 
 

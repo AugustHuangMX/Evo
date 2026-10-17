@@ -6,16 +6,19 @@
 - --data：数据文件夹（数据库、截图、日志）。写进安装文件夹里的 data_location.txt，Evo.exe 启动时据此找数据；
   不写就用 %LOCALAPPDATA%\\Evo。安装只动程序文件，不碰数据文件夹
 - 在桌面和开始菜单建"Evo"快捷方式
+- 在项目里记下数据文件夹（installed_data_location.txt，不提交）：用源码运行 evo_app.py 时，战绩也记进这个数据文件夹（见 source_run.py）
 - Evo 正在运行时不安装（文件被占用，也免得装到一半）
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from game_detect import process_names
+from source_run import POINTER_FILE
 
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist" / "Evo"
@@ -64,6 +67,10 @@ def main():
         (target / "data_location.txt").write_text(f"{data}\n", encoding="utf-8")
         data.mkdir(parents=True, exist_ok=True)
         print(f"数据文件夹：{data}（写进了 data_location.txt）")
+
+    data_dir = data or Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Evo"  # 和 paths.py 里打包版的规则一样
+    POINTER_FILE.write_text(f"{data_dir}\n", encoding="utf-8")
+    print(f"用源码运行 evo_app.py 时，战绩也记进 {data_dir}（写进了项目里的 {POINTER_FILE.name}）")
 
     exe = target / "Evo.exe"
     for folder in ("Desktop", "Programs"):

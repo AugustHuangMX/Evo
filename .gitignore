@@ -16,6 +16,8 @@ site/
 .wrangler/
 # Evo 自己的小设置（app_settings.py）
 settings.json
+# 安装版的数据文件夹在哪里（install.py 写，用源码运行 evo_app.py 时读，见 source_run.py；每台电脑不一样）
+installed_data_location.txt
 
 # ===== Python 自动生成的文件 =====
 __pycache__/
