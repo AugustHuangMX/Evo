@@ -27,6 +27,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 5. **数据可信优先**：识别置信度低时，不悄悄写入错误数据，而是保留截图并标记"待确认"，由用户在面板中修正。
 6. **配置驱动**：识别规则（区域、模板、阈值、状态转换）写在配置文件里，而不是写死在代码中，以便适应赛季更新和社区贡献。
 7. **不提供竞技优势**：不做查看其他玩家段位、实时战术提示等功能。只记录用户自己的数据。
+8. 在调整网页的时候，永远使用ui-ux-promax的skill。
 
 ## 技术栈（计划）
 
@@ -47,6 +48,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
   - 打游戏用安装好的 Evo（数据在 `E:\Evo Tracker Data`）；用源码运行时数据仍在项目文件夹，两边互不干扰。不要直接运行 `dist\Evo\Evo.exe`：它开着时没法重新打包
   - 图标由用户设计（蓝色胶囊 + 上升柱状图），文件是 `assets/icon/evo.png`（要求见 `assets/icon/` 里的 README）；程序自动裁掉四周透明空白（`icons.py`）。托盘、exe、窗口标题栏、面板左上角的标志、浏览器标签页都用它（2026-10-17 用户决定，取代设计稿里的红色盾牌）
   - 打包命令：`python build.py`（用 `evo.spec`，PyInstaller 6.22，只在开发时用）→ `dist/Evo/Evo.exe`。自己电脑上生成的 exe 不会触发 SmartScreen（只有从网上下载的才会）
+  - 发布：`python release.py` 做压缩包和 SHA-256（要求代码都已提交）。官网和下载都在 Cloudflare：网页是 Pages 项目 `evotracker`（evotracker.cn，"直接上传"类型，不能改成连接 GitHub；`site/` 只在本机），下载文件在 R2 存储桶 `evotracker`（dl.evotracker.cn）。上传网页：`wrangler pages deploy site --project-name evotracker --branch main`。Wrangler 是 Cloudflare 的命令行工具，要 Node.js（2026-10-17 用户同意安装，只装在开发电脑上、不进 Evo 安装包；Evo 和面板本身仍不用 Node.js）
   - 打包后排查问题：`Evo.exe --check-image 截图.png` 自检（结果写进 logs/evo.log）；`--background` 启动时只进托盘、不弹窗口（留给开机自启）；`--no-window` 只启动面板服务（测试用）
   - 启动行为（2026-10-17 用户要求）：打开 Evo 就立刻弹出窗口（约 1 秒），不能只在托盘里，否则像没打开成功。Evo 已经在运行时再双击，就让它把窗口弹出来（Windows 命名事件），不再弹"已经在运行"的提示。关掉窗口 Evo 仍在托盘里记录（和 Outplayed、Blitz 一样），第一次关时弹一条 Windows 通知说明，只提示一次（记在数据文件夹的 `settings.json`）。"只能运行一个"按数据文件夹区分
   - 托盘用 pystray（LGPLv3，用户同意）：我们的代码仍是 MIT。发布 exe 时要附上 pystray 的许可证原文，并让它以普通 .py 文件的形式放在程序文件夹里（不压进程序内部），方便别人替换
