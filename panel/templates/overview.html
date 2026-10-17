@@ -25,12 +25,12 @@
       <div class="rank-badge tier-{{ rank.tier_class }} num">{{ rank.badge }}</div>
       <div>
         <div class="rank-name">{{ rank.name }}</div>
-        <div class="rank-points"><span class="num">{{ rank.progress }}</span><span class="unit num"> / {{ rank.division_points }}</span><span class="unit"> 排位点数</span></div>
+        <div class="rank-points"><span class="num" data-count>{{ rank.progress }}</span><span class="unit num"> / {{ rank.division_points }}</span><span class="unit"> 排位点数</span></div>
       </div>
     </div>
     {% if rank.next_name %}
     <div class="rank-next">
-      <span>距{{ rank.next_name }}</span><span>还差 <span class="num">{{ rank.to_next }}</span></span>
+      <span>距{{ rank.next_name }}</span><span>还差 <span class="num" data-count>{{ rank.to_next }}</span></span>
     </div>
     <div class="bar"><div class="bar-fill tier-{{ rank.tier_class }}" style="width: {{ rank.percent }}%"></div></div>
     {% endif %}
@@ -39,9 +39,9 @@
     <div class="rank-empty">还没有段位数据。每局结束后切到经验值页、等数字停下再离开，这里就会显示段位。</div>
     {% endif %}
     <div class="mini-stats">
-      <div><div class="label">{{ ranges[range_key] }} RP</div><div class="mini num {{ 'rp-good' if range_rp.good else ('rp-bad' if range_rp.good is false else 'rp-none') }}">{{ range_rp.text }}</div></div>
-      <div title="从早上 5 点算起，打到凌晨的局仍算前一天"><div class="label">今日 RP</div><div class="mini num {{ 'rp-good' if today_rp.good else ('rp-bad' if today_rp.good is false else 'rp-none') }}">{{ today_rp.text }}</div></div>
-      <div title="从早上 5 点算起，打到凌晨的局仍算前一天"><div class="label">今日局数</div><div class="mini num">{{ today_games }}</div></div>
+      <div><div class="label">{{ ranges[range_key] }} RP</div><div class="mini num {{ 'rp-good' if range_rp.good else ('rp-bad' if range_rp.good is false else 'rp-none') }}" data-count>{{ range_rp.text }}</div></div>
+      <div title="从早上 5 点算起，打到凌晨的局仍算前一天"><div class="label">今日 RP</div><div class="mini num {{ 'rp-good' if today_rp.good else ('rp-bad' if today_rp.good is false else 'rp-none') }}" data-count>{{ today_rp.text }}</div></div>
+      <div title="从早上 5 点算起，打到凌晨的局仍算前一天"><div class="label">今日局数</div><div class="mini num" data-count>{{ today_games }}</div></div>
     </div>
   </section>
 
@@ -81,7 +81,7 @@
   {% for s in stats %}
   <div class="card stat">
     <div class="label">{{ s.label }}</div>
-    <div class="stat-value num {{ 'accent' if s.accent }}">{{ s.value }}</div>
+    <div class="stat-value num {{ 'accent' if s.accent }}" data-count>{{ s.value }}</div>
   </div>
   {% endfor %}
 </div>
@@ -134,4 +134,48 @@
 </div>
 
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // 打开总览页时，标了 data-count 的数字从 0 滚动到实际值。只是显示效果：格式（逗号、小数、+/−、%）
+  // 和服务器给的一样，最后一帧换回原文。"—" 这种没有数字的不动
+  (function () {
+    if (reduceMotion.matches) return;
+    var DURATION = 800;
+    var items = [];
+    document.querySelectorAll("[data-count]").forEach(function (el) {
+      var text = el.textContent.trim();
+      var m = text.match(/^(\D*)(\d[\d,]*(?:\.\d+)?)(\D*)$/);  // 前缀（+ −）、数字、后缀（%）
+      if (!m) return;
+      items.push({ el: el, text: text, before: m[1], after: m[3], value: parseFloat(m[2].replace(/,/g, "")),
+                   decimals: (m[2].split(".")[1] || "").length, comma: m[2].indexOf(",") >= 0 });
+    });
+    function show(item, value) {
+      var digits = item.comma
+        ? value.toLocaleString("en-US", { minimumFractionDigits: item.decimals, maximumFractionDigits: item.decimals })
+        : value.toFixed(item.decimals);
+      item.el.textContent = item.before + digits + item.after;
+    }
+    var start = null, done = false;
+    function finish() {
+      done = true;
+      items.forEach(function (item) { item.el.textContent = item.text; });
+    }
+    function frame(now) {
+      if (done) return;
+      if (start === null) start = now;
+      var t = Math.min(1, (now - start) / DURATION);
+      if (t === 1) return finish();
+      var eased = 1 - Math.pow(1 - t, 3);  // 先快后慢
+      items.forEach(function (item) { show(item, item.value * eased); });
+      requestAnimationFrame(frame);
+    }
+    if (items.length) {
+      items.forEach(function (item) { show(item, 0); });
+      requestAnimationFrame(frame);
+      setTimeout(finish, DURATION + 400);  // 保险：窗口被最小化等情况下逐帧动画不跑，也一定显示原文
+    }
+  })();
+</script>
 {% endblock %}

@@ -50,9 +50,12 @@
     <span class="brand-name">EVO</span>
   </div>
   <nav class="nav" aria-label="主导航">
-    <a href="{{ url_for('overview') }}" class="{{ 'active' if request.endpoint == 'overview' }}">总览</a>
-    <a href="{{ url_for('matches') }}" class="{{ 'active' if request.endpoint == 'matches' }}">战绩</a>
-    <a href="{{ url_for('settings') }}" class="{{ 'active' if request.endpoint == 'settings' }}">设置</a>
+    {% for endpoint, label in nav %}
+    {# 选中标签的底色是单独的一块（nav-pill）：从别的页面切过来时，它从上一页的标签滑过来（见 style.css 的"动效"） #}
+    <a href="{{ url_for(endpoint) }}" class="{{ 'active' if request.endpoint == endpoint }}">
+      {%- if request.endpoint == endpoint %}<span class="nav-pill{{ ' slide' if switch.shift }}" style="--shift: {{ switch.shift }}"></span>{% endif %}{{ label -}}
+    </a>
+    {% endfor %}
   </nav>
   {% if is_demo %}
   <div class="pill pill-warn" title="当前读取的是 {{ db_name }}，不是正式数据库">
@@ -65,11 +68,13 @@
   </button>
 </header>
 
+<main class="page{{ ' page-enter' if switch.enter }}">
 {% for category, message in get_flashed_messages(with_categories=true) %}
 <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
 {% endfor %}
 
 {% block content %}{% endblock %}
+</main>
 
 </div>
 <script>
@@ -77,12 +82,21 @@
   window.evoTheme = function () {
     try { return localStorage.getItem("evo-theme") || "system"; } catch (e) { return "system"; }
   };
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");  // Windows 设置里关了"动画效果"
   function applyTheme() {
     var theme = evoTheme();
     if (theme !== "light" && theme !== "dark") {
       theme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     }
-    document.documentElement.dataset.theme = theme;
+    if (document.documentElement.dataset.theme === theme) return;
+    if (!document.startViewTransition || reduceMotion.matches) {
+      document.documentElement.dataset.theme = theme;
+      return;
+    }
+    // 整页从旧颜色柔和地淡到新颜色（theme-fade 期间按钮等不再各自慢慢变色，见 style.css）
+    document.documentElement.classList.add("theme-fade");
+    document.startViewTransition(function () { document.documentElement.dataset.theme = theme; })
+      .finished.finally(function () { document.documentElement.classList.remove("theme-fade"); });
   }
   window.evoSetTheme = function (choice) {
     try {
@@ -97,6 +111,24 @@
   document.getElementById("theme-toggle").addEventListener("click", function () {
     evoSetTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   });
+
+  // 同一页里的操作（展开某一局、筛选、保存……）会重新打开这一页：停在原来的滚动位置，不跳回顶部
+  (function () {
+    var scroller = document.documentElement.classList.contains("in-app") ? document.body : document.scrollingElement;
+    function spot(href) {  // "同一页" = 路径和页码都相同（翻页后从顶部看起）
+      var url = new URL(href);
+      return url.pathname + "?page=" + (url.searchParams.get("page") || "1");
+    }
+    window.addEventListener("pagehide", function () {
+      try { sessionStorage.setItem("evo-scroll", JSON.stringify([spot(location.href), scroller.scrollTop])); } catch (e) {}
+    });
+    try {
+      var saved = JSON.parse(sessionStorage.getItem("evo-scroll") || "null");
+      sessionStorage.removeItem("evo-scroll");
+      // 有提示消息（如"已保存"）时照旧从顶部看起，免得看不到提示
+      if (saved && saved[0] === spot(location.href) && !document.querySelector(".flash")) scroller.scrollTop = saved[1];
+    } catch (e) {}
+  })();
 </script>
 {% if in_app %}
 <script>

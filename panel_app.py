@@ -16,7 +16,7 @@ import threading
 import webbrowser
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
 
@@ -25,7 +25,9 @@ from paths import CAPTURES_DIR, CONFIG_DIR, PANEL_DIR, data_absolute
 from post_match import XP_ONLY_NOTE
 
 PER_PAGE = 20
-MODES = {"ranked": "排位", "pubs": "匹配", "other": "其他"}
+# 顶部导航：(页面, 显示名)。顺序也决定切换页面时，选中标签的底色从哪边滑过来
+NAV = (("overview", "总览"), ("matches", "战绩"), ("settings", "设置"))
+MODES ={"ranked": "排位", "pubs": "匹配", "other": "其他"}
 # 修正表单里可以改的字段：(显示名, 最小值, 最大值)
 EDITABLE = {
     "placement": ("名次", 1, 20),
@@ -99,7 +101,21 @@ def template_globals():
         "token": app.config["TOKEN"],
         "is_demo": Path(app.config["DB"]).name != storage.DB_PATH.name,
         "db_name": Path(app.config["DB"]).name,
+        "nav": NAV,
+        "switch": page_switch(),
     }
+
+
+def page_switch():
+    """这次是不是从另一个页面切过来的（看浏览器带来的"上一页"地址）。是的话播放切换动效：
+    内容从下往上淡入（enter），选中标签的底色从上一页的标签滑过来（shift = 从右边第几格过来，负数是左边）。
+    同一页里的操作（展开某一局、筛选、保存……）不播放。"""
+    came_from = urlparse(request.referrer or "").path
+    if came_from == request.path:
+        return {"enter": False, "shift": 0}
+    paths = [url_for(endpoint) for endpoint, _ in NAV]
+    shift = paths.index(came_from) - paths.index(request.path) if came_from in paths and request.path in paths else 0
+    return {"enter": True, "shift": shift}
 
 
 @app.template_global()

@@ -89,6 +89,7 @@ a { color: inherit; text-decoration: none; }
 .push-right { margin-left: auto; }
 
 .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 40px 48px; display: flex; flex-direction: column; gap: 20px; }
+.page { display: flex; flex-direction: column; gap: 20px; min-width: 0; }  /* 顶部导航以下的内容 */
 
 /* ---------- Evo 窗口：自定义标题栏和改大小的细条（只在 Evo 窗口里显示，见 app_window.py）---------- */
 .in-app { overflow: hidden; }
@@ -122,10 +123,11 @@ a { color: inherit; text-decoration: none; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--accent); }
 .brand-name { color: var(--text); font-weight: 700; font-size: 22px; letter-spacing: 3px; }
 .nav { display: flex; gap: 4px; flex-wrap: wrap; }
-.nav a, .nav span { padding: 8px 16px; border-radius: 4px; color: var(--muted); }
+.nav a { position: relative; isolation: isolate; padding: 8px 16px; border-radius: 4px; color: var(--muted); }
 .nav a:hover { color: var(--text); }
-.nav a.active { background: var(--nav-on-bg); color: var(--nav-on-text); font-weight: 500; }
-.nav .disabled { opacity: 0.45; cursor: default; }
+.nav a.active { color: var(--nav-on-text); font-weight: 500; }
+/* 选中标签的底色：单独一块垫在文字下面，切换页面时滑到新标签（见下面的"动效"） */
+.nav-pill { position: absolute; inset: 0; z-index: -1; border-radius: 4px; background: var(--nav-on-bg); }
 .pill { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 13px; }
 .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .pill-warn { border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-text); }
@@ -305,6 +307,52 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .principles .pr-3 { border-color: var(--p2-bg); } .principles .pr-4 { border-color: var(--p1-bg); }
 .source-link { color: var(--p3-bg); }
 .source-link:hover { text-decoration: underline; }
+
+/* ---------- 动效 ----------
+   只用 opacity、transform、clip-path，都很便宜；面板窗口只在你打开它时运行，不影响游戏。
+   动画都在 0.3 秒左右，不让你等。
+   Windows 设置里关了"动画效果"时，全部不播放（最下面）。 */
+
+/* 1. 切换总览 / 战绩 / 设置：选中标签的底色从上一页的标签滑过来，下面的内容从下往上淡入。
+      是不是"从另一页切过来"由服务器判断（panel_app.py 的 page_switch），同一页里的操作不播放。
+      没用浏览器自带的跨页面过渡（View Transitions）：实测它让每次切换先多等约 0.3 秒，反而显得慢 */
+.page-enter { animation: evo-rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.nav-pill.slide { animation: evo-slide 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes evo-slide { from { transform: translateX(calc(var(--shift) * (100% + 4px))); } }  /* 4px = 标签之间的间距 */
+/* 切换主题：整页从旧颜色淡到新颜色（base.html 里的 startViewTransition），这期间单个元素不再各自变色 */
+.theme-fade * { transition: none !important; }
+
+/* 2. 鼠标悬停、按下 */
+.nav a, .seg a, .btn, .icon-btn, .win-btn, .banner-warn, .source-link {
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+.matches tr.row { transition: background-color 0.12s; }
+.icon-btn:hover { color: var(--text); border-color: var(--muted); }
+.banner-warn:hover { border-color: var(--warn-text); }
+.btn:active, .icon-btn:active { transform: translateY(1px); }
+
+/* 3. 新出现的东西：展开的详情、提示消息 */
+.detail, .flash { animation: evo-drop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* 4. 总览页：走势图从左往右画出来，终点的圆点最后弹出；进度条、传奇横条依次长出来（数字滚动见 overview.html） */
+.chart svg { animation: evo-wipe 800ms cubic-bezier(0.4, 0, 0.2, 1) 100ms backwards; }
+.chart-mark { animation: evo-fade-in 300ms 500ms backwards; }
+.chart-dot { animation: evo-pop 300ms cubic-bezier(0.3, 1.6, 0.6, 1) 800ms backwards; }
+.bar-fill, .bar.stacked { animation: evo-wipe 700ms cubic-bezier(0.4, 0, 0.2, 1) 150ms backwards; }
+.legend-item:nth-child(2) .bar { animation-delay: 220ms; }
+.legend-item:nth-child(3) .bar { animation-delay: 290ms; }
+.legend-item:nth-child(4) .bar { animation-delay: 360ms; }
+[data-count] { font-variant-numeric: tabular-nums; }  /* 数字滚动时宽度不乱跳 */
+
+@keyframes evo-fade-in { from { opacity: 0; } }
+@keyframes evo-rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes evo-drop { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes evo-pop { from { opacity: 0; transform: scale(0.3); } }
+@keyframes evo-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
 
 @media (max-width: 900px) {
   .settings-layout { grid-template-columns: 1fr; }

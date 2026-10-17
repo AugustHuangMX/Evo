@@ -66,8 +66,8 @@
   {% for r in rows %}
     {% set is_open = (r.id == open_id) %}
     <tr id="m{{ r.id }}" class="row {{ 'review' if r.needs_review }} {{ 'open' if is_open }}"
-        data-href="{{ url_with(open=None if is_open else r.id) }}{{ '' if is_open else '#m' ~ r.id }}">
-      <td class="first"><a class="badge {{ r.badge }}" href="{{ url_with(open=None if is_open else r.id) }}#m{{ r.id }}" aria-label="展开第 {{ r.id }} 号对局">{{ r.placement }}</a></td>
+        data-href="{{ url_with(open=None if is_open else r.id) }}">
+      <td class="first"><a class="badge {{ r.badge }}" href="{{ url_with(open=None if is_open else r.id) }}" aria-label="展开第 {{ r.id }} 号对局">{{ r.placement }}</a></td>
       <td class="muted">{{ r.time }}</td>
       <td>{{ r.mode }}</td>
       <td>{{ r.map }}</td>
@@ -148,5 +148,12 @@
       window.location = tr.dataset.href;
     });
   });
+  // 展开了某一局：截图加载完后，平滑地滚动到刚好能看到整个详情（已经看得到就不动）
+  var detail = document.querySelector(".detail-row");
+  if (detail && !document.querySelector(".flash")) {
+    window.addEventListener("load", function () {
+      detail.scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
+    });
+  }
 </script>
 {% endblock %}
