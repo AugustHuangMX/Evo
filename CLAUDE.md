@@ -4,7 +4,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 
 命名说明：项目名为 Evo（取自游戏中随伤害升级的进化护甲）。名称中不使用 "Apex"、"Legends" 等 EA 商标，只在简介中写 "for Apex Legends"。仓库名和 Python 包名用 `evo-tracker`（单独的 `evo` 在 PyPI 上已被其他项目占用，发布前再确认一次）。
 
-> **当前进度和待办见 [claude/progress.md](claude/progress.md)。每次开始工作前先读它；完成一步后更新那里，不要写回本文件。**
+> **待办见 [claude/todo.md](claude/todo.md)（所有待办只放在那里）；已完成的里程碑和版本记录见 [claude/progress.md](claude/progress.md)。每次开始工作前先读这两个文件；做完一项就从 todo.md 删掉、在 progress.md 记一笔，不要写回本文件。**
 
 ## 关于我（开发者）
 
