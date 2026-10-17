@@ -46,9 +46,8 @@
 
 - [ ] **官网**（2026-10-17 定的方案）：网页放项目的 `site/`（2026-10-17 用户决定：先不上传 GitHub，`site/` 已写进 .gitignore，只留在本机；要上传或换成单独的仓库时再改），用 Cloudflare Pages 发布；下载文件放 Cloudflare R2（`dl.` 子域名，流量免费），GitHub Releases 作备用；域名 evotracker.cn（阿里云买的，DNS 已交给 Cloudflare），服务器不在大陆所以不用备案。只做中文。先发未签名的预览版 zip，同时申请 SignPath 免费签名。国内访问：页面不加载任何外部资源、中文用系统字体、不用 `pages.dev` 地址、不加统计代码。第 1–2 步（一页式网页定稿）和网页试运行上线已完成，见 progress.md
   - [ ] 仓库公开后：GitHub Releases 也传一份安装包。网页上的"查看源代码""GitHub 备用下载"和页脚的源代码、许可证链接都指向 GitHub，仓库私有时别人点进去是 404
-  - [ ] 隐私政策剩下的：官网页面已上线（https://evotracker.cn/privacy，见 progress.md）；还要在 Evo 设置页"关于"、`release/使用说明.txt`"安全和隐私"一节也链到 https://evotracker.cn/privacy。改 PRIVACY.md 时 `site/privacy.html` 要一起改；发下一个版本（有检查更新）后，两处的"0.1.0 还没有这个功能"可以改成"0.1.0 没有"
+  - [ ] 隐私政策剩下的：官网页面已上线（https://evotracker.cn/privacy，见 progress.md）；`release/使用说明.txt` 已经链上（0.2.0）；还要在 Evo 设置页"关于"也链到 https://evotracker.cn/privacy。改 PRIVACY.md 时 `site/privacy.html` 要一起改；0.2.0 已经发布（有检查更新），两处的"0.1.0 还没有这个功能"可以改成"0.1.0 没有"
 - [ ] **检查更新的结果显示得更清楚**（2026-10-17 发现，用户还没决定要不要改）：① 设置页点"检查更新"后页面跳回顶部，结果提示在最上面，按钮旁边只有一行灰色小字"没查到（…）"，失败时很容易看漏——改成结果显示在按钮旁边（失败用红色写"检查失败"），点完停在"更新"这一栏；② `update_check.fetch_latest` 把所有错误（包括服务器回答 404）都说成"连不上更新服务器（网络不通…）"——分开说：网络不通 / 超时、服务器上没有版本文件、格式不对
-- [ ] **发下一个版本**（第一个会提醒更新的版本）：0.1.0 和 0.0.1 还没有检查更新，已经下载的人要手动换一次新版本，之后才能收到提醒。发布时：改 `storage.py` 的 `APP_VERSION`、写 `release/更新内容.txt`、`python release.py`，先传压缩包、最后传 `latest.json`（见 release.py 开头）；官网的版本号、大小、SHA-256 也要换
 - [ ] **数据文件夹放在 Evo 程序所在的目录里**（2026-10-17 用户建议，具体做法待商量；0.2.0 先不改）：用户原话"下个版本，我建议 evo tracker data 应该放在和 evo 相同的目录里比较合理吧？"。动手前先和用户确认：① 具体怎么放（比如 `E:\Evo Tracker` 里面的一个子文件夹，还是和程序文件夹并排）；② 手动换新版本时（使用说明写的是"删掉旧文件夹、解压新的"）怎么保证数据不会被一起删掉；③ 已经在用 `%LOCALAPPDATA%\Evo` 或 `data_location.txt` 的人怎么办。相关的坑（发 0.2.0 时发现）：本机安装靠 `E:\Evo Tracker\data_location.txt` 找到 `E:\Evo Tracker Data`，照使用说明换新版本会把这个文件一起删掉，新版就显示空战绩（数据还在，只是没指过去）
 - [ ] **安装包和一键更新**：现在是 `install.py` 复制文件夹，给别人用要有正式的安装程序。"有新版本时提醒"已经做好（见 progress.md 10-17）；一键下载安装要等安装程序和代码签名，否则下载的 exe 会被 SmartScreen 拦
 - [ ] **代码签名**：没有签名的 exe 从网上下载后会被 SmartScreen 拦截、可能被杀毒软件误报
