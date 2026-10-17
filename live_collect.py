@@ -6,6 +6,7 @@
 - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上这一局的 RP、段位，名次缺的话也补上。
   没有总结页的局（第 2 名、冠军）只靠经验值页单独记一局。怎么归到同一局见 post_match.py
 - 开局画面：读本局的模式和地图（见 match_start.py），两项都读到就不再读
+- 对局中：每 3 秒看一眼左下角自己的头像，认出用的是哪个传奇（见 legends.py 和 LegendWatcher，不用识别模型）
 - 经验值页、开局画面、大厅（见 config/screens.json）：进入时存一张截图，离开前最后一帧再存一张（见 ScreenWatcher）。
   开局画面用来分隔每一局
 - 其他画面：什么都不做（大部分时间都是这样）
@@ -28,6 +29,7 @@ import cv2
 import dxcam
 
 import storage
+from legends import LegendDetector
 from match_start import read_match_start
 from ocr import SMALL_CROP_PARAMS, LazyEngine, load_config
 from paths import CAPTURES_DIR
@@ -185,6 +187,45 @@ class ScreenWatcher:
         return self.screens["screens"][screen]["label"]
 
 
+class LegendWatcher:
+    """对局中认出自己用的传奇：从开局画面之后，到总结页或经验值页之前，每隔几秒看一眼左下角自己的头像，
+    同一个传奇认出 2 次就记下（交给 PostMatch，存这一局时一起写进去），这一局就不再看了。
+    - 开局画面：新的一局开始，之前认出的不算数（比如在靶场里认出的）
+    - 阵亡后观战：左下角是被观战的人，整块还往上移了约 60，在自己头像的位置上认不出来，所以不会认成队友
+    - 刚开始记录时也看（可能正在对局中）"""
+
+    VOTES = 2  # 同一个传奇认出这么多次才算数
+
+    def __init__(self, detector, post, every=3.0):
+        self.detector, self.post, self.every = detector, post, every
+        self.checks = 0  # 一共看了几次（统计用）
+        self._restart()
+
+    def _restart(self):
+        self.active, self.votes, self.next_check = True, {}, 0.0
+
+    def update(self, screen, frame, now, tick):
+        """每截一帧调用一次。screen：这一帧是哪个画面（None = 都不是，比如正在对局中）；tick：time.monotonic()。"""
+        if screen == "match_start":
+            self._restart()
+            self.post.on_legend(None, now)
+            return
+        if screen in ("summary", "xp"):  # 这一局打完了
+            self.active = False
+            return
+        if not self.active or screen is not None or tick < self.next_check:
+            return
+        self.next_check = tick + self.every
+        self.checks += 1
+        key = self.detector.identify(frame)
+        if key is None:
+            return
+        self.votes[key] = self.votes.get(key, 0) + 1
+        if self.votes[key] >= self.VOTES:
+            self.active = False
+            self.post.on_legend(self.detector.name(key), now)
+
+
 def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.0,
             stop=None, deadline=None, log=print, status=None):
     """采集主循环：一直截屏、识别、记录，直到下面任何一种情况发生，然后安全收尾（没存完的局存下、释放截屏和识别模型）：
@@ -208,11 +249,16 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     detector = ScreenDetector(engine, screens)
     summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout)
     other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"), post, run_dir, log)
+    legend_detector = LegendDetector()
+    legend = LegendWatcher(legend_detector, post)
     log(f"屏幕: {camera.width}x{camera.height}")
     log(f"数据库: {Path(db_path).resolve()}")
     log(f"截图保存到: {run_dir.resolve()}")
     if detector.missing:
         log(f"⚠ 这些画面没有参照图，每次都要跑识别：{'、'.join(detector.missing)}（见 screens.py）")
+    if legend_detector.missing:
+        log(f"⚠ 这些传奇没有参照图，认不出来：{'、'.join(legend_detector.name(k) for k in legend_detector.missing)}"
+            "（见 legends.py）")
     log("开始记录，到总结页时会自动保存。")
 
     def keep_going():
@@ -239,6 +285,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 on_summary = screen == "summary"
                 summary.update(on_summary, frame, now)
                 other.update(None if on_summary else screen, frame, now)
+                legend.update(screen, frame, now, tick)
                 if screen is not None:
                     last_seen, warned = tick, False
                 elif not warned and tick - last_seen > NO_SCREEN_WARNING_MINUTES * 60:
@@ -261,8 +308,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         conn.close()
         saved = total()
         log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
-            f"加载识别模型 {engine.loads} 次；内存峰值 {memory_mb()[1]:.0f} MB")
-        del engine, detector, camera, summary, other  # 释放识别模型和截屏，交还内存
+            f"加载识别模型 {engine.loads} 次；认传奇 {legend.checks} 次；内存峰值 {memory_mb()[1]:.0f} MB")
+        del engine, detector, camera, summary, other, legend, legend_detector  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved

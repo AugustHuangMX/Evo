@@ -7,6 +7,7 @@
   （比如开局画面没认出来）：单独记一局并标记待确认
 - 开局画面读到的模式和地图，属于接下来这一局：存总结页或单独记一局时一起写进去。
   开局画面没读出模式、但经验值页有 RP 的局，记为排位（只有排位赛的经验值页才有排位点数）
+- 对局中认出的传奇（见 live_collect.LegendWatcher）也一样，存这一局时一起写进去（存中文名，面板直接显示）
 """
 
 import storage
@@ -51,7 +52,7 @@ class PostMatch:
     def __init__(self, conn, log=print):
         self.conn, self.log = conn, log
         self.inserted = 0  # 由这里新记下的局数（只有经验值页的局）
-        self.info = {}  # 开局画面读到的这一局的模式、地图
+        self.info = {}  # 开局画面读到的这一局的模式、地图，对局中认出的传奇
         self.unknown_maps = set()  # 开局画面上读到、但不在已知地图名单里的文字
         self.reset()
 
@@ -73,6 +74,15 @@ class PostMatch:
             self.info.update(new)
             text = "、".join(MODE_LABELS.get(v, v) if k == "mode" else v for k, v in new.items())
             self.log(f"[{when:%H:%M:%S}] 开局画面：读到 {text}")
+
+    def on_legend(self, legend, when):
+        """对局中认出了自己用的传奇（中文名）之后调用，留给这一局用。
+        legend 为 None：新的一局开始了，之前认出的不算数（比如之前在靶场里认出的）。"""
+        if legend is None:
+            self.info.pop("legend", None)
+            return
+        self.info["legend"] = legend
+        self.log(f"[{when:%H:%M:%S}] 对局中：认出传奇 {legend}")
 
     def on_summary_saved(self, match_id, values, when):
         """总结页存进数据库之后调用。"""
@@ -155,6 +165,7 @@ class PostMatch:
             "evidence_path": data_relative(path),
             "mode": self.info.get("mode") or ("ranked" if rp is not None else None),
             "map": self.info.get("map"),
+            "legend": self.info.get("legend"),
         }
         if verified:
             match.update({k: reading[k] for k in ("rank_tier", "rank_division", "rank_progress")})
