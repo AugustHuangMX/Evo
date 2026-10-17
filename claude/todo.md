@@ -50,8 +50,7 @@
 
 ## 五、公开发布前
 
-- [ ] **官网**（2026-10-17 定的方案）：网页放项目的 `site/`（2026-10-17 用户决定：先不上传 GitHub，`site/` 已写进 .gitignore，只留在本机；要上传或换成单独的仓库时再改），用 Cloudflare Pages 发布；下载文件放 Cloudflare R2（`dl.` 子域名，流量免费），GitHub Releases 作备用；域名在阿里云买、DNS 交给 Cloudflare，服务器不在大陆所以不用备案。只做中文。先发未签名的预览版 zip，同时申请 SignPath 免费签名。国内访问：页面不加载任何外部资源、中文用系统字体、不用 `pages.dev` 地址、不加统计代码。第 1 步（骨架和首屏）已完成，见 progress.md
-  - [ ] 第 2 步 其余内容和面板截图：2026-10-17 已用 ui-ux-pro-max 重新设计成一页式初稿（首屏 + 窗口截图、功能、使用方法、只看不动、下载、常见问题、结尾、页脚），等你看过再定稿。还剩：SmartScreen 示意图、`_headers`、404 页。截图做法：把 `data/demo.db` 复制到临时文件夹改名 `evo.db`，用 `EVO_DATA_DIR` + `--db` 启动面板，Edge 无界面截图时加 `--force-dark-mode --force-prefers-reduced-motion`（不然动画没播完）
+- [ ] **官网**（2026-10-17 定的方案）：网页放项目的 `site/`（2026-10-17 用户决定：先不上传 GitHub，`site/` 已写进 .gitignore，只留在本机；要上传或换成单独的仓库时再改），用 Cloudflare Pages 发布；下载文件放 Cloudflare R2（`dl.` 子域名，流量免费），GitHub Releases 作备用；域名 evotracker.cn（2026-10-17 在阿里云买好，实名审核中），DNS 交给 Cloudflare，服务器不在大陆所以不用备案。只做中文。先发未签名的预览版 zip，同时申请 SignPath 免费签名。国内访问：页面不加载任何外部资源、中文用系统字体、不用 `pages.dev` 地址、不加统计代码。第 1–2 步（一页式网页定稿）已完成，见 progress.md
   - [ ] 第 3 步 `release.py` 打包 zip + SHA-256，Windows 沙盒里试装
   - [ ] 第 4 步 公开仓库前检查
   - [ ] 第 5 步 上线（Cloudflare Pages、R2、填真实下载链接）。`site/` 不在 GitHub 上，所以 Pages 不能连仓库自动发布，改用"直接上传"：在 Cloudflare 后台新建 Pages 项目时选上传文件夹，把 `site/` 拖进去；以后每次改完网页再上传一次（不需要 Node.js）
@@ -65,7 +64,7 @@
 
 ## 六、需要你来做或决定的
 
-- [ ] 官网要你来做的（实名认证要等几天，可以先做）：在阿里云买域名（不含 apex，建议 .com）→ 域名实名认证 → 在 Cloudflare 添加域名（Free 计划），把阿里云的 DNS 服务器改成 Cloudflare 给的两个；给 GitHub 账号开两步验证（SignPath 要求）；开通 Cloudflare R2 要绑一张信用卡或 PayPal（免费额度内不扣钱）
+- [ ] 官网要你来做的：evotracker.cn 已买（2026-10-17），等实名审核通过（审核期间域名暂停解析，属正常）。现在就能做：注册 Cloudflare 账号 → 添加域名 evotracker.cn（Free 计划）→ 记下它给的两个 DNS 服务器地址；开通 Cloudflare R2（要绑一张信用卡或 PayPal，免费额度内不扣钱）；给 GitHub 账号开两步验证（SignPath 要求）。审核通过后：在阿里云域名管理里把 DNS 服务器改成 Cloudflare 给的两个，等 Cloudflare 显示"Active"
 - [ ] 补填编号 8（10-16 22:16 那局）的名次：没进经验值页，名次读不到；记得的话在面板里填上，不记得就算了
 - [ ] 截样本：靶场里各传奇的头像（对局中左下角）、冠军画面、匹配模式的开局横幅和结算画面、阵亡前一刻右上角自己的 RP、右上角击杀信息栏。已有：录像截图 7 张（1080p，`captures/samples/`）、10-16 晚实战截图（2560×1440，`captures/live/20261016_211452/`）
 - [ ] 决定：要不要记录队友用的传奇（和原则 7"只记录用户自己的数据"有关；只记传奇，不记名字、ID、段位）
