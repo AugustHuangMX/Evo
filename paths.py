@@ -3,10 +3,11 @@
 - 程序文件（配置 config/、面板网页 panel/）：跟着程序走
   - 用源码运行：项目文件夹
   - 打包后（Evo.exe）：程序文件夹里的 _internal
-- 用户数据（数据库 data/、截图 captures/）：
+- 用户数据（数据库 data/、截图 captures/），按顺序：
+  - 设置了环境变量 EVO_DATA_DIR：用它（测试时用，免得碰到真实数据）
+  - 打包后，Evo.exe 旁边有 data_location.txt：用里面写的文件夹（安装时写入，见 install.py）
+  - 打包后，没有这个文件：%LOCALAPPDATA%\\Evo
   - 用源码运行：项目文件夹（开发时和以前一样）
-  - 打包后：%LOCALAPPDATA%\\Evo
-  - 设置环境变量 EVO_DATA_DIR 可以换到别的文件夹（测试时用，免得碰到真实数据）
 数据库里记的截图路径是相对于 DATA_DIR 的，整个数据文件夹搬家后照样能找到。
 """
 
@@ -16,11 +17,23 @@ from pathlib import Path
 
 FROZEN = getattr(sys, "frozen", False)  # 是不是打包后的 Evo.exe
 APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).resolve().parent
+EXE_DIR = Path(sys.executable).resolve().parent if FROZEN else APP_DIR  # Evo.exe 所在的文件夹
+DATA_LOCATION_FILE = EXE_DIR / "data_location.txt"
+
+
+def _data_location():
+    """打包后：Evo.exe 旁边的 data_location.txt 里写的数据文件夹；没有这个文件（或是空的）返回 None。"""
+    try:
+        text = DATA_LOCATION_FILE.read_text(encoding="utf-8-sig").strip()
+    except OSError:
+        return None
+    return Path(text) if text else None
+
 
 if os.environ.get("EVO_DATA_DIR"):
     DATA_DIR = Path(os.environ["EVO_DATA_DIR"]).resolve()
 elif FROZEN:
-    DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Evo"
+    DATA_DIR = _data_location() or Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Evo"
 else:
     DATA_DIR = APP_DIR
 
