@@ -7,7 +7,10 @@
 - 数据文件夹就是项目文件夹时（用源码运行、没设 EVO_DATA_DIR）：不管开关，永远保留全部——项目里的 captures/ 就是测试集
 - 只删这次记录的文件夹里的截图，以前存下的不动
 - 战绩页确认（保存）或删除一局时，删掉这一局的截图（discard）
+- 设置页"删除已识别完的截图"按钮（clean_up）：以前存下的也按同样的规则删，正在记录的文件夹不动
 """
+
+import multiprocessing
 
 import app_settings
 import storage
@@ -16,32 +19,35 @@ from paths import APP_DIR, CAPTURES_DIR, DATA_DIR, FROZEN, data_absolute
 KEEP_ALL_KEY = "keep_all_screenshots"
 
 
+def in_project():
+    """数据文件夹就是项目文件夹（用源码运行、没设 EVO_DATA_DIR）：项目里的 captures/ 是测试集，一张都不删。"""
+    return not FROZEN and DATA_DIR == APP_DIR
+
+
 def keep_all():
     """这次记录要不要保留全部截图。"""
-    if not FROZEN and DATA_DIR == APP_DIR:
+    if in_project():
         return True
     return bool(app_settings.get(KEEP_ALL_KEY, False))
 
 
-def tidy(conn, folder):
-    """一局彻底结束时调用：folder（这次记录的截图文件夹）里，除了"待确认"的局要用的截图，全部删掉；
-    不待确认的局，数据库里的截图位置清空（战绩页就不再显示"识别截图"）。
-    删不掉的（比如正被别的程序打开）留着，下一局结束时再试。返回 (删了几张, 腾出多少字节)。"""
-    folder = folder.resolve()
-    needed = set()
-    for row in conn.execute("SELECT match_id, needs_review, evidence_path FROM matches "
-                            "WHERE evidence_path IS NOT NULL").fetchall():
-        path = data_absolute(row["evidence_path"]).resolve()
-        if path.parent != folder:
-            continue
-        if row["needs_review"]:
-            needed.add(path)
-        else:
+def removable(conn, folders):
+    """这些文件夹里可以删的截图：除了"待确认"的局要用的，全部。"""
+    needed = {data_absolute(row[0]).resolve() for row in conn.execute(
+        "SELECT evidence_path FROM matches WHERE needs_review AND evidence_path IS NOT NULL")}
+    return [path for folder in folders for path in sorted(folder.glob("*.png")) if path.resolve() not in needed]
+
+
+def _delete(conn, folders):
+    """删掉这些文件夹里可以删的截图；不待确认的局，截图在这些文件夹里的，数据库里的截图位置清空
+    （战绩页就不再显示"识别截图"）。删不掉的（比如正被别的程序打开）留着。返回 (删了几张, 腾出多少字节)。"""
+    folders = {folder.resolve() for folder in folders}
+    for row in conn.execute("SELECT match_id, evidence_path FROM matches "
+                            "WHERE NOT needs_review AND evidence_path IS NOT NULL").fetchall():
+        if data_absolute(row["evidence_path"]).resolve().parent in folders:
             storage.update_match(conn, row["match_id"], {"evidence_path": None})
     deleted = freed = 0
-    for path in folder.glob("*.png"):
-        if path in needed:
-            continue
+    for path in removable(conn, folders):
         try:
             size = path.stat().st_size
             path.unlink()
@@ -50,6 +56,58 @@ def tidy(conn, folder):
         deleted += 1
         freed += size
     return deleted, freed
+
+
+def tidy(conn, folder):
+    """一局彻底结束时调用：folder（这次记录的截图文件夹）里，除了"待确认"的局要用的截图，全部删掉。
+    删不掉的下一局结束时再试。返回 (删了几张, 腾出多少字节)。"""
+    return _delete(conn, [folder])
+
+
+def recording_folder():
+    """正在记录的截图文件夹，没在记录返回 None。
+    记录子程序（evo_app.py 里名叫 evo-collect 的进程）和面板都在托盘程序里，所以面板看得到它在不在运行；
+    在运行时，它的文件夹就是 captures/live/ 里最新的那个（文件夹名是开始记录的时间）。
+    单独运行面板（python panel_app.py）时看不到，当作没在记录。"""
+    if not any(p.name == "evo-collect" for p in multiprocessing.active_children()):
+        return None
+    folders = finished_folders()
+    return folders[-1] if folders else None
+
+
+def finished_folders(skip=None):
+    """captures/live/ 里的截图文件夹，按开始记录的时间排；skip（正在记录的文件夹）不算。"""
+    live = CAPTURES_DIR / "live"
+    folders = sorted(p for p in live.iterdir() if p.is_dir()) if live.is_dir() else []
+    return [p for p in folders if skip is None or p.resolve() != skip.resolve()]
+
+
+def clean_up(conn):
+    """设置页"删除已识别完的截图"：以前存下的截图也按 tidy() 的规则删（只留"待确认"的局要用的），
+    删空的文件夹也删掉；正在记录的文件夹不动。用源码运行时一张都不删。返回 (删了几张, 腾出多少字节)。"""
+    if in_project():
+        return 0, 0
+    folders = finished_folders(skip=recording_folder())
+    result = _delete(conn, folders)
+    for folder in folders:
+        try:
+            folder.rmdir()  # 只有空文件夹才删得掉
+        except OSError:
+            pass
+    return result
+
+
+def cleanable(conn):
+    """设置页显示用：按 clean_up() 的规则，能删几张、能腾出多少字节（不真的删）。"""
+    if in_project():
+        return 0, 0
+    sizes = []
+    for path in removable(conn, finished_folders(skip=recording_folder())):
+        try:
+            sizes.append(path.stat().st_size)
+        except OSError:  # 刚好被删了
+            pass
+    return len(sizes), sum(sizes)
 
 
 def recorded(evidence_path):

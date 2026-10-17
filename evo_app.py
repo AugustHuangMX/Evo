@@ -248,6 +248,7 @@ class Recorder:
         self.saved_before = self.saved
         self.status = {"saved": 0}
         self._stop, queue = ctx.Event(), ctx.Queue()
+        # 名字不要改：设置页删截图时靠它认出"正在记录"，不动正在记录的文件夹（screenshots.recording_folder）
         self._proc = ctx.Process(target=collect_process, args=(self._stop, queue), name="evo-collect", daemon=True)
         self._proc.start()
         threading.Thread(target=self._read, args=(self._proc, queue, self.status), name="collect-reader",

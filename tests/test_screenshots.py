@@ -3,6 +3,8 @@
 - 记录程序：用 2026-10-16 晚的真实截图整晚重放（同 test_replay.py）。截图不在仓库里（见 fake_game.py），找不到就跳过这一部分
 - 战绩页（用假的截图文件和 Flask 测试客户端，不用真截图）：确认、删除一局时删掉它的截图并提示；
   不删演示数据的样本截图、别的局也在用的截图；保存失败不删；保留全部截图时不删、也不提示
+- 设置页（同上，用假截图）："保留全部截图"开关；"删除已识别完的截图"按钮：以前存下的也删，
+  只留待确认的局要用的，正在记录的文件夹不动；开关打开时也能用；用源码运行时开关和按钮都不能用
 
 运行：python tests/test_screenshots.py
 """
@@ -12,6 +14,7 @@ import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from fake_game import MissingShots, report, run_collect, shot  # 要在项目代码之前导入（设置临时数据文件夹）
@@ -126,9 +129,83 @@ def panel_checks():
     }
 
 
+def settings_checks():
+    """设置页的开关和"删除已识别完的截图"按钮。"""
+    assert screenshots.DATA_DIR != screenshots.APP_DIR  # 只在 fake_game 设的临时数据文件夹里删，绝不碰项目里的测试集
+    live = CAPTURES_DIR / "live"
+    old, older, now = live / "20261015_200000", live / "20261016_200000", live / "20991231_000000"  # now：最新的文件夹
+    for one in (old, older, now):
+        one.mkdir(parents=True, exist_ok=True)
+
+    def png(path):
+        path.write_bytes(b"x" * 1000)
+        return path
+
+    review, done, lobby, rec = (png(old / "01_summary.png"), png(old / "02_summary.png"), png(old / "lobby_1.png"),
+                                png(now / "xp_1.png"))
+    whole = [png(older / f"match_start_{i}.png") for i in range(3)]  # 这个文件夹整个都可以删
+    folder = Path(tempfile.mkdtemp(prefix="evo-clean-", dir=storage.DB_PATH.parent.parent))
+    conn = storage.connect(folder / "clean.db")
+    review_id = storage.insert_match(conn, {"ended_at": "2026-10-15 20:10:00", "needs_review": 1,
+                                            "review_note": "名次：没读到", "evidence_path": data_relative(review)})
+    done_id = storage.insert_match(conn, {"ended_at": "2026-10-15 20:40:00", "evidence_path": data_relative(done)})
+    panel_app.app.config.update(DB=folder / "clean.db", TESTING=True)
+    client, token = panel_app.app.test_client(), panel_app.app.config["TOKEN"]
+
+    def page():
+        return client.get("/settings").get_data(as_text=True)
+
+    def post(url, **data):
+        return client.post(url, data={"token": token, **data}, follow_redirects=True)
+
+    def keep_switch(text):
+        """页面上"保留全部截图"开关的样子：(开着吗, 能不能点)。"""
+        tag = re.search(r'<button[^>]*aria-labelledby="keep-shots-name"[^>]*>', text)[0]
+        return 'aria-checked="true"' in tag, "disabled" not in tag
+
+    with keep_setting(False):
+        off_page = page()
+        on_page = post("/settings/keep-shots", keep="1").get_data(as_text=True)
+        turned_on = app_settings.get(screenshots.KEEP_ALL_KEY)
+        post("/settings/keep-shots", keep="0")
+        turned_off = app_settings.get(screenshots.KEEP_ALL_KEY)
+
+    recording = [SimpleNamespace(name="evo-collect")]  # 假装记录子程序在运行
+    with keep_setting(True), mock.patch.object(screenshots.multiprocessing, "active_children", lambda: recording):
+        with mock.patch.object(screenshots, "DATA_DIR", screenshots.APP_DIR):  # 用源码运行
+            locked_page = page()
+            locked = (post("/settings/clean-shots").status_code, post("/settings/keep-shots", keep="0").status_code)
+            locked_files = all(p.exists() for p in [done, lobby, *whole])
+        expected = [p for p in live.glob("*/*.png") if p not in (review, rec)]  # 别的检查留下的截图也算
+        size = panel_app.size_text(sum(p.stat().st_size for p in expected))
+        before = page()
+        cleaned = post("/settings/clean-shots").get_data(as_text=True)
+        after = page()
+    return {
+        "设置页：开关默认关、能点": keep_switch(off_page) == (False, True),
+        "设置页：打开开关存进 settings.json，提示下次开始记录时生效": turned_on is True
+        and keep_switch(on_page) == (True, True) and "下次开始记录时生效" in on_page,
+        "设置页：关上开关": turned_off is False,
+        "设置页：写着可以腾出多少（几张），正在记录时写着这一次不删": f"可以腾出 <span class=\"num\">{size}</span>"
+        f"（<span class=\"num\">{len(expected)}</span> 张）" in before and "正在记录的这一次" in before,
+        "删除已识别完的截图：以前存下的、没用的都删，提示删了几张、腾出多少":
+        not any(p.exists() for p in [done, lobby, *whole]) and f"已删除 {len(expected)} 张截图，腾出 {size}" in cleaned,
+        "删除已识别完的截图：待确认的局要用的留着，截图位置还在": review.exists()
+        and storage.get_match(conn, review_id)["evidence_path"] is not None,
+        "删除已识别完的截图：不用确认的局，截图位置清空": storage.get_match(conn, done_id)["evidence_path"] is None,
+        "删除已识别完的截图：正在记录的文件夹不动": rec.exists(),
+        "删除已识别完的截图：删空的文件夹也删掉": not older.exists() and old.exists(),
+        "删除已识别完的截图：保留全部截图开着时也能用（2026-10-17 用户决定）；删完写着没有可以删的":
+        "没有可以删的截图" in after,
+        "用源码运行：开关锁定为开、不能点，按钮不能用，硬提交也不删": keep_switch(locked_page) == (True, False)
+        and "用源码运行时不删截图" in locked_page and locked == (400, 400) and locked_files,
+    }
+
+
 def main():
     print("截图留不留")
     checks = panel_checks()
+    checks.update(settings_checks())
     checks.update(rule_checks())
     try:
         folder = shot(NIGHT + "/01_213331.png").parent

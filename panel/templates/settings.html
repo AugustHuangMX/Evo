@@ -88,7 +88,7 @@
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name">截图</div>
-          <div class="setting-desc">测试阶段保留全部截图，用来做测试集 · 共 <span class="num">{{ shot_count }}</span> 张 · {{ shot_size }}</div>
+          <div class="setting-desc">共 <span class="num">{{ shot_count }}</span> 张 · {{ shot_size }}</div>
           <div class="setting-path">{{ captures_dir }}</div>
         </div>
         <div class="setting-actions">
@@ -98,6 +98,43 @@
             <button type="submit" class="btn">打开文件夹</button>
           </form>
         </div>
+      </div>
+      {# 截图留不留（screenshots.py）：开关是记录程序开始记录时读的，所以"下次开始记录时生效" #}
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="keep-shots-name">保留全部截图</div>
+          <div class="setting-desc">
+            {%- if shots_locked %}用源码运行时总是保留全部：项目里的 <code>captures/</code> 是测试集
+            {%- else %}关着时，识别完就删，只留待确认的局要用的截图（确认后也删）。打开后每局的截图都留着，每局约 30–40 MB。下次开始记录时生效{% if recording %}（正在记录的这一次仍按原来的设置）{% endif %}
+            {%- endif %}
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('keep_shots_setting') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="keep" value="{{ '0' if keep_shots else '1' }}">
+          {% set keep_on = keep_shots or shots_locked %}
+          <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if keep_on else 'false' }}"
+                  aria-labelledby="keep-shots-name" {{ 'disabled' if shots_locked }}>
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if keep_on else '已关闭' }}</span>
+          </button>
+        </form>
+      </div>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name">删除已识别完的截图</div>
+          <div class="setting-desc">
+            {%- if shots_locked %}用源码运行时不删截图
+            {%- elif clean_count %}可以腾出 <span class="num">{{ clean_size }}</span>（<span class="num">{{ clean_count }}</span> 张）。待确认的局要用的截图{% if recording %}、正在记录的这一次{% endif %}不删
+            {%- else %}没有可以删的截图{% if shot_count %}：剩下的是待确认的局要用的{% if recording %}，或者正在记录{% endif %}{% endif %}
+            {%- endif %}
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('clean_shots') }}" id="clean-form"
+              onsubmit="return confirm('确定删除 {{ clean_count }} 张已识别完的截图吗？可以腾出 {{ clean_size }}。\n待确认的局要用的截图会留着；已确认的局在战绩页就看不到识别截图了。\n删除后无法恢复。')">
+          <input type="hidden" name="token" value="{{ token }}">
+          <button type="submit" class="btn btn-danger" id="clean-btn" {{ 'disabled' if shots_locked or not clean_count }}>删除截图</button>
+        </form>
       </div>
       <div class="setting danger-zone">
         <div class="setting-text">
@@ -189,12 +226,21 @@
   themeSelect.addEventListener("change", function () { evoSetTheme(themeSelect.value); });
   document.addEventListener("evo-theme", syncThemeSelect);  // 右上角按钮切换后，下拉框跟着变
 
-  // 自动检查的开关：点下去先把圆点滑过去，再提交保存（页面会重新打开）
-  var updateSwitch = document.getElementById("update-switch");
-  updateSwitch.addEventListener("click", function () {
-    var on = updateSwitch.getAttribute("aria-checked") !== "true";
-    updateSwitch.setAttribute("aria-checked", on ? "true" : "false");
-    updateSwitch.querySelector(".switch-state").textContent = on ? "已开启" : "已关闭";
+  // 开关（保留全部截图、自动检查）：点下去先把圆点滑过去，再提交保存（页面会重新打开）
+  document.querySelectorAll(".switch").forEach(function (sw) {
+    sw.addEventListener("click", function () {
+      var on = sw.getAttribute("aria-checked") !== "true";
+      sw.setAttribute("aria-checked", on ? "true" : "false");
+      sw.querySelector(".switch-state").textContent = on ? "已开启" : "已关闭";
+    });
+  });
+  // 删截图：确认后按钮变成"正在删除…"（截图多时要一两秒）
+  document.getElementById("clean-form").addEventListener("submit", function (e) {
+    if (e.defaultPrevented) return;  // 确认框里点了"取消"
+    var btn = document.getElementById("clean-btn");
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    btn.textContent = "正在删除…";
   });
   // 检查更新要联网，最多等几秒：按钮先变成"正在检查…"，免得以为没反应
   document.getElementById("check-form").addEventListener("submit", function () {

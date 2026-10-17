@@ -557,6 +557,7 @@ def db_path():
 @app.route("/settings")
 def settings():
     shot_count, shot_bytes = folder_usage(CAPTURES_DIR / "live")
+    clean_count, clean_bytes = screenshots.cleanable(db())
     size = screen_size()
     return render_template(
         "settings.html",
@@ -569,6 +570,11 @@ def settings():
         captures_dir=CAPTURES_DIR,
         shot_count=shot_count,
         shot_size=size_text(shot_bytes),
+        keep_shots=app_settings.get(screenshots.KEEP_ALL_KEY, False) is True,
+        shots_locked=screenshots.in_project(),  # 用源码运行：永远保留全部，开关和删除按钮都不能用
+        recording=screenshots.recording_folder() is not None,
+        clean_count=clean_count,
+        clean_size=size_text(clean_bytes),
         version=storage.APP_VERSION,
         source_url=SOURCE_URL,
         update_auto=app_settings.get("update_auto") is True,
@@ -589,6 +595,37 @@ def open_folder():
     target.mkdir(parents=True, exist_ok=True)
     os.startfile(target)
     flash(f"已在资源管理器中打开 {target}", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/settings/keep-shots")
+def keep_shots_setting():
+    """"保留全部截图"开关。记录程序开始记录时读一次，所以下次开始记录时才生效。"""
+    if screenshots.in_project():
+        abort(400)
+    on = request.form.get("keep") == "1"
+    app_settings.set_value(screenshots.KEEP_ALL_KEY, on)
+    if on:
+        flash("已开启\"保留全部截图\"：下次开始记录时生效，之后每局的截图都会留着。", "ok")
+    else:
+        flash("已关闭\"保留全部截图\"：下次开始记录时生效，之后识别完就删。以前存下的截图不会自动删。", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/settings/clean-shots")
+def clean_shots():
+    """"删除已识别完的截图"按钮：只留"待确认"的局要用的截图，正在记录的这一次不动（screenshots.clean_up）。"""
+    if screenshots.in_project():
+        abort(400)
+    deleted, freed = screenshots.clean_up(db())
+    left, _ = screenshots.cleanable(db())
+    if deleted:
+        flash(f"已删除 {deleted} 张截图，腾出 {size_text(freed)}"
+              + (f"。还有 {left} 张没删掉（可能正被别的程序打开），关掉后再试一次" if left else ""), "ok")
+    elif left:
+        flash(f"{left} 张截图没删掉（可能正被别的程序打开），关掉后再试一次", "error")
+    else:
+        flash("没有可以删的截图", "ok")
     return redirect(url_for("settings"))
 
 

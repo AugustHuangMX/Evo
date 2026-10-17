@@ -373,7 +373,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .principles li { padding-left: 14px; border-left: 4px solid; border-radius: 2px; }
 .principles .pr-1 { border-color: var(--seg-other); } .principles .pr-2 { border-color: var(--p3-bg); }
 .principles .pr-3 { border-color: var(--p2-bg); } .principles .pr-4 { border-color: var(--p1-bg); }
-/* 开关（自动检查新版本）：不只靠颜色，旁边写着"已开启 / 已关闭" */
+/* 开关（保留全部截图、自动检查新版本）：不只靠颜色，旁边写着"已开启 / 已关闭" */
 .switch { font: inherit; display: inline-flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 4px; border: 0; border-radius: 4px;
   background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .setting > form { margin: 0; flex: none; }
@@ -384,6 +384,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .switch[aria-checked="true"] .switch-track { background: var(--p3-bg); border-color: var(--p3-bg); }
 .switch[aria-checked="true"] .switch-knob { transform: translateX(18px); background: #FFFFFF; }
 .switch:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.switch[disabled] { opacity: 0.45; cursor: default; }  /* 用源码运行时"保留全部截图"锁定为开 */
 .update-new { margin-top: 8px; font-size: 13px; }
 .update-notes { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
 .btn[aria-busy="true"] { cursor: progress; }
