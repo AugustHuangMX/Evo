@@ -20,6 +20,8 @@ a = Analysis(
     # pystray 是 LGPL：以 .py 源文件形式放在 _internal/pystray 里（不压进程序内部），别人可以换成自己改过的版本
     module_collection_mode={"pystray": "py"},
 )
+# OpenCV 自带的视频读写组件（ffmpeg，29 MB）：Evo 只读写图片，用不到（2026-10-17 实测读图、存 PNG、缩放、比对都不会加载它）
+a.binaries = [b for b in a.binaries if "opencv_videoio_ffmpeg" not in b[0]]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
