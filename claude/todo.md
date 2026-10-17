@@ -52,7 +52,6 @@
   - 传奇头像和画面参照图（`config/templates/`，从游戏画面截的 EA 素材）**照现状申请**（用户决定）。已知 SignPath 条款写"项目不能包含任何非开源组件"，违反可吊销证书：有被拒或以后证书被吊销的风险
   - 申请前要做：仓库公开；用 GitHub Actions 自动打包（签名的文件必须由仓库里的源码自动构建；测试截图不在仓库，测试要能跳过）；GitHub 和 SignPath 账号都开两步验证；官网首页和下载处用"Code signing policy"（代码签名政策）这个说法写明签名政策、团队角色（作者 / 审核 / 批准）和隐私说明，并加一行"Free code signing provided by SignPath.io, certificate by SignPath Foundation."；每次签名要手动批准
 - [ ] **名字**：发布前再确认一次 PyPI 上 `evo-tracker` 没被占用
-- [ ] **重新截 README 和官网的界面截图**（`docs/images/overview.webp`、`site/img/panel-overview.webp`）：段位卡片已经改成不显示分母和进度条（10-17），截图里还是旧的。做法见 progress.md 10-17"仓库首页说明"
 - [ ] **测试截图**：现在不提交（2026-10-17 决定）。公开发布前考虑提交"只留识别区域、其余涂黑"的版本，别人下载代码后也能跑测试
 - [ ] （可选）**托盘专用的简化图标**：现在的图标在 16 像素下内部细节会糊
 
