@@ -10,6 +10,8 @@ data/
 logs/
 # Evo 窗口（WebView2）的本地存储（记住主题等）
 webview/
+# 官网：先不上传 GitHub，只留在本机（2026-10-17 用户决定）。改写前含 site/ 的历史在本地分支 local/site-history
+site/
 # Evo 自己的小设置（app_settings.py）
 settings.json
 
