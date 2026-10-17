@@ -89,7 +89,7 @@
               <img src="{{ url_for('evidence', match_id=r.id) }}" alt="第 {{ r.id }} 号对局的总结页截图">
             </a>
             {% else %}
-            <div class="evidence-empty">没有保存截图</div>
+            <div class="evidence-empty">没有截图：识别完、确认过的局不保留截图</div>
             {% endif %}
             {% if r.review_note %}<div class="note">{{ r.review_note }}</div>{% endif %}
             <div class="note">玩家名 {{ r.player_name }} · 小队总击杀 {{ r.squad_kills }} · 急救 {{ r.revives }} · 重生 {{ r.respawns }}</div>
@@ -109,7 +109,7 @@
             </form>
             <div class="actions">
               <form method="post" action="{{ url_for('delete', match_id=r.id) }}"
-                    onsubmit="return confirm('确定删除第 {{ r.id }} 号对局吗？删除后无法恢复。')">
+                    onsubmit="return confirm('确定删除第 {{ r.id }} 号对局吗？{{ '它的截图也会一起删除，' if r.evidence_recorded and not keep_shots }}删除后无法恢复。')">
                 <input type="hidden" name="token" value="{{ token }}">
                 <input type="hidden" name="next" value="{{ request.full_path }}">
                 <button type="submit" class="btn">删除这局</button>
@@ -118,6 +118,9 @@
                 {{ '确认无误' if r.needs_review else '保存修改' }}
               </button>
             </div>
+            {% if r.evidence_recorded and not keep_shots %}
+            <p class="action-hint">{{ '确认' if r.needs_review else '保存' }}后，这一局的截图会删除（确认过的局不再需要它）</p>
+            {% endif %}
           </div>
         </div>
       </td>

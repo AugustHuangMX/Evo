@@ -22,6 +22,7 @@ from flask import Flask, Response, abort, flash, g, redirect, render_template, r
 
 import app_settings
 import ranks
+import screenshots
 import storage
 import update_check
 from paths import CAPTURES_DIR, PANEL_DIR, data_absolute
@@ -264,6 +265,7 @@ def view(row):
         "needs_review": bool(row["needs_review"]),
         "review_note": row["review_note"],
         "has_evidence": bool(row["evidence_path"]),
+        "evidence_recorded": screenshots.recorded(row["evidence_path"]),  # 记录程序存的截图：确认、删除这一局时会删掉
         "form": {name: "" if row[name] is None else row[name] for name in EDITABLE},
         "warn_fields": warn_fields(row["review_note"]) if row["needs_review"] else set(),
     }
@@ -441,6 +443,7 @@ def matches():
     return render_template(
         "matches.html",
         rows=rows,
+        keep_shots=screenshots.keep_all(),  # 保留全部截图时，确认、删除一局不删截图，也不用提示
         total=total,
         page=page,
         pages=max(1, math.ceil(total / PER_PAGE)),
@@ -493,15 +496,19 @@ def update(match_id):
         return back_to_list(open=match_id)
 
     fields["needs_review"] = 0  # 人工确认过了，不再标记待确认（review_note 保留，记录当初为什么待确认）
+    deleted = screenshots.discard(db(), storage.get_match(db(), match_id))  # 确认过了，截图不再需要（原则 2）
+    if deleted:
+        fields["evidence_path"] = None
     storage.update_match(db(), match_id, fields)
-    flash(f"已保存第 {match_id} 号对局", "ok")
+    flash(f"已保存第 {match_id} 号对局" + ("，截图已删除" if deleted else ""), "ok")
     return back_to_list()
 
 
 @app.post("/matches/<int:match_id>/delete")
 def delete(match_id):
+    deleted = screenshots.discard(db(), storage.get_match(db(), match_id))
     storage.delete_match(db(), match_id)
-    flash(f"已删除第 {match_id} 号对局", "ok")
+    flash(f"已删除第 {match_id} 号对局" + ("和它的截图" if deleted else ""), "ok")
     return back_to_list()
 
 
