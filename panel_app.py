@@ -94,6 +94,8 @@ def security_checks():
 @app.context_processor
 def template_globals():
     return {
+        # 在 Evo 自己的窗口里打开（app_window.py 会在 User-Agent 里带上 EvoApp）：显示自定义标题栏
+        "in_app": "EvoApp/" in request.headers.get("User-Agent", ""),
         "token": app.config["TOKEN"],
         "is_demo": Path(app.config["DB"]).name != storage.DB_PATH.name,
         "db_name": Path(app.config["DB"]).name,
@@ -520,6 +522,22 @@ def clear_data():
     storage.delete_all_matches(db())
     flash(f"已清空 {total} 局战绩。清空前的数据备份在 {backup}", "ok")
     return redirect(url_for("settings"))
+
+
+_icon_png = None
+
+
+@app.route("/app-icon.png")
+def app_icon():
+    """Evo 的图标（窗口标题栏、浏览器标签页用）。和托盘、exe 用的是同一个（见 icons.py）。"""
+    global _icon_png
+    if _icon_png is None:
+        from icons import base_icon
+
+        buf = io.BytesIO()
+        base_icon(64)[0].save(buf, "PNG")
+        _icon_png = buf.getvalue()
+    return Response(_icon_png, mimetype="image/png")
 
 
 @app.route("/export.csv")

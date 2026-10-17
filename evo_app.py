@@ -3,8 +3,9 @@
 - 每 5 秒看一次 Apex 有没有在运行（只看进程名）。在运行、而且没有暂停，就启动一个记录子程序；
   游戏关掉或暂停时让它安全停下。子程序退出后，识别模型占的内存全部还给系统，托盘本身只占几十 MB，
   不玩游戏时几乎不占 CPU。识别模块万一崩溃也只影响子程序，托盘还在，下次检测到游戏会重新开始
-- 右键托盘图标：打开面板 / 暂停记录 / 退出；单击图标也能打开面板
-- 图标：平时是盾牌；正在记录时右下角有个小红点；暂停时变灰。鼠标停在图标上能看到状态
+- 右键托盘图标：打开面板 / 暂停记录 / 退出；单击图标也能打开面板。面板显示在 Evo 自己的窗口里
+  （Windows 自带的 WebView2，见 app_window.py），窗口也在单独的进程里，关掉就把内存还给系统
+- 图标：平时是 Evo 图标；正在记录时右下角有个小红点；暂停时变灰。鼠标停在图标上能看到状态
 - 同一时间只能运行一个 Evo（防止同一局被记两遍）
 - 运行记录写在数据文件夹的 logs/evo.log（打包后没有终端窗口，出了问题看这里）
 
@@ -31,6 +32,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 import storage
 from game_detect import GAME_PROCESSES, game_running
+from icons import base_icon
 from paths import ASSETS_DIR, DATA_DIR, FROZEN, LOG_DIR
 
 APP_NAME = "Evo"
@@ -75,41 +77,6 @@ def tell_user(text):
 
 
 # ---------- 图标 ----------
-
-def draw_shield(size=64):
-    """临时图标：面板左上角的盾牌（用户设计的图标做好后，放在 assets/icon/evo.png 就会用那个）。"""
-    s = 4 * size / 28  # 先画 4 倍大再缩小，边缘更平滑
-    img = Image.new("RGBA", (4 * size, 4 * size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    outer = [(14, 2), (25, 7), (25, 15), (23.5, 20), (19.5, 24), (14, 27), (8.5, 24), (4.5, 20), (3, 15), (3, 7)]
-    inner = [(14, 8), (20, 10.5), (20, 15), (19, 18), (17, 20), (14, 21.5), (11, 20), (9, 18), (8, 15), (8, 10.5)]
-    d.polygon([(x * s, y * s) for x, y in outer], outline=(255, 90, 90, 255), width=round(2.4 * s))
-    d.polygon([(x * s, y * s) for x, y in inner], fill=(255, 90, 90, 255))
-    return img.resize((size, size), Image.LANCZOS)
-
-
-ICON_FILES = ("evo.png", "icon.png")  # assets/icon/ 里用户设计的图标，两个名字都认
-
-
-def square_icon(img, pad=0.04):
-    """裁掉四周的透明空白，居中放进正方形（四周留一点边）。小尺寸（如托盘的 16 像素）下图形才不会太小。"""
-    box = img.getchannel("A").point(lambda a: 255 if a > 10 else 0).getbbox()
-    if box:
-        img = img.crop(box)
-    side = round(max(img.size) * (1 + 2 * pad))
-    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    canvas.paste(img, ((side - img.width) // 2, (side - img.height) // 2), img)
-    return canvas
-
-
-def base_icon(size=64):
-    """程序图标：assets/icon/ 里有用户设计的图标就用它，否则用面板的盾牌。返回 (图片, 来源说明)。"""
-    for name in ICON_FILES:
-        path = ASSETS_DIR / "icon" / name
-        if path.is_file():
-            return square_icon(Image.open(path).convert("RGBA")).resize((size, size), Image.LANCZOS), str(path)
-    return draw_shield(size), "面板的盾牌（assets/icon/ 里还没有图标）"
-
 
 def load_icons():
     """三种状态的图标：等待游戏、正在记录（右下角小红点）、已暂停（变灰）。"""
@@ -256,13 +223,52 @@ def port_free(port):
         return s.connect_ex(("127.0.0.1", port)) != 0  # 连不上 = 没人在用
 
 
+def window_process(url, focus, queue):
+    """窗口子进程的入口：打开 Evo 窗口，关掉窗口这个进程就退出。打不开时把原因交给托盘程序。"""
+    try:
+        import app_window
+
+        app_window.run(url, focus)
+    except Exception:  # noqa: BLE001
+        import traceback
+
+        queue.put(("error", traceback.format_exc()))
+
+
 class PanelServer:
-    """第一次点"打开面板"时，在本程序里启动面板（只接受本机访问），然后用浏览器打开。"""
+    """第一次点"打开面板"时，在本程序里启动面板（只接受本机访问），然后在单独的进程里打开 Evo 窗口。
+    窗口已经开着，就把它调到最前面；窗口打不开（比如电脑上没有 WebView2），改用浏览器打开。"""
 
     def __init__(self, log):
         self.log, self.url, self._server = log, None, None
+        self._window, self._focus = None, None
 
-    def open(self, browser=True):
+    def open(self, window=True):
+        url = self._start_server()
+        if url is None or not window:
+            return url
+        if self._window is not None and self._window.is_alive():
+            self._focus.set()  # 已经开着：调到最前面
+            return url
+        ctx = multiprocessing.get_context("spawn")
+        self._focus, queue = ctx.Event(), ctx.Queue()
+        self._window = ctx.Process(target=window_process, args=(url, self._focus, queue), name="evo-window",
+                                   daemon=True)
+        self._window.start()
+        threading.Thread(target=self._watch_window, args=(self._window, queue, url), name="window-watch",
+                         daemon=True).start()
+        return url
+
+    def _watch_window(self, proc, queue, url):
+        proc.join()  # 等窗口关闭
+        try:
+            _, detail = queue.get(timeout=1)
+        except Empty:
+            return  # 正常关闭
+        self.log(f"Evo 窗口打不开，改用浏览器打开面板。原因：\n{detail}")
+        webbrowser.open(url)
+
+    def _start_server(self):
         if self._server is None:
             import panel_app  # 用到时才加载
             from werkzeug.serving import make_server
@@ -275,11 +281,11 @@ class PanelServer:
             threading.Thread(target=self._server.serve_forever, name="panel", daemon=True).start()
             self.url = f"http://127.0.0.1:{port}/"
             self.log(f"面板已启动：{self.url}")
-        if browser:
-            webbrowser.open(self.url)
         return self.url
 
     def close(self):
+        if self._window is not None and self._window.is_alive():
+            self._window.terminate()
         if self._server is not None:
             self._server.shutdown()
 
@@ -332,7 +338,7 @@ def main():
                         help="把哪些进程当作游戏（测试用，默认 Apex 的进程名）")
     parser.add_argument("--check-seconds", type=float, default=5, help="多久看一次游戏有没有在运行（默认 5）")
     parser.add_argument("--open-panel", action="store_true", help="启动后立刻打开面板")
-    parser.add_argument("--no-browser", action="store_true", help="和 --open-panel 一起用：只启动面板，不打开浏览器（测试用）")
+    parser.add_argument("--no-window", action="store_true", help="和 --open-panel 一起用：只启动面板服务，不打开窗口（测试用）")
     parser.add_argument("--check-image", type=Path, nargs="+", metavar="截图",
                         help="自检：识别这些截图，把结果写进日志后退出")
     args = parser.parse_args()
@@ -385,7 +391,7 @@ def main():
         ic.visible = True
         recorder.start()
         if args.open_panel:
-            panel.open(browser=not args.no_browser)
+            panel.open(window=not args.no_window)
 
     icon.run(setup=setup)
     log("Evo 已退出")

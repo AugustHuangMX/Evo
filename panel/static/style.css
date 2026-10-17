@@ -35,6 +35,7 @@
   --p3-bg: #4C9AFF; --p3-fg: #06172F;
   --p4-bg: #E6E9EE; --p4-fg: #0D0F13;
   --seg-other: #E6E9EE;
+  --titlebar-bg: #08090C;
   color-scheme: dark;
 }
 
@@ -67,6 +68,7 @@
   --p3-bg: #2266CC; --p3-fg: #FFFFFF;
   --p4-bg: #E7E7E2; --p4-fg: #17191E;
   --seg-other: #A3A8B0;
+  --titlebar-bg: #EAEAE5;
   color-scheme: light;
 }
 
@@ -87,6 +89,33 @@ a { color: inherit; text-decoration: none; }
 .push-right { margin-left: auto; }
 
 .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 40px 48px; display: flex; flex-direction: column; gap: 20px; }
+
+/* ---------- Evo 窗口：自定义标题栏和改大小的细条（只在 Evo 窗口里显示，见 app_window.py）---------- */
+.in-app { overflow: hidden; }
+/* 只让标题栏下面的内容滚动（滚动条不会压到标题栏上） */
+.in-app body { position: fixed; top: 34px; left: 0; right: 0; bottom: 0; overflow-y: auto; user-select: none; }
+.in-app input, .in-app select, .in-app .setting-path { user-select: text; }
+.titlebar { position: fixed; top: 0; left: 0; right: 0; height: 34px; display: flex; align-items: stretch;
+  background: var(--titlebar-bg); border-bottom: 1px solid var(--border); z-index: 1000; }
+.titlebar-drag { flex: 1; display: flex; align-items: center; gap: 8px; padding-left: 12px; cursor: default; }
+.titlebar-drag img { width: 18px; height: 18px; pointer-events: none; }
+.titlebar-name { font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 2px; color: var(--muted); }
+.win-btn { width: 46px; border: 0; padding: 0; background: transparent; color: var(--muted); display: flex;
+  align-items: center; justify-content: center; cursor: default; }
+.win-btn:hover { background: var(--nav-on-bg); color: var(--text); }
+.win-close:hover { background: #E81123; color: #FFFFFF; }
+.win-btn .icon-restore, .win-maximized .win-btn .icon-max { display: none; }
+.win-maximized .win-btn .icon-restore { display: block; }
+.resize-edge { position: fixed; z-index: 1001; }
+.edge-top { top: 0; left: 8px; right: 8px; height: 4px; cursor: ns-resize; }
+.edge-bottom { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.edge-left { left: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.edge-right { right: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.edge-topleft, .edge-topright, .edge-bottomleft, .edge-bottomright { width: 8px; height: 8px; }
+.edge-topleft { top: 0; left: 0; cursor: nwse-resize; } .edge-bottomright { bottom: 0; right: 0; cursor: nwse-resize; }
+.edge-topright { top: 0; right: 0; cursor: nesw-resize; } .edge-bottomleft { bottom: 0; left: 0; cursor: nesw-resize; }
+.win-maximized .resize-edge, .win-maximized .window-frame { display: none; }
+.window-frame { position: fixed; inset: 0; border: 1px solid var(--border); pointer-events: none; z-index: 1002; }
 
 /* ---------- 顶部 ---------- */
 .top { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }

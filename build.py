@@ -33,7 +33,7 @@ Evo 使用了以下第三方库，它们各自的许可证随库一起放在 _in
 
 
 def make_icon():
-    from evo_app import base_icon  # 和托盘图标同一个来源：assets/icon/ 里的图标（裁掉四周空白），没有就用盾牌
+    from icons import base_icon  # 和托盘图标同一个来源：assets/icon/ 里的图标（裁掉四周空白），没有就用盾牌
 
     img, source = base_icon(256)
     print(f"图标：{source}")

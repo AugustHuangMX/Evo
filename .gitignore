@@ -8,6 +8,8 @@ data/
 *.sqlite3
 # 托盘程序的运行记录
 logs/
+# Evo 窗口（WebView2）的本地存储（记住主题等）
+webview/
 
 # ===== Python 自动生成的文件 =====
 __pycache__/

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN"{% if in_app %} class="in-app"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Evo{% endblock %}</title>
+<link rel="icon" href="{{ url_for('app_icon') }}">
 <script>
   // 主题：记住上次的选择；没选过就跟随系统的深浅色
   (function () {
@@ -18,6 +19,29 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+{% if in_app %}
+{# Evo 窗口没有 Windows 自带的标题栏和边框：这条是自己的标题栏，四边和四角的细条用来改大小（见 app_window.py） #}
+<div class="titlebar">
+  <div class="titlebar-drag" id="titlebar-drag">
+    <img src="{{ url_for('app_icon') }}" alt="" width="18" height="18">
+    <span class="titlebar-name">EVO</span>
+  </div>
+  <button type="button" class="win-btn" data-win="minimize" aria-label="最小化" title="最小化">
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5 H10" stroke="currentColor" stroke-width="1"></path></svg>
+  </button>
+  <button type="button" class="win-btn" data-win="maximize" aria-label="最大化" title="最大化">
+    <svg class="icon-max" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"></rect></svg>
+    <svg class="icon-restore" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"></rect><path d="M2.5 2.5 V0.5 H9.5 V7.5 H7.5" fill="none" stroke="currentColor" stroke-width="1"></path></svg>
+  </button>
+  <button type="button" class="win-btn win-close" data-win="close" aria-label="关闭" title="关闭">
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0 L10 10 M10 0 L0 10" stroke="currentColor" stroke-width="1"></path></svg>
+  </button>
+</div>
+{% for edge in ('top', 'bottom', 'left', 'right', 'topleft', 'topright', 'bottomleft', 'bottomright') %}
+<div class="resize-edge edge-{{ edge }}" data-edge="{{ edge }}"></div>
+{% endfor %}
+<div class="window-frame" aria-hidden="true"></div>
+{% endif %}
 <div class="wrap">
 
 <header class="top">
@@ -77,6 +101,40 @@
     evoSetTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   });
 </script>
+{% if in_app %}
+<script>
+  // Evo 窗口的标题栏按钮、拖动、改大小：交给 app_window.py 里的 WindowApi
+  (function () {
+    function api() { return window.pywebview && window.pywebview.api; }
+    function showMaximized(maximized) { document.documentElement.classList.toggle("win-maximized", !!maximized); }
+    function toggleMaximize() { if (api()) api().toggle_maximize().then(showMaximized); }
+
+    var lastDown = 0;
+    document.getElementById("titlebar-drag").addEventListener("mousedown", function (e) {
+      if (e.button !== 0 || !api()) return;
+      var now = Date.now();
+      if (now - lastDown < 400) { lastDown = 0; toggleMaximize(); return; }  // 双击标题栏：最大化 / 还原
+      lastDown = now;
+      api().begin_drag();
+    });
+    document.querySelectorAll(".resize-edge").forEach(function (el) {
+      el.addEventListener("mousedown", function (e) {
+        if (e.button === 0 && api()) { e.preventDefault(); api().begin_resize(el.dataset.edge); }
+      });
+    });
+    document.querySelectorAll(".win-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!api()) return;
+        var what = btn.dataset.win;
+        if (what === "maximize") toggleMaximize();
+        else if (what === "minimize") api().minimize();
+        else if (what === "close") api().close();
+      });
+    });
+    window.addEventListener("pywebviewready", function () { api().is_maximized().then(showMaximized); });
+  })();
+</script>
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>
