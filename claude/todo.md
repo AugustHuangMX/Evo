@@ -52,7 +52,7 @@
 ## 五、公开发布前
 
 - [ ] **官网**（2026-10-17 定的方案）：网页放项目的 `site/`（2026-10-17 用户决定：先不上传 GitHub，`site/` 已写进 .gitignore，只留在本机；要上传或换成单独的仓库时再改），用 Cloudflare Pages 发布；下载文件放 Cloudflare R2（`dl.` 子域名，流量免费），GitHub Releases 作备用；域名 evotracker.cn（阿里云买的，DNS 已交给 Cloudflare），服务器不在大陆所以不用备案。只做中文。先发未签名的预览版 zip，同时申请 SignPath 免费签名。国内访问：页面不加载任何外部资源、中文用系统字体、不用 `pages.dev` 地址、不加统计代码。第 1–2 步（一页式网页定稿）和网页试运行上线已完成，见 progress.md
-  - [ ] 第 3 步 `release.py` 打包 zip + SHA-256，Windows 沙盒里试装
+  - [ ] 第 3 步 做正式压缩包：`python release.py` 已写好（见 progress.md 10-17）。还差：定版本号（网页写"v0.1 预览版"，程序 `storage.APP_VERSION` 是 0.0.1，要统一）；`release.py` 要求代码都已提交，传奇识别接进记录程序那部分提交后再打；压缩包会带上 `config/templates/`（画面参照图和 28 张传奇头像），公开下载前要先定能不能放（见 CLAUDE.md"待确认的问题"）；Windows 沙盒里试装（这台电脑没启用沙盒，启用要管理员权限并重启）；使用说明里"传奇还认不出来"到时要改
   - [ ] 第 4 步 公开仓库前检查
   - [ ] 第 5 步 下载文件上线：开通 R2、建存储桶、绑定 `dl.evotracker.cn`、上传 zip；网页填上真实下载链接、大小、SHA-256，再上传一次网页（Pages 项目 `evotracker` → 创建新部署 → 拖入 `site` 文件夹）；仓库公开后 GitHub Releases 也传一份
   - [ ] 第 6 步 国内多地实测
