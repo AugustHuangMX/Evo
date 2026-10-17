@@ -146,6 +146,8 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 - `rp_source`：本局 rp_delta 的来源（经验值页明细 / 实时 RP / 对账补算），对账时据此判断哪些局不太确定
 - `rank_tier` / `rank_division` / `rank_progress`：本局结束后的段位、段、段内进度（如 钻石 / I / 48）。读不到时用上一次读数 + rp_delta 推算
 
+`player_names` 表（账号对照表，2026-10-17）：name_key（去掉空格的玩家名）, account_id, confirmed。第一个名字自动成为账号；新名字先单独算一个账号，在 Evo 窗口里弹窗问"是不是同一个人"后合并或确认；账号显示最近一局用的名字
+
 `kill_events` 表（v0.2）：match_id, time, event_type（knock/kill）, weapon
 
 ### RP 方案（多来源核对）

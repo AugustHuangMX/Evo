@@ -14,7 +14,6 @@
 
 import storage
 from paths import data_relative
-from player_name import same_name, similarity
 
 RP_SOURCE_XP = "经验值页"
 XP_ONLY_NOTE = "没有总结页（第 2 名、冠军时没有这一页）：伤害、生存时间缺失；击杀/助攻是计入排位点数的次数，可能比实际少"
@@ -97,9 +96,9 @@ class PostMatch:
         - 和之前的很像：当作识别误差，仍用之前的名字
         - 完全不一样：换了账号（用终端运行时，一次记录可能跨过重启游戏），之后的局记在新名字下"""
         old = self.player_name
-        if same_name(name, old):
+        if old is not None and storage.name_key(name) == storage.name_key(old):
             return
-        if old is not None and similarity(name, old) >= self.name_slip:
+        if old is not None and storage.name_similarity(name, old) >= self.name_slip:
             self.log(f"[{when:%H:%M:%S}] {where}读到玩家名 {name}，和 {old} 很像，当作识别误差，仍记在 {old} 下")
             return
         self.player_name = name

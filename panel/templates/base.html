@@ -112,6 +112,60 @@
 
 {% block content %}{% endblock %}
 </main>
+{% if name_question %}
+{# 多账号：认出了新的玩家名，问"是不是同一个人"。打开页面时弹出（下面的脚本）；不选一项不能"确定"；
+   "稍后再问"和按 Esc 一样，这个窗口开着期间不再弹，下次打开窗口再问 #}
+{% set q = name_question %}
+<dialog class="dialog" id="name-dialog" aria-labelledby="h-name-dialog" aria-describedby="name-dialog-desc">
+  <form method="post" action="{{ url_for('answer_name') }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <input type="hidden" name="name" value="{{ q.name }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    {# 打开时焦点在标题上（autofocus）：读屏软件先读标题和说明，按 Tab 到选项；
+       不放在第一个选项上，免得看起来像已经选好了 #}
+    <h2 id="h-name-dialog" tabindex="-1" autofocus>检测到新的玩家名</h2>
+    <p id="name-dialog-desc" class="dialog-desc">
+      Evo 在 <span class="num">{{ q.games }}</span> 局里认出了 <span class="name-new num">{{ q.name }}</span>（最近一局：{{ q.last }}）。
+      是同一个人改了名，还是另一个账号？回答之前，这几局先单独记在这个名字下。
+    </p>
+    <fieldset class="choices">
+      <legend class="sr-only">{{ q.name }} 是谁</legend>
+      {% for a in q.accounts %}
+      <label class="choice">
+        <input type="radio" name="account" value="{{ a.id }}" required>
+        <span class="choice-body">
+          <span class="choice-title">同一个人：<span class="num">{{ a.name }}</span> 改了名</span>
+          <span class="choice-desc">{{ a.games }} 局，最近一局 {{ a.last }}{% if a.similar %}<span class="choice-hint"> · 名字很像</span>{% endif %}</span>
+        </span>
+      </label>
+      {% endfor %}
+      <label class="choice">
+        <input type="radio" name="account" value="new" required>
+        <span class="choice-body">
+          <span class="choice-title">不是，这是另一个账号</span>
+          <span class="choice-desc">单独记成一个账号，战绩和统计分开</span>
+        </span>
+      </label>
+    </fieldset>
+    {% if q.more %}<p class="dialog-desc">回答后还有 <span class="num">{{ q.more }}</span> 个新名字要确认。</p>{% endif %}
+    <div class="dialog-actions">
+      <button type="submit" class="btn-text" id="name-later" formaction="{{ url_for('later_names') }}" formnovalidate>稍后再问</button>
+      <button type="submit" class="btn btn-primary">确定</button>
+    </div>
+  </form>
+</dialog>
+<script>
+  (function () {
+    var dialog = document.getElementById("name-dialog");
+    dialog.showModal();
+    // 按 Esc：和点"稍后再问"一样（只是关掉的话，换个页面又会弹出来）
+    dialog.addEventListener("cancel", function (e) {
+      e.preventDefault();
+      document.getElementById("name-later").click();
+    });
+  })();
+</script>
+{% endif %}
 
 </div>
 <script>

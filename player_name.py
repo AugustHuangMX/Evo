@@ -11,27 +11,12 @@
 """
 
 import argparse
-from difflib import SequenceMatcher
 from pathlib import Path
 
 from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image
+from storage import name_key
 
 CONFIG_NAME = "player_name.json"
-
-
-def compact(name):
-    """比较名字时去掉空格：同一个名字，识别时有时读出空格、有时没有（如 "[DOGE] Dogga" 和 "[DOGE]Dogga"）。"""
-    return "".join(name.split())
-
-
-def same_name(a, b):
-    """是不是同一个名字（不管空格）。"""
-    return a is not None and b is not None and compact(a) == compact(b)
-
-
-def similarity(a, b):
-    """两个名字有多像（0 到 1，不管空格）。"""
-    return SequenceMatcher(None, compact(a), compact(b)).ratio()
 
 
 def pick_name(boxes, txts, scores, min_score):
@@ -64,7 +49,7 @@ class PlayerNameReader:
         if not result.txts:
             return None
         found = pick_name(result.boxes, result.txts, result.scores, cfg["min_score"])
-        if found is None or not cfg["min_length"] <= len(compact(found[0])) <= cfg["max_length"]:
+        if found is None or not cfg["min_length"] <= len(name_key(found[0])) <= cfg["max_length"]:
             return None
         return found
 

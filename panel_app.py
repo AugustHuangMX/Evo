@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse
 
-from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, url_for
+from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 
 import app_settings
 import storage
@@ -61,6 +61,9 @@ CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片�
 
 # ---- 设置页 ----
 SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
+
+# ---- 多账号 ----
+SIMILAR_NAME = 0.6  # 新名字和某个账号的名字这么像，弹窗里提示"名字很像"（可能是识别误差，也可能是改名）
 
 app = Flask(__name__, template_folder=str(PANEL_DIR / "templates"), static_folder=str(PANEL_DIR / "static"))
 app.secret_key = secrets.token_hex(16)  # 每次启动随机生成，用于页面上的提示消息
@@ -109,6 +112,40 @@ def template_globals():
         "ask_update": app_settings.get("update_auto") is None,
         "update_offer": update_check.available(),
         "version": storage.APP_VERSION,
+        # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"
+        "name_question": name_question(),
+    }
+
+
+def name_question():
+    """弹窗要问的新玩家名（最早出现的那个）和可以合并到的账号。没有要问的，或者这个窗口里点过"稍后再问"，返回 None。
+    新名字的局在回答之前先单独算一个账号，不会丢。"""
+    if session.get("names_later"):
+        return None
+    everyone = storage.accounts(db())
+    pending = [a for a in everyone if not a["confirmed"]]
+    known = [a for a in everyone if a["confirmed"]]
+    if not pending:
+        return None
+    new = pending[0]
+    if not known:  # 原来的账号的局都删光了：没有可合并的，直接当作一个账号
+        storage.answer_name(db(), new["name"])
+        return None
+    choices = [{
+        "id": a["id"],
+        "name": a["name"],
+        "games": a["games"],
+        "last": time_text(a["last"]),
+        "similar": max(storage.name_similarity(n, new["name"]) for n in a["names"]) >= SIMILAR_NAME,
+        "order": a["last"],
+    } for a in known]
+    choices.sort(key=lambda c: (c["similar"], c["order"]), reverse=True)  # 名字很像的排在前面，其余按最近玩过的排
+    return {
+        "name": new["name"],
+        "games": new["games"],
+        "last": time_text(new["last"]),
+        "more": len(pending) - 1,  # 后面还有几个新名字要问
+        "accounts": choices,
     }
 
 
@@ -593,6 +630,37 @@ def check_update():
 def dismiss_update():
     """提示条上的"以后再说"：这个版本不再提示（出了更新的版本会再提示）。"""
     app_settings.set_value("update_dismissed", request.form.get("version", ""))
+    return back_to_page()
+
+
+# ---------- 多账号：新玩家名的弹窗（base.html） ----------
+
+@app.post("/accounts/answer")
+def answer_name():
+    """回答弹窗"是不是同一个人"：account = 要合并到的账号编号（同一个人改了名），或 "new"（另一个账号）。"""
+    name, choice = request.form.get("name", ""), request.form.get("account", "")
+    everyone = storage.accounts(db())
+    new = next((a for a in everyone if not a["confirmed"] and storage.name_key(a["name"]) == storage.name_key(name)), None)
+    if new is None:  # 已经回答过了（比如开着两个窗口）
+        return back_to_page()
+    if choice == "new":
+        storage.answer_name(db(), name)
+        flash(f"已记为另一个账号：{name}（{new['games']} 局）", "ok")
+        return back_to_page()
+    target = next((a for a in everyone if a["confirmed"] and str(a["id"]) == choice), None)
+    if target is None:
+        flash("没有保存：请选一项", "error")
+        return back_to_page()
+    storage.answer_name(db(), name, target["id"])
+    flash(f"已合并：{name} 和 {target['name']} 是同一个账号，共 {new['games'] + target['games']} 局", "ok")
+    return back_to_page()
+
+
+@app.post("/accounts/later")
+def later_names():
+    """弹窗的"稍后再问"（或按 Esc）：这个窗口开着期间不再弹，关掉窗口、下次打开时再问
+    （记在会话 cookie 里，关窗口时就没了）。在回答之前，新名字的局单独算一个账号。"""
+    session["names_later"] = True
     return back_to_page()
 
 

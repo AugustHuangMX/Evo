@@ -2,6 +2,7 @@
 
 数据库文件在数据文件夹的 data/evo.db（位置见 paths.py；在项目里时已被 .gitignore 排除，不会上传）。
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
+另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节。
 
 查看最近的记录：python storage.py
 导出成 CSV：    python storage.py --export data/matches.csv
@@ -10,12 +11,13 @@
 import argparse
 import csv
 import sqlite3
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from paths import DB_PATH
 
 APP_VERSION = "0.1.0"
-SCHEMA_VERSION = 2  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+SCHEMA_VERSION = 3  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -46,10 +48,19 @@ COLUMNS = {
     "app_version": "TEXT",
 }
 
-# 旧数据库怎么升级：版本号 → 升到这个版本要执行的 SQL。只加列，已有的数据不动
+# 账号对照表：一个名字一行，同一个账号的几个名字（改过名）account_id 相同。
+# Stata 类比：一份 crosswalk（名字 → 账号编号），按名字 merge m:1 到每一局
+NAME_TABLE = """CREATE TABLE IF NOT EXISTS player_names (
+  name_key TEXT PRIMARY KEY,  -- 去掉空格后的名字（见 name_key）
+  account_id INTEGER NOT NULL,  -- 属于哪个账号
+  confirmed INTEGER NOT NULL DEFAULT 0  -- 1 = 已确认；0 = 新名字，等你在弹窗里回答"是不是同一个人"
+)"""
+
+# 旧数据库怎么升级：版本号 → 升到这个版本要执行的 SQL。只加列、加表，已有的数据不动
 # （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）
 MIGRATIONS = {
-    2: ["ALTER TABLE matches ADD COLUMN player_name TEXT"],  # 2026-10-17 多账号
+    2: ["ALTER TABLE matches ADD COLUMN player_name TEXT"],  # 2026-10-17 多账号：每局的玩家名
+    3: [NAME_TABLE],  # 2026-10-17 多账号：账号对照表
 }
 
 
@@ -66,6 +77,7 @@ def _upgrade(conn):
         if version == 0:
             cols = ",\n  ".join(f"{name} {kind}" for name, kind in COLUMNS.items())
             conn.execute(f"CREATE TABLE IF NOT EXISTS matches (\n  {cols}\n)")
+            conn.execute(NAME_TABLE)
         else:
             for v in range(version + 1, SCHEMA_VERSION + 1):
                 for sql in MIGRATIONS[v]:
@@ -180,6 +192,80 @@ def delete_all_matches(conn):
     n = conn.execute("DELETE FROM matches").rowcount
     conn.commit()
     return n
+
+
+# ---------- 账号：按玩家名区分，改过名的合并成一个账号 ----------
+
+def name_key(name):
+    """比较玩家名时用的写法：去掉空格。同一个名字，识别时有时读出空格、有时没有（如 "[DOGE] Dogga" 和 "[DOGE]Dogga"）。"""
+    return "".join(name.split())
+
+
+def name_similarity(a, b):
+    """两个玩家名有多像（0 到 1，不管空格）。"""
+    return SequenceMatcher(None, name_key(a), name_key(b)).ratio()
+
+
+def sync_names(conn):
+    """把对局里出现过、对照表里还没有的名字登记进去，每个新名字先单独算一个账号。
+    还没有任何已确认的账号时，最早出现的那个名字直接确认（第一个账号不用问）；
+    之后的新名字等你在弹窗里回答"是不是同一个人"。"""
+    known = {r[0] for r in conn.execute("SELECT name_key FROM player_names")}
+    new = []
+    for r in conn.execute("SELECT player_name, MIN(ended_at) AS first FROM matches WHERE player_name IS NOT NULL "
+                          "GROUP BY player_name ORDER BY first"):
+        key = name_key(r["player_name"])
+        if key and key not in known:
+            known.add(key)
+            new.append(key)
+    if not new:
+        return
+    next_id = conn.execute("SELECT COALESCE(MAX(account_id), 0) + 1 FROM player_names").fetchone()[0]
+    have_confirmed = conn.execute("SELECT COUNT(*) FROM player_names WHERE confirmed = 1").fetchone()[0] > 0
+    for key in new:
+        conn.execute("INSERT INTO player_names (name_key, account_id, confirmed) VALUES (?, ?, ?)",
+                     (key, next_id, int(not have_confirmed)))
+        next_id, have_confirmed = next_id + 1, True
+    conn.commit()
+
+
+def accounts(conn):
+    """所有账号（会先 sync_names），按第一次出现的时间排。每个账号是一个字典：
+    id、name（显示的名字 = 最近一局用的名字）、names（用过的名字，最近的在前）、games（局数）、last（最近一局的时间）、
+    confirmed（False = 新名字，还没回答"是不是同一个人"）。还没认出玩家名的局不算在任何账号下。"""
+    sync_names(conn)
+    table = {r["name_key"]: (r["account_id"], bool(r["confirmed"])) for r in conn.execute("SELECT * FROM player_names")}
+    found = {}
+    for r in conn.execute("SELECT player_name, COUNT(*) AS games, MIN(ended_at) AS first, MAX(ended_at) AS last "
+                          "FROM matches WHERE player_name IS NOT NULL GROUP BY player_name"):
+        key = name_key(r["player_name"])
+        if key not in table:
+            continue
+        account_id, confirmed = table[key]
+        a = found.setdefault(account_id, {"id": account_id, "confirmed": confirmed, "spellings": {}, "games": 0,
+                                          "first": r["first"] or "", "last": ""})
+        a["games"] += r["games"]
+        a["first"] = min(a["first"], r["first"] or "")
+        a["last"] = max(a["last"], r["last"] or "")
+        old = a["spellings"].get(key)
+        if old is None or (r["last"] or "") >= old[0]:  # 同一个名字有几种写法（空格不同）时，用最近的写法
+            a["spellings"][key] = (r["last"] or "", r["player_name"])
+    result = []
+    for a in sorted(found.values(), key=lambda a: a["first"]):
+        names = [raw for _, raw in sorted(a.pop("spellings").values(), reverse=True)]
+        result.append({**a, "name": names[0], "names": names})
+    return result
+
+
+def answer_name(conn, name, account_id=None):
+    """回答"这个新名字是不是同一个人"：account_id = 要合并到的账号（同一个人改了名）；None = 另一个账号（保持单独）。"""
+    sync_names(conn)  # 名字刚出现、还没登记进对照表时，先登记，不然下面改不到
+    key = name_key(name)
+    if account_id is None:
+        conn.execute("UPDATE player_names SET confirmed = 1 WHERE name_key = ?", (key,))
+    else:
+        conn.execute("UPDATE player_names SET account_id = ?, confirmed = 1 WHERE name_key = ?", (account_id, key))
+    conn.commit()
 
 
 def write_csv(conn, f):

@@ -1,22 +1,42 @@
-"""轻量（原则 3）：打游戏时不跑识别引擎，识别模型用到时才加载、闲置 2 分钟后释放。
+"""轻量（原则 3）：打游戏时不跑识别引擎，识别模型用到时才加载、闲置 2 分钟后释放；托盘程序不加载识别用的库。
 
 画面顺序：5 帧游戏画面 → 一局的总结页 → 200 帧游戏画面（假时钟下约 200 秒）。
 "游戏画面"用的是录像里的观战截图（不是任何一种要认的画面）。截图不在仓库里，见 fake_game.py。
+托盘程序（evo_app.py，面板也在这个程序里）一直开着，只有记录子进程才该加载 OpenCV、识别引擎、截屏组件：
+另开一个 Python 只导入 evo_app 和 panel_app，检查这些库没被带进来（不用截图）。
 
 运行：python tests/test_light.py
 """
 
+import subprocess
+import sys
 from unittest import mock
 
-from fake_game import FakeCamera, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
+from fake_game import ROOT, FakeCamera, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
 
 import ocr
 
 NIGHT = "live/20261016_211452/"
+HEAVY = ("cv2", "numpy", "rapidocr", "onnxruntime", "dxcam")  # 只该在记录子进程里加载的库
+
+
+def tray_imports():
+    """托盘程序（含面板）加载了哪些不该加载的库。"""
+    code = f"import sys, evo_app, panel_app; print(','.join(m for m in {HEAVY!r} if m in sys.modules))"
+    out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True)
+    return [m for m in out.stdout.strip().split(",") if m]
 
 
 def main():
     print("轻量：打游戏时不跑识别，模型按需加载")
+    heavy = tray_imports()
+    ok = report({f"托盘程序和面板不加载识别用的库（加载了：{'、'.join(heavy) or '无'}）": not heavy})
+    shots = recording_checks()
+    return ok if shots is None else ok and shots
+
+
+def recording_checks():
+    """用假游戏跑记录程序，检查识别发生在哪些画面上、模型什么时候加载和释放。找不到截图时返回 None。"""
     try:
         images = {"游戏": load(shot("samples/vlcsnap-2026-10-16-18h27m31s652.png")),
                   "总结页": load(shot(NIGHT + "05_222749.png"))}
