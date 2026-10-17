@@ -99,13 +99,13 @@
           </form>
         </div>
       </div>
-      {# 截图留不留（screenshots.py）：开关是记录程序开始记录时读的，所以"下次开始记录时生效" #}
+      {# 截图留不留（screenshots.py）：记录程序每局结束时看一眼开关，所以"从下一局开始生效" #}
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="keep-shots-name">保留全部截图</div>
           <div class="setting-desc">
             {%- if shots_locked %}用源码运行时总是保留全部：项目里的 <code>captures/</code> 是测试集
-            {%- else %}关着时，识别完就删，只留待确认的局要用的截图（确认后也删）。打开后每局的截图都留着，每局约 30–40 MB。下次开始记录时生效{% if recording %}（正在记录的这一次仍按原来的设置）{% endif %}
+            {%- else %}关着时，识别完就删，只留待确认的局要用的截图（确认后也删）。打开后每局的截图都留着，每局约 30–40 MB。改了从下一局开始生效
             {%- endif %}
           </div>
         </div>

@@ -3,7 +3,9 @@
 - 默认"识别完就删"：大厅、开局画面不存；总结页、经验值页先存一张，一局彻底结束时（下一局开局，或停止记录），
   不需要确认的删掉、数据库里的截图位置清空；"待确认"的局留着，在战绩页对着改
   （为什么要等一局结束：总结页常常名次还没滑进来就先存下、标待确认，过一会儿经验值页补上名次才取消待确认）
-- "保留全部截图"（数据文件夹 settings.json 里的 keep_all_screenshots）：全部留着，和以前一样，用来攒测试集
+- "保留全部截图"（数据文件夹 settings.json 里的 keep_all_screenshots）：全部留着，和以前一样，用来攒测试集。
+  记录程序每局结束时看一眼这个开关，改了从下一局开始生效（2026-10-17 用户要求）：打开时，刚结束的这一局也不删；
+  关掉时，这次记录里之前存下的都不删（以前存下的不自动删），之后的局识别完就删
 - 截图存在项目的 captures/ 时（用源码运行；源码运行 evo_app.py 时战绩记进安装版、截图仍存进项目，见 source_run.py）：
   不管开关，永远保留全部——项目里的 captures/ 就是测试集
 - 只删这次记录的文件夹里的截图，以前存下的不动
@@ -33,23 +35,25 @@ def keep_all():
     return bool(app_settings.get(KEEP_ALL_KEY, False))
 
 
-def removable(conn, folders):
-    """这些文件夹里可以删的截图：除了"待确认"的局要用的，全部。"""
+def removable(conn, folders, protect=frozenset()):
+    """这些文件夹里可以删的截图：除了"待确认"的局要用的、protect 里的（绝对路径），全部。"""
     needed = {data_absolute(row[0]).resolve() for row in conn.execute(
-        "SELECT evidence_path FROM matches WHERE needs_review AND evidence_path IS NOT NULL")}
+        "SELECT evidence_path FROM matches WHERE needs_review AND evidence_path IS NOT NULL")} | set(protect)
     return [path for folder in folders for path in sorted(folder.glob("*.png")) if path.resolve() not in needed]
 
 
-def _delete(conn, folders):
-    """删掉这些文件夹里可以删的截图；不待确认的局，截图在这些文件夹里的，数据库里的截图位置清空
-    （战绩页就不再显示"识别截图"）。删不掉的（比如正被别的程序打开）留着。返回 (删了几张, 腾出多少字节)。"""
+def _delete(conn, folders, protect=frozenset()):
+    """删掉这些文件夹里可以删的截图（protect 里的不删）；不待确认的局，截图在这些文件夹里、又不在 protect 里的，
+    数据库里的截图位置清空（战绩页就不再显示"识别截图"）。删不掉的（比如正被别的程序打开）留着。
+    返回 (删了几张, 腾出多少字节)。"""
     folders = {folder.resolve() for folder in folders}
     for row in conn.execute("SELECT match_id, evidence_path FROM matches "
                             "WHERE NOT needs_review AND evidence_path IS NOT NULL").fetchall():
-        if data_absolute(row["evidence_path"]).resolve().parent in folders:
+        path = data_absolute(row["evidence_path"]).resolve()
+        if path.parent in folders and path not in protect:
             storage.update_match(conn, row["match_id"], {"evidence_path": None})
     deleted = freed = 0
-    for path in removable(conn, folders):
+    for path in removable(conn, folders, protect):
         try:
             size = path.stat().st_size
             path.unlink()
@@ -60,10 +64,11 @@ def _delete(conn, folders):
     return deleted, freed
 
 
-def tidy(conn, folder):
+def tidy(conn, folder, protect=frozenset()):
     """一局彻底结束时调用：folder（这次记录的截图文件夹）里，除了"待确认"的局要用的截图，全部删掉。
+    protect：不删的截图（绝对路径）——这次记录中途关掉"保留全部截图"时，关之前存下的。
     删不掉的下一局结束时再试。返回 (删了几张, 腾出多少字节)。"""
-    return _delete(conn, [folder])
+    return _delete(conn, [folder], protect)
 
 
 def recording_folder():

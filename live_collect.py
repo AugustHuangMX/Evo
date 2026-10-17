@@ -16,6 +16,7 @@
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
 - 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留"待确认"的局要用的
 - 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅也存，进入时一张、离开前最后一帧一张
+- 设置页的"保留全部截图"开关：每局结束时看一眼，改了从下一局开始生效（见 collect 里的 round_end）
 
 运行：python live_collect.py
 停止：在终端按 Ctrl+C，或到达 --minutes 设定的时长后自动停止
@@ -153,7 +154,7 @@ class ScreenWatcher:
 
     def __init__(self, engine, screens, xp_cfg, start_cfg, post, run_dir, log, keep_all=True):
         self.engine, self.screens, self.xp_cfg, self.start_cfg = engine, screens, xp_cfg, start_cfg
-        self.post, self.run_dir, self.log, self.keep_all = post, run_dir, log, keep_all
+        self.post, self.run_dir, self.log, self.keep_all = post, run_dir, log, keep_all  # 每局结束时可能改（round_end）
         self.current = None  # 现在停在哪个画面（None = 都不是）
         self.last = None  # 这个画面最近的一帧和时间，离开时存下来
         self.frames = 0  # 在这个画面已经看到了几帧
@@ -276,7 +277,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     - 在终端按 Ctrl+C
     log：输出一行文字的函数（终端里是 print，托盘程序里写进日志文件）
     status：字典，记下的局数会实时写进 status["saved"]（托盘图标显示用）
-    keep_all：保留全部截图；None = 按 screenshots.keep_all() 决定（测试时直接指定）
+    keep_all：保留全部截图。None = 按设置页的开关（screenshots.keep_all()），每局结束时再看一眼，
+    改了从下一局开始生效；True / False = 整次记录都这样（测试时直接指定）
     返回这次一共记下了几局。"""
     set_low_priority()
     cfg = load_config("summary.json")
@@ -284,19 +286,34 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     conn = storage.connect(db_path)
-    keep = screenshots.keep_all() if keep_all is None else keep_all
-    tidied = {"deleted": 0, "freed": 0}  # 这次记录识别完删掉的截图
+    def keep_now():
+        return screenshots.keep_all() if keep_all is None else keep_all
 
-    def tidy():
-        """一局彻底结束：删掉这次记录里不需要的截图（只留"待确认"的局要用的）。"""
-        deleted, freed = screenshots.tidy(conn, run_dir)
+    keep = keep_now()
+    tidied = {"deleted": 0, "freed": 0}  # 这次记录识别完删掉的截图
+    protect = set()  # 中途关掉"保留全部截图"时，关之前存下的截图：不删（以前存下的不自动删）
+
+    def round_end():
+        """一局彻底结束（下一局开局，或停止记录）：先看一眼"保留全部截图"开关（设置页改了，从下一局开始生效），
+        再删掉这次记录里不需要的截图（只留"待确认"的局要用的）。开着时什么都不删。"""
+        nonlocal keep
+        if keep_now() != keep:
+            keep = other.keep_all = not keep
+            if keep:
+                log("           设置页打开了\"保留全部截图\"：从下一局开始全部保留，刚结束的这一局也不删")
+            else:
+                protect.update(p.resolve() for p in run_dir.glob("*.png"))
+                log(f"           设置页关掉了\"保留全部截图\"：从下一局开始识别完就删，之前存下的 {len(protect)} 张不删")
+        if keep:
+            return
+        deleted, freed = screenshots.tidy(conn, run_dir, protect)
         if deleted:
             tidied["deleted"] += deleted
             tidied["freed"] += freed
             log(f"           识别完删掉 {deleted} 张截图（{freed / 2 ** 20:.0f} MB）")
 
     name_cfg = load_config("player_name.json")
-    post = PostMatch(conn, log=log, name_slip=name_cfg["slip_similarity"], on_round_end=None if keep else tidy)
+    post = PostMatch(conn, log=log, name_slip=name_cfg["slip_similarity"], on_round_end=round_end)
 
     camera = dxcam.create(output_color="BGR", processor_backend="numpy")
     # clock 用 lambda 包一层：测试时会把本文件的 time 换成假时钟
@@ -310,7 +327,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     legend = LegendWatcher(legend_detector, post, on_own_hud=names.on_own_hud)
     log(f"屏幕: {camera.width}x{camera.height}")
     log(f"数据库: {Path(db_path).resolve()}")
-    log(f"截图保存到: {run_dir.resolve()}（{'保留全部' if keep else '识别完就删，只留待确认的局要用的'}）")
+    log(f"截图保存到: {run_dir.resolve()}（{'保留全部' if keep else '识别完就删，只留待确认的局要用的'}；"
+        "设置页改了开关，从下一局开始生效）")
     if detector.missing:
         log(f"⚠ 这些画面没有参照图，每次都要跑识别：{'、'.join(detector.missing)}（见 screens.py）")
     if legend_detector.missing:
@@ -370,8 +388,9 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
             f"加载识别模型 {engine.loads} 次；认传奇 {legend.checks} 次；读玩家名 {names.reads} 次"
             f"（对局中 {names.hud_reads} 次），玩家名 {post.player_name or '没认出'}；内存峰值 {memory_mb()[1]:.0f} MB")
-        log(f"截图：留下 {left} 张" + ("（保留全部）" if keep else
-                                     f"（待确认的局要用的），识别完删掉 {tidied['deleted']} 张（{tidied['freed'] / 2 ** 20:.0f} MB）"))
+        kinds = "保留全部" if keep else "待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
+        log(f"截图：留下 {left} 张（{kinds}）" + (f"，识别完删掉 {tidied['deleted']} 张（{tidied['freed'] / 2 ** 20:.0f} MB）"
+                                              if tidied["deleted"] or not keep else ""))
         del engine, detector, camera, summary, other, legend, legend_detector, names  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:

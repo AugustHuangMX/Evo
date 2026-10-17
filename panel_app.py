@@ -600,15 +600,15 @@ def open_folder():
 
 @app.post("/settings/keep-shots")
 def keep_shots_setting():
-    """"保留全部截图"开关。记录程序开始记录时读一次，所以下次开始记录时才生效。"""
+    """"保留全部截图"开关。记录程序每局结束时看一眼，所以从下一局开始生效（live_collect.collect 里的 round_end）。"""
     if screenshots.in_project():
         abort(400)
     on = request.form.get("keep") == "1"
     app_settings.set_value(screenshots.KEEP_ALL_KEY, on)
     if on:
-        flash("已开启\"保留全部截图\"：下次开始记录时生效，之后每局的截图都会留着。", "ok")
+        flash("已开启\"保留全部截图\"：从下一局开始，每局的截图都会留着。", "ok")
     else:
-        flash("已关闭\"保留全部截图\"：下次开始记录时生效，之后识别完就删。以前存下的截图不会自动删。", "ok")
+        flash("已关闭\"保留全部截图\"：从下一局开始识别完就删。之前存下的截图不会自动删。", "ok")
     return redirect(url_for("settings"))
 
 

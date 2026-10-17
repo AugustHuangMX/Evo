@@ -1,6 +1,7 @@
 """截图留不留（见 screenshots.py）：识别完就删，只留"待确认"的局要用的；"保留全部截图"时和以前一样全部留着。
 
-- 记录程序：用 2026-10-16 晚的真实截图整晚重放（同 test_replay.py）。截图不在仓库里（见 fake_game.py），找不到就跳过这一部分
+- 记录程序：用 2026-10-16 晚的真实截图整晚重放（同 test_replay.py）。截图不在仓库里（见 fake_game.py），找不到就跳过这一部分。
+  还重放前三局、在第 2 局中途改"保留全部截图"开关：从下一局开始生效
 - 战绩页（用假的截图文件和 Flask 测试客户端，不用真截图）：确认、删除一局时删掉它的截图并提示；
   不删演示数据的样本截图、别的局也在用的截图；保存失败不删；保留全部截图时不删、也不提示
 - 设置页（同上，用假截图）："保留全部截图"开关；"删除已识别完的截图"按钮：以前存下的也删，
@@ -41,6 +42,65 @@ def run(frames, keep_all):
         rows, _, log = run_collect(frames, picture, keep_all=keep_all)
     folder = Path(next(re.search(r"截图保存到: (.+?)（", line)[1] for line in log if line.startswith("截图保存到")))
     return rows, saved, folder, log
+
+
+def run_switch(frames, start, flip_at):
+    """重放时中途在设置页改开关：一开始是 start，喂到 flip_at（截图时间，如 "214000"）以后改成相反的。
+    返回 (对局, [(存下的截图, 存的时候正在喂哪个时间的画面)], 日志)。"""
+    fed = {"time": "000000"}  # 正在喂的画面的截图时间
+
+    def feed(path):
+        if path is not None:
+            fed["time"] = shot_time(path)
+        return picture(path)
+
+    saved = []
+    original = live_collect.save_png
+
+    def spy(path, frame):
+        saved.append((Path(path), fed["time"]))
+        original(path, frame)
+
+    def switch():
+        return start if fed["time"] < flip_at else not start
+
+    with mock.patch.object(live_collect, "save_png", spy), mock.patch.object(screenshots, "keep_all", switch):
+        rows, _, log = run_collect(frames, feed, keep_all=None)
+    return rows, saved, log
+
+
+def switch_checks(frames):
+    """记录中途改"保留全部截图"开关：从下一局开始生效（2026-10-17 用户要求）。重放前三局，在第 2 局中途改。"""
+    games = [f for f in frames if f is None or shot_time(f) < "220834"]  # 第 1–3 局（到第 4 局开局画面之前）
+    game2, game3 = "213625", "215021"  # 第 2、3 局开局画面的时间
+    screens = ("lobby_", "match_start_")
+
+    def kept(rows, i):
+        return rows[i]["evidence_path"] is not None and data_absolute(rows[i]["evidence_path"]).is_file()
+
+    rows, saved, log = run_switch(games, start=True, flip_at="214000")
+    before = [p for p, t in saved if t < game3]
+    after = [p for p, t in saved if t >= game3]
+    checks = {
+        "记录中途关掉开关：之前存下的（第 1、2 局，包括大厅、开局画面）都不删": all(p.exists() for p in before)
+        and any(p.name.startswith(screens) for p in before) and kept(rows, 0) and kept(rows, 1),
+        "记录中途关掉开关：从下一局（第 3 局）开始大厅、开局画面不存，识别完就删": len(rows) == 3 and after
+        and not any(p.name.startswith(screens) for p in after) and not any(p.exists() for p in after)
+        and rows[2]["evidence_path"] is None and any("关掉了\"保留全部截图\"" in line for line in log),
+    }
+
+    rows, saved, log = run_switch(games, start=False, flip_at="214000")
+    game1 = [p for p, t in saved if t < game2]
+    middle = [p for p, t in saved if game2 <= t < game3]
+    after = [p for p, t in saved if t >= game3]
+    checks.update({
+        "记录中途打开开关：改之前结束的第 1 局照样识别完就删，大厅、开局画面不存": game1 and not any(p.exists() for p in game1)
+        and rows[0]["evidence_path"] is None and not any(p.name.startswith(screens) for p in game1 + middle),
+        "记录中途打开开关：改的时候正在打的第 2 局也不删": middle and all(p.exists() for p in middle) and kept(rows, 1),
+        "记录中途打开开关：从下一局（第 3 局）开始全部保存": any(p.name.startswith("match_start_") for p in after)
+        and all(p.exists() for p in after) and kept(rows, 2) and any("打开了\"保留全部截图\"" in line for line in log),
+    })
+    return checks
 
 
 def files_in(folder):
@@ -183,8 +243,8 @@ def settings_checks():
         after = page()
     return {
         "设置页：开关默认关、能点": keep_switch(off_page) == (False, True),
-        "设置页：打开开关存进 settings.json，提示下次开始记录时生效": turned_on is True
-        and keep_switch(on_page) == (True, True) and "下次开始记录时生效" in on_page,
+        "设置页：打开开关存进 settings.json，提示从下一局开始": turned_on is True
+        and keep_switch(on_page) == (True, True) and "从下一局开始" in on_page,
         "设置页：关上开关": turned_off is False,
         "设置页：写着可以腾出多少（几张），正在记录时写着这一次不删": f"可以腾出 <span class=\"num\">{size}</span>"
         f"（<span class=\"num\">{len(expected)}</span> 张）" in before and "正在记录的这一次" in before,
@@ -244,6 +304,7 @@ def main():
         "保留全部：存过的截图一张都没删": left == set(saved) and len(left) > 10,
         "保留全部：每一局的截图位置都还在": len(rows) == 1 and data_absolute(rows[0]["evidence_path"]).is_file(),
     })
+    checks.update(switch_checks(frames))
     return report(checks)
 
 
