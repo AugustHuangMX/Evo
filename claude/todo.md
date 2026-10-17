@@ -58,7 +58,7 @@
   - [ ] 第 4 步 公开仓库前检查
   - [ ] 仓库公开后：GitHub Releases 也传一份安装包。网页上的"查看源代码""GitHub 备用下载"和页脚的源代码、许可证链接都指向 GitHub，仓库私有时别人点进去是 404
   - [ ] 第 6 步 国内多地实测
-  - [ ] 官网加隐私政策页面 `site/privacy.html`（内容照 [PRIVACY.md](../PRIVACY.md)，中文为主附英文），页脚和下载处加链接；Evo 设置页"关于"、`release/使用说明.txt`"安全和隐私"一节也链过去。改 PRIVACY.md 时这几处要一起改
+  - [ ] 隐私政策剩下的：官网页面 `site/privacy.html` 已做好（见 progress.md），还要上传到 Cloudflare；Evo 设置页"关于"、`release/使用说明.txt`"安全和隐私"一节也链到 https://evotracker.cn/privacy。改 PRIVACY.md 时 `site/privacy.html` 要一起改；发下一个版本（有检查更新）后，两处的"0.1.0 还没有这个功能"可以改成"0.1.0 没有"
 - [ ] **仓库首页说明 README**：是什么、怎么装、怎么用、原则（只看不动、全本地）、截图、许可证
 - [ ] **发下一个版本**（第一个会提醒更新的版本）：0.1.0 和 0.0.1 还没有检查更新，已经下载的人要手动换一次新版本，之后才能收到提醒。发布时：改 `storage.py` 的 `APP_VERSION`、写 `release/更新内容.txt`、`python release.py`，先传压缩包、最后传 `latest.json`（见 release.py 开头）；官网的版本号、大小、SHA-256 也要换
 - [ ] **安装包和一键更新**：现在是 `install.py` 复制文件夹，给别人用要有正式的安装程序。"有新版本时提醒"已经做好（见 progress.md 10-17）；一键下载安装要等安装程序和代码签名，否则下载的 exe 会被 SmartScreen 拦

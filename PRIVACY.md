@@ -4,7 +4,7 @@
 
 Evo 是一个开源的 Apex Legends 战绩记录工具，由个人开发者制作和维护，与 EA、Respawn 没有任何关系。
 
-**一句话说明：Evo 记录的所有数据都只保存在你自己的电脑上，不会上传给开发者或任何人。** 没有账号，没有统计代码，没有广告，不收集崩溃报告。唯一会联网的功能是"检查新版本"，第一次打开 Evo 时会先问你要不要开启，开了也可以随时关掉。
+**一句话说明：Evo 记录的所有数据都只保存在你自己的电脑上，不会上传给开发者或任何人。** 没有账号，没有统计代码，没有广告，不收集崩溃报告。唯一会联网的功能是"检查新版本"，第一次打开 Evo 时会先问你要不要开启，开了也可以随时关掉（0.1.0 还没有这个功能，完全不联网；0.1.0 之后的版本才有）。
 
 Evo 的源代码是公开的（[GitHub](https://github.com/AugustHuangMX/Evo)），这份说明里的每一条都能在代码里核对：Evo 唯一联网的代码在 `update_check.py`。
 
@@ -36,6 +36,8 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 这些截图只留在你的电脑上。如果你要把截图发给别人（包括发给我反馈问题），请先看一眼里面有没有你不想公开的内容。
 
 ## 三、唯一会联网的功能：检查新版本
+
+0.1.0 还没有这个功能；0.1.0 之后的版本才有。
 
 - **什么时候联网**：只有两种情况——你开启了"自动检查新版本"（第一次打开 Evo 时会问你，你同意之前不会检查；开启后每次启动 Evo 时检查一次，Evo 一直开着时每天再检查一次）；或者你在设置页手动点了"检查更新"。
 - **下载了什么**：只下载一个公开的小文件 `https://dl.evotracker.cn/latest.json`，里面写着最新的版本号、发布日期和更新内容。
@@ -117,7 +119,7 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 
 - **All data stays on your computer.** Evo captures the screen while the game is running and saves match results, screenshots, a log file and settings in its local data folder (shown in Evo's Settings page; `%LOCALAPPDATA%\Evo` by default). Nothing is uploaded. There is no account system, no analytics, no telemetry, no ads and no automatic crash reporting.
 - **Screenshots** show the whole screen at that moment, so they may contain other players' in-game names and anything else on screen (for example a Discord or Steam overlay). They stay on your computer.
-- **Update check (the only network feature, opt-in).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once a day while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json`. The request contains only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates by itself.
+- **Update check (the only network feature, opt-in; added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once a day while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json`. The request contains only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates by itself.
 - **The Evo window** shows a local page served on `127.0.0.1` only, and loads nothing from the internet. It uses Microsoft Edge WebView2, whose diagnostic data is governed by your Windows privacy settings.
 - **Website.** `evotracker.cn` and `dl.evotracker.cn` are served by Cloudflare. The website uses no cookies, no analytics and no scripts. Cloudflare processes access data such as IP addresses to deliver the site and protect it from attacks ([Cloudflare Privacy Policy](https://www.cloudflare.com/privacypolicy/)). The developer only looks at aggregated statistics.
 - **Feedback files.** If you choose to send your log file or screenshots to the developer, they are used only to investigate your issue, are not shared, and are deleted once the issue is resolved (at most 90 days). Screenshots are added to Evo's test set only with your explicit consent, with unrelated content (including other players' names and IDs) blacked out; you can withdraw consent at any time.
