@@ -113,6 +113,13 @@ def read_summary(engine, img, cfg, save_crops=False):
     return results, problems
 
 
+def is_champion(engine, img, cfg):
+    """总结页顶部的大字是不是"捍卫者"（拿冠军；被淘汰时是"全军覆没"）。"""
+    banner = cfg["banner"]
+    result = engine(crop(img, banner["roi"], cfg))
+    return any(banner["champion"] in text for text in result.txts or ())
+
+
 def to_seconds(duration):
     """"16:03" → 963 秒。"""
     if duration is None:

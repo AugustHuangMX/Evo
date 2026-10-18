@@ -1,8 +1,8 @@
-局,placement,kills,assists,knockdowns,damage,rp_delta,rank_tier,rank_division,rank_progress,needs_review,mode,map,player_name,说明
+﻿局,placement,kills,assists,knockdowns,damage,rp_delta,rank_tier,rank_division,rank_progress,needs_review,mode,map,player_name,说明
 1,4,0,0,2,476,-2,钻石,II,942,0,ranked,世界尽头,ImperialHzd,
 2,7,1,1,1,170,-3,钻石,II,939,0,ranked,世界尽头,ImperialHzd,
 3,5,0,3,0,495,28,钻石,II,967,0,ranked,世界尽头,ImperialHzd,
-4,,0,0,0,0,,,,,1,ranked,奥林匹斯,ImperialHzd,没进经验值页：名次、RP、段位都读不到，仍待确认；对账能算出 RP −55，但对账还没接入记录程序
+4,,0,0,0,0,-55,,,,1,ranked,奥林匹斯,ImperialHzd,没进经验值页：名次、段位读不到，仍待确认；RP −55 由大厅校准补上（当晚前后两次大厅 944 → 964，其他 9 局合计 +75）
 5,8,3,0,3,688,-17,钻石,II,895,0,ranked,奥林匹斯,ImperialHzd,
 6,8,4,1,5,932,18,钻石,II,913,0,ranked,奥林匹斯,ImperialHzd,
 7,2,2,3,,,181,钻石,I,94,0,ranked,奥林匹斯,ImperialHzd,第 2 名没有总结页：只靠经验值页记一局，没有伤害和击倒；击杀/助攻是计分次数

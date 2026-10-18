@@ -3,7 +3,7 @@
 数据库文件在数据文件夹的 data/evo.db（位置见 paths.py；在项目里时已被 .gitignore 排除，不会上传）。
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
 另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节；一张队友表 teammates（每局最多两行）；
-一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）。
+一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）；一张大厅读数表 lobby_readings（每次回大厅读到的段位，总分以它为准）。
 
 查看最近的记录：python code/storage.py
 导出成 CSV：    python code/storage.py --export data/matches.csv
@@ -17,8 +17,8 @@ from pathlib import Path
 
 from paths import DB_PATH
 
-APP_VERSION = "0.2.0"
-SCHEMA_VERSION = 5  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+APP_VERSION = "0.3.0"
+SCHEMA_VERSION = 6  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -34,6 +34,7 @@ COLUMNS = {
     "kills": "INTEGER",
     "assists": "INTEGER",
     "knockdowns": "INTEGER",
+    "participation": "INTEGER",  # 老板分（参与分）：队友击杀、自己完全没参与的次数（对局中右上角第三个数，2026-10-18）
     "damage": "INTEGER",
     "survival_time": "INTEGER",  # 秒
     "revives": "INTEGER",
@@ -57,14 +58,17 @@ NAME_TABLE = """CREATE TABLE IF NOT EXISTS player_names (
   confirmed INTEGER NOT NULL DEFAULT 0  -- 1 = 已确认；0 = 新名字，等你在弹窗里回答"是不是同一个人"
 )"""
 
-# 队友表：总结页左右两张卡片上的队友，一局最多两行（见 teammates.py）。读不准的项为空。
+# 队友表：一局最多两行。名字和传奇以对局中左下角为准（见 in_match.py），ID 和这一局的数据来自总结页左右两张卡片
+# （见 teammates.py）。读不准的项为空。
 # Stata 类比：一份长格式数据（每局 × 每个队友一行），按 match_id merge m:1 到每一局
-MATE_COLUMNS = ("name", "player_id", "kills", "assists", "knockdowns", "damage", "survival_time", "revives", "respawns")
+MATE_COLUMNS = ("name", "player_id", "legend", "kills", "assists", "knockdowns", "damage", "survival_time", "revives",
+                "respawns")
 MATE_TABLE = """CREATE TABLE IF NOT EXISTS teammates (
   match_id INTEGER NOT NULL,  -- 哪一局（matches.match_id）
-  slot TEXT NOT NULL,  -- left / right：总结页上左边还是右边的卡片
+  slot TEXT NOT NULL,  -- left / right：总结页上左边还是右边的卡片；没有总结页的局是 hud1 / hud2（对局中左下角上、下两行）
   name TEXT,  -- 队友的游戏名
   player_id TEXT,  -- 卡片下面的 ID（数字串，开头的 0 要留着）
+  legend TEXT,  -- 用的传奇（中文名，对局中左下角认的）
   kills INTEGER,
   assists INTEGER,
   knockdowns INTEGER,
@@ -88,18 +92,42 @@ READING_TABLE = """CREATE TABLE IF NOT EXISTS readings (
   PRIMARY KEY (match_id, field, source)
 )"""
 
-# 旧数据库怎么升级：版本号 → 升到这个版本要执行的 SQL。只加列、加表，已有的数据不动
-# （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）
+# 大厅读数：每次回大厅读到的段位和段内分数（连续两次一样才记），总分以它为准（2026-10-18 用户决定，见 lobby.py）。
+# 前后两次之间各局的 RP 加起来应该等于两次总分之差，用来校准（见 calibration.py）
+LOBBY_TABLE = """CREATE TABLE IF NOT EXISTS lobby_readings (
+  reading_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  read_at TEXT NOT NULL,  -- 读到的时间
+  player_name TEXT,  -- 左上角组队列表第一行的名字（读不到时用这次记录认出的名字）
+  rank_tier TEXT,  -- 段位，如 钻石
+  rank_division TEXT,  -- 段，如 II（大师、猎杀者没有）
+  rank_progress INTEGER,  -- 段内的排位点数，如 868
+  score INTEGER  -- 换算成的总分（见 ranks.score），如 14868
+)"""
+
+# 旧数据库怎么升级：版本号 → 升到这个版本要做的事（SQL，或者 ("加列", 表, 列, 类型)）。只加列、加表，已有的数据不动
+# （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）。加列时已经有这一列就跳过
 MIGRATIONS = {
-    2: ["ALTER TABLE matches ADD COLUMN player_name TEXT"],  # 2026-10-17 多账号：每局的玩家名
+    2: [("加列", "matches", "player_name", "TEXT")],  # 2026-10-17 多账号：每局的玩家名
     3: [NAME_TABLE],  # 2026-10-17 多账号：账号对照表
     4: [MATE_TABLE],  # 2026-10-17 队友：总结页上两名队友的数据
     5: [READING_TABLE],  # 2026-10-18 各来源的读数（淘汰画面、总结页、经验值页读到的名次等）
+    6: [("加列", "matches", "participation", "INTEGER"),  # 2026-10-18 0.3.0：老板分
+        ("加列", "teammates", "legend", "TEXT"),  # 队友的传奇
+        LOBBY_TABLE],  # 大厅读数
 }
 
 
 def _version(conn):
     return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _migrate(conn, step):
+    if isinstance(step, str):
+        conn.execute(step)
+        return
+    _, table, column, kind = step
+    if column not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 def _upgrade(conn):
@@ -114,10 +142,11 @@ def _upgrade(conn):
             conn.execute(NAME_TABLE)
             conn.execute(MATE_TABLE)
             conn.execute(READING_TABLE)
+            conn.execute(LOBBY_TABLE)
         else:
             for v in range(version + 1, SCHEMA_VERSION + 1):
-                for sql in MIGRATIONS[v]:
-                    conn.execute(sql)
+                for step in MIGRATIONS[v]:
+                    _migrate(conn, step)
         if version < SCHEMA_VERSION:
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
@@ -235,8 +264,39 @@ def save_teammates(conn, match_id, mates):
 
 
 def teammates_of(conn, match_id):
-    """一局的队友，左边的在前。没有记录队友（只有经验值页的局、加队友功能以前的局）返回空列表。"""
+    """一局的队友：没有总结页的局是 hud1、hud2（对局中左下角上、下两行），有总结页的局左边的在前。
+    没有记录队友（加队友功能以前的局、对局中和总结页都没读到的局）返回空列表。"""
     return conn.execute("SELECT * FROM teammates WHERE match_id = ? ORDER BY slot", (match_id,)).fetchall()
+
+
+def update_teammate(conn, match_id, slot, fields):
+    """修改一名队友的若干项（如对局中认出的传奇、名字）。fields 的键必须是 MATE_COLUMNS 里的。"""
+    data = {k: v for k, v in fields.items() if k in MATE_COLUMNS}
+    if not data:
+        return
+    sets = ", ".join(f"{k} = ?" for k in data)
+    conn.execute(f"UPDATE teammates SET {sets} WHERE match_id = ? AND slot = ?", [*data.values(), match_id, slot])
+    conn.commit()
+
+
+# ---------- 大厅读数（见 lobby.py、calibration.py） ----------
+
+def save_lobby(conn, reading):
+    """记下一次大厅读数。reading：read_at、player_name、rank_tier、rank_division、rank_progress、score。返回编号。"""
+    keys = ("read_at", "player_name", "rank_tier", "rank_division", "rank_progress", "score")
+    cur = conn.execute(f"INSERT INTO lobby_readings ({', '.join(keys)}) VALUES ({', '.join('?' for _ in keys)})",
+                       [reading.get(k) for k in keys])
+    conn.commit()
+    return cur.lastrowid
+
+
+def lobby_readings(conn, names=None):
+    """大厅读数，按时间从早到晚。names：只要这几个玩家名的（一个账号用过的所有写法）；None = 全部。"""
+    rows = conn.execute("SELECT * FROM lobby_readings ORDER BY read_at, reading_id").fetchall()
+    if names is None:
+        return rows
+    keys = {name_key(n) for n in names}
+    return [r for r in rows if r["player_name"] and name_key(r["player_name"]) in keys]
 
 
 def save_readings(conn, match_id, source, values, read_at, scores=None):
@@ -271,6 +331,7 @@ def delete_all_matches(conn):
     n = conn.execute("DELETE FROM matches").rowcount
     conn.execute("DELETE FROM teammates")
     conn.execute("DELETE FROM readings")
+    conn.execute("DELETE FROM lobby_readings")  # 段位卡片、走势图也要跟着清空
     conn.commit()
     return n
 

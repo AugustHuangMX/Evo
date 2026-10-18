@@ -80,8 +80,9 @@ def check_teammates(rows):
             wrong.append(f"第 {i} 局应有队友 {sorted(want) or '无'}，实际 {sorted(got) or '无'}")
             continue
         for slot, a in want.items():
+            # 答案里没有的列（如传奇：当晚的截图里没有对局中的画面）不比
             bad = [f"{k} 应为 {mate_text(a, k) or '空'}，实际 {mate_text(got[slot], k) or '空'}"
-                   for k in storage.MATE_COLUMNS if mate_text(got[slot], k) != mate_text(a, k)]
+                   for k in storage.MATE_COLUMNS if k in a and mate_text(got[slot], k) != mate_text(a, k)]
             if bad:
                 wrong.append(f"第 {i} 局{'左' if slot == 'left' else '右'}边队友：{'；'.join(bad)}")
     conn.close()

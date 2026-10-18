@@ -4,10 +4,12 @@
 - 认得出：10-16 录像里敌人用的侵蚀（1080p 视频、观战位置，很可能是别的皮肤）；
   做参照图的那 28 张截图各自认成自己（检查参照图的文件名和截图对得上）
 - 不乱认：10-16 晚实战的全部截图（大厅、开局、总结页、经验值页）、录像截图、切出去的桌面、Esc 菜单，都要认不出
-- 接进记录程序（live_collect.LegendWatcher）：用假游戏跑几段，检查记下的这一局的传奇
+- 真实对局的样本（2026-10-18 用户给的 1080p 录像截图）：认对自己的传奇（对局中.png 是罗芭，用户确认；另外两张按字幕里的台词核对）
+- 接进记录程序（in_match.InMatchWatcher）：用假游戏跑几段，检查记下的这一局的传奇
   - 开局 → 对局中（侵蚀）→ 总结页：记为侵蚀；之前在靶场里认出的班加罗尔不算数
+  - 对局中每张截图都看一眼左下角（0.3.0 起：认得出自己的传奇 = 右上角是自己的数据，所以认出传奇以后也要看）
   - 开局 → 阵亡后观战（录像里敌人的侵蚀）→ 总结页：传奇留空，不认成被观战的人
-  - 开局 → 对局中（侵蚀）→ 只有经验值页（第 2 名、冠军时没有总结页）：单独记的这一局也有传奇
+  - 开局 → 对局中（侵蚀）→ 只有经验值页（第 2 名没有总结页）：单独记的这一局也有传奇
 截图不在仓库里，见 fake_game.py。
 
 运行：python tests/test_legends.py
@@ -27,6 +29,8 @@ FULL_SET_LEGENDS = {
     17: "valkyrie", 18: "seer", 19: "vantage", 20: "sparrow", 21: "gibraltar", 22: "lifeline", 23: "mirage",
     24: "loba", 25: "newcastle", 26: "conduit", 27: "caustic", 28: "wattson", 29: "rampart", 30: "catalyst",
 }
+IN_GAME = {"samples/对局中.png": "loba", "samples/玩家倒地队友依然存活.png": "loba",  # 真实对局里自己的界面
+           "samples/玩家存活队友倒地.png": "seer"}
 SPECTATE = "samples/vlcsnap-2026-10-16-18h27m31s652.png"  # 观战敌人 HostageHolder（侵蚀）
 SPECTATE_BOX = [93, 887, 62, 76]  # 观战时左下角整块往上移约 65
 NIGHT = "live/20261016_211452/"
@@ -67,12 +71,14 @@ def main():
         if not night:
             raise MissingShots(SHOTS / "live" / "20261016_211452")
         runs = collect_checks()
+        in_game = {p: detector.identify(load(shot(p))) for p in IN_GAME}
     except MissingShots as e:
         print(f"  ⏭ 跳过：找不到截图 {e}（截图只在开发者电脑上，不在仓库里）")
         return None
 
     wrong_full = [n for n, key in FULL_SET_LEGENDS.items() if detector.identify(load(full[n])) != key]
-    others = night + sorted((SHOTS / "samples").glob("*.png")) + [full[1], full[9]]
+    others = night + [p for p in sorted((SHOTS / "samples").glob("*.png")) if f"samples/{p.name}" not in IN_GAME]
+    others += [full[1], full[9]]
     start = time.perf_counter()
     misread = [(p.name, detector.name(k)) for p in others if (k := detector.identify(load(p))) is not None]
     ms = (time.perf_counter() - start) * 1000 / len(others)  # 含读图片的时间
@@ -80,11 +86,13 @@ def main():
         f"28 个传奇都有参照图（缺：{'、'.join(detector.name(k) for k in detector.missing) or '无'}）": not detector.missing,
         "录像里敌人的侵蚀认对（1080p 视频、观战位置）": detector.identify(spectate, SPECTATE_BOX) == "caustic",
         f"做参照图的 28 张截图各自认成自己（认错的编号：{wrong_full or '无'}）": not wrong_full,
+        f"真实对局的 3 张样本认对自己的传奇（{[detector.name(k) if k else None for k in in_game.values()]}）":
+            in_game == IN_GAME,
         f"{len(others)} 张不是对局的截图都认不出（乱认的：{misread or '无'}；平均每张 {ms:.0f} 毫秒，含读图）": not misread,
         f"记录程序：开局 → 侵蚀 → 总结页，记为侵蚀，靶场里的班加罗尔不算数（记下：{runs['靶场后开局'][0]}）":
             runs["靶场后开局"][0] == [(8, "侵蚀")],
-        f"记录程序：认出后就不再看（16 帧里看了 {runs['靶场后开局'][1]} 次：靶场 2 次、对局中 2 次）":
-            runs["靶场后开局"][1] == 4,
+        f"记录程序：不是要认的画面时每张都看一眼左下角（16 帧里看了 {runs['靶场后开局'][1]} 次：靶场 6 次、对局中 6 次）":
+            runs["靶场后开局"][1] == 12,
         f"记录程序：阵亡后观战不认成被观战的人，传奇留空（记下：{runs['观战'][0]}）":
             runs["观战"][0] == [(8, None)],
         f"记录程序：只有经验值页的局也有传奇（记下：{runs['只有经验值页'][0]}）":

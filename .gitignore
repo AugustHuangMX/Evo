@@ -38,3 +38,5 @@ dist/
 # ===== Windows 系统文件 =====
 Thumbs.db
 desktop.ini
+# 对局中样本的队友名字（别的玩家的名字），只留在本机（找不到时只检查读到了名字，见 tests/test_in_match.py）
+tests/in_match_teammates.json

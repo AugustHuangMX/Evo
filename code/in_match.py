@@ -1,0 +1,196 @@
+"""对局中（开局画面之后、结算画面之前）：认自己和队友，记下自己的状态，连续保存右上角，一局结束时交给 PostMatch。
+
+规则见 docs/对局全流程图.md 第 4–6 步。每张截图调用一次 update(画面, 截图, 时间)：
+- 左下角认得出自己的传奇 = 这一张是自己的界面（观战时认不出，见 hud.py）。只在这种截图上：
+  - 认自己的传奇：同一个传奇认出 2 次算数（之前在靶场里认出的不算，开局画面会清掉）
+  - 认两名队友的传奇（同样 2 次算数，一局只认一次）；名字那一条裁下来先留着
+  - 还不知道自己的玩家名时，把头像旁边的名字裁下来先留着（最多 max_hud_reads 块）
+  - 右上角那一块存在内存里：内容变了才存，只留最近的 keep 块（一局结束时每块要读约 0.2 秒）
+  - 自己那一行变红 = 倒地；看到"观战"标签 = 成盒；成盒后又看到自己的界面 = 被复活
+- 交火时一律不用识别引擎（原则 3）。一局结束时（淘汰画面、冠军横幅、总结页、经验值页、回到大厅、下一局开局、停止记录）
+  才读：右上角从最新的一块往回读，每一项取最后一次读到的值；击杀、助攻、老板分、伤害从没显示过就是 0
+  （前提是这几块确实是右上角：剩余小队数或 RP 至少读到过一次，否则全部当作没读到）
+- 对局中截图加快到每 match_interval 秒一张（config/hud.json，2026-10-18 用户决定先用 0.3 秒测 CPU）：
+  从开局画面或看到自己的界面起，到结算画面或回到大厅为止（active）
+"""
+
+from collections import deque
+
+from hud import TOP_FIELDS, TOP_LABELS
+
+END_SCREENS = ("eliminated", "champion", "summary", "xp")  # 这一局打完了
+ZERO_IF_HIDDEN = ("kills", "assists", "participation", "damage")  # 右上角没显示 = 0
+STATE_ALIVE, STATE_KNOCKED, STATE_DEAD = "存活", "倒地", "成盒"
+SAME_MATCH_SECONDS = 180  # 看到自己的界面以后这么久之内又出现开局画面（横幅闪回来），还是同一局
+AFTER_END_SECONDS = 60  # 结算以后这么久之内又看到自己的界面（拿冠军后还能跑几秒），不算新的一局
+
+
+class InMatchWatcher:
+    VOTES = 2  # 同一个传奇认出这么多次才算数
+
+    def __init__(self, hud, post, log, name_cfg):
+        self.hud, self.post, self.log = hud, post, log
+        self.name_roi = name_cfg["places"]["hud"]["roi"]
+        self.max_names = name_cfg["max_hud_reads"]
+        top = hud.cfg["top_right"]
+        self.keep = top["keep"]
+        self.checks = 0  # 看了几次左下角（统计用）
+        self.name_reads = 0  # 一局结束时读了几次自己的名字（统计用）
+        self.top_reads = 0  # 一局结束时读了几块右上角（统计用）
+        self.active = False  # 正在对局中：截图加快
+        self._reset(saw_start=False)
+
+    def _reset(self, saw_start):
+        self.saw_start = saw_start  # 这一局看到了开局画面（靶场没有开局画面）
+        self.started = None  # 这一局第一次看到自己界面的时间
+        self.state = None  # 存活 / 倒地 / 成盒
+        self.dead_at = None  # 成盒的时间（被复活后清掉）
+        self.votes, self.legend = {}, None
+        self.mate_votes = [{}, {}]
+        self.mates = [None, None]  # 两名队友的传奇（编号）
+        self.mate_names = [[], []]  # 两名队友的名字那一条（最多 3 块）
+        self.own_names = []  # 自己的名字那一条
+        self.tops = deque(maxlen=self.keep)  # 右上角
+        self.done = False  # 这一局已经交给 PostMatch 了
+        self.done_at = None
+
+    @property
+    def pending(self):
+        return self.started is not None and not self.done
+
+    def update(self, screen, frame, now):
+        if screen == "match_start":
+            # 新的一局：上一局已经交完；或者手上的数据不是这一局的（靶场里的、看到自己的界面已经很久）。
+            # 刚看到自己的界面、横幅又闪回来（同一局的跳伞阶段）不算
+            if self.done or (self.pending and (not self.saw_start or (now - self.started).total_seconds()
+                                                > SAME_MATCH_SECONDS)):
+                if self.pending:
+                    self._finish(now, "next")
+                self._reset(saw_start=True)
+                self.post.on_legend(None, now)
+            self.saw_start = self.active = True
+            return
+        if screen in END_SCREENS or screen == "lobby":
+            if self.pending:
+                self._finish(now, screen)
+            self.active = False
+            return
+        if screen is not None:
+            return
+        self.checks += 1
+        own = self.hud.own_legend(frame)
+        if own is None:
+            if self.pending and self.dead_at is None and self.hud.spectating(frame):
+                self.dead_at = now
+                self._set_state(STATE_DEAD, now)
+            return
+        if self.done:  # 结算之后又看到了自己的界面：过了一会儿才算新的一局（没认出开局画面）
+            if (now - self.done_at).total_seconds() <= AFTER_END_SECONDS:
+                return
+            self._reset(saw_start=False)
+            self.post.on_legend(None, now)
+        if self.started is None:
+            self.started = now
+            self.log(f"[{now:%H:%M:%S}] 对局中：看到自己的界面，开始记录右上角")
+        self.active = True
+        if self.dead_at is not None:
+            self.dead_at = None
+            self.log(f"[{now:%H:%M:%S}] 对局中：被复活了，继续记录")
+        self._set_state(STATE_KNOCKED if self.hud.knocked(frame) else STATE_ALIVE, now)
+        self._vote_own(own, now)
+        self._vote_mates(frame)
+        if self.post.player_name is None and len(self.own_names) < self.max_names:
+            self.own_names.append(self.hud.own_name_snip(frame, self.name_roi))
+        snip = self.hud.top_snip(frame)
+        if self.hud.changed(snip, self.tops[-1] if self.tops else None):
+            self.tops.append(snip)
+
+    def stop(self, now):
+        """停止记录时：还有没交的数据就交上去（PostMatch 会标"没看到结算画面"）。"""
+        if self.pending:
+            self._finish(now, "stop")
+        self.active = False
+
+    def _set_state(self, state, now):
+        if state != self.state:
+            if self.state is not None or state != STATE_ALIVE:
+                self.log(f"[{now:%H:%M:%S}] 对局中：{self.state or '开始'} → {state}")
+            self.state = state
+
+    def _vote_own(self, key, now):
+        if self.legend is not None:
+            return
+        self.votes[key] = self.votes.get(key, 0) + 1
+        if self.votes[key] >= self.VOTES:
+            self.legend = key
+            self.post.on_legend(self.hud.legends.name(key), now)
+
+    def _vote_mates(self, frame):
+        if all(m is not None for m in self.mates) and all(len(n) >= 3 for n in self.mate_names):
+            return
+        for slot, key in enumerate(self.hud.mate_legends(frame)):
+            if key is None:
+                continue
+            if len(self.mate_names[slot]) < 3:
+                self.mate_names[slot].append(self.hud.mate_name_snip(frame, slot))
+            if self.mates[slot] is None:
+                votes = self.mate_votes[slot]
+                votes[key] = votes.get(key, 0) + 1
+                if votes[key] >= self.VOTES:
+                    self.mates[slot] = key
+
+    def _read_top(self):
+        """从最新的一块往回读，每一项取最后一次读到的值。"""
+        got = {}
+        for snip in reversed(self.tops):
+            values, _ = self.hud.read_top(snip)
+            self.top_reads += 1
+            for name in TOP_FIELDS:
+                if name not in got and values[name] is not None:
+                    got[name] = values[name]
+            if len(got) == len(TOP_FIELDS):
+                break
+        if "squads_left" not in got and "rp_delta" not in got:
+            return {name: None for name in TOP_FIELDS}  # 这几块不像右上角（分辨率、界面不对？），不当作 0
+        return {name: got.get(name, 0 if name in ZERO_IF_HIDDEN else None) for name in TOP_FIELDS}
+
+    def _read_mates(self):
+        out = []
+        left = self.hud.cfg["teammates"]["name_left"]
+        for slot in range(2):
+            name = next((n for n in (self.hud.read_name(s, left) for s in self.mate_names[slot]) if n), None)
+            key = self.mates[slot]
+            if name or key:
+                out.append({"slot": f"hud{slot + 1}", "name": name, "legend": self.hud.legends.name(key) if key else None})
+        return out
+
+    def _finish(self, now, end):
+        """一局结束：读存下来的右上角、名字，交给 PostMatch。"""
+        self.done, self.done_at, self.active = True, now, False
+        if not self.saw_start and end not in END_SCREENS:
+            self.log(f"[{now:%H:%M:%S}] 对局中的数据不记：没看到开局画面，也没看到结算画面（可能是靶场）")
+            return
+        if self.post.player_name is None:
+            for snip in self.own_names:
+                self.name_reads += 1
+                name = self.hud.read_name(snip)
+                if name:
+                    self.post.on_player_name(name, now, "对局中")
+                    break
+        values = self._read_top()
+        mates = self._read_mates()
+        own_dead = self.dead_at is not None
+        top = "，".join(f"{TOP_LABELS[k]} {'-' if values[k] is None else values[k]}" for k in TOP_FIELDS)
+        mate_text = "、".join(f"{m['name'] or '名字没读到'}（{m['legend'] or '传奇认不出'}）" for m in mates) or "没认出"
+        self.log(f"[{now:%H:%M:%S}] 对局结束（{_END_TEXT.get(end, end)}）：右上角最后读到 {top}；"
+                 f"自己最后是{self.state or '-'}；队友 {mate_text}")
+        self.post.on_hud_final({
+            "started": self.started, "ended": now, "end": end, "saw_start": self.saw_start,
+            "own_dead": own_dead, "values": values, "mates": mates,
+        })
+        self.tops.clear()  # 读完就放掉，省内存
+        self.own_names, self.mate_names = [], [[], []]
+
+
+_END_TEXT = {"eliminated": "淘汰画面", "champion": "冠军横幅", "summary": "总结页", "xp": "经验值页",
+             "lobby": "回到大厅", "next": "下一局开局", "stop": "停止记录"}

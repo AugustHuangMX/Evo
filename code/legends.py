@@ -5,6 +5,7 @@
 更像，才算认出。不加载识别模型，28 个传奇比一遍只要几毫秒。
 
 注意：观战时左下角是被观战的人，不是自己，阵亡后不要在这里读。
+队友（左下角自己上方的两行）的头像是同一套美术图，只是小一些：用 scaled() 缩小参照图后比对（见 hud.py）。
 
 检查截图：  python code/legends.py 截图1.png [截图2.png ...]   （打印最像的 3 个传奇、相似度和结论）
 生成参照图：python code/legends.py --save-template <传奇编号> 截图.png   （如 caustic；按配置里的 face_box 截脸）
@@ -30,34 +31,45 @@ class LegendDetector:
     def __init__(self, cfg=None):
         self.cfg = cfg or load_config("legends.json")
         self.templates = {}  # 编号 → 参照图的轮廓
+        self.raw = {}  # 编号 → 参照图（灰度）：认队友的小头像时要先缩小
         for key in self.cfg["legends"]:
             template = load_template(f"legends/{key}")
             if template is not None:
+                self.raw[key] = template
                 self.templates[key] = outline(template)
         self.missing = [key for key in self.cfg["legends"] if key not in self.templates]  # 还没有参照图的传奇
 
-    def scores(self, frame, box=None):
+    def scaled(self, scale):
+        """所有参照图缩小到 scale 倍后的轮廓（认队友的小头像用）。"""
+        return {key: outline(cv2.resize(t, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA))
+                for key, t in self.raw.items()}
+
+    def scores(self, frame, box=None, templates=None):
         """每个传奇的相似度（-1 到 1，越大越像），从高到低排好 [(编号, 相似度), ...]。
-        box：在哪一块里找，默认是配置里的 search_box（测试时可以换成别的位置）。"""
+        box：在哪一块里找，默认是配置里的 search_box（自己的头像）；templates：用哪套参照图轮廓，默认原大小（队友用 scaled()）。"""
         region = outline(gray_crop(frame, box or self.cfg["search_box"], self.cfg["base_resolution"]))
         result = []
-        for key, template in self.templates.items():
+        for key, template in (templates or self.templates).items():
+            if template.shape[0] > region.shape[0] or template.shape[1] > region.shape[1]:
+                continue
             s = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
             result.append((key, float(np.nan_to_num(s, nan=-1.0).max())))  # 纯色的区域算不出相似度，当作不像
         return sorted(result, key=lambda pair: pair[1], reverse=True)
 
-    def decide(self, ranked):
+    def decide(self, ranked, min_similarity=None, min_margin=None):
         """按排好的相似度下结论：最像的够像、并且比第二像的高出足够多，返回它的编号；否则 None。"""
         if not ranked:
             return None
         best, top = ranked[0]
         second = ranked[1][1] if len(ranked) > 1 else -1.0
-        if top >= self.cfg["min_similarity"] and top - second >= self.cfg["min_margin"]:
+        low = self.cfg["min_similarity"] if min_similarity is None else min_similarity
+        margin = self.cfg["min_margin"] if min_margin is None else min_margin
+        if top >= low and top - second >= margin:
             return best
         return None
 
-    def identify(self, frame, box=None):
-        return self.decide(self.scores(frame, box))
+    def identify(self, frame, box=None, templates=None, min_similarity=None, min_margin=None):
+        return self.decide(self.scores(frame, box, templates), min_similarity, min_margin)
 
     def name(self, key):
         return self.cfg["legends"][key]["zh"]

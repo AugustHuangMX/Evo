@@ -401,19 +401,22 @@ class PanelServer:
 def check_images(paths, log):
     """识别几张截图，把结果写进日志。打包后用来确认识别模型和配置都在；以后排查问题也能用。"""
     from eliminated import read_eliminated
+    from hud import TOP_FIELDS, TOP_LABELS, Hud
+    from lobby import LobbyReader, describe
     from match_start import read_match_start
     from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image
     from player_name import PlayerNameReader
     from screens import ScreenDetector
-    from summary_page import read_summary, show
+    from summary_page import is_champion, read_summary, show
     from xp_page import read_xp
 
     cfg, xp_cfg, start_cfg, elim_cfg = (load_config(n) for n in ("summary.json", "xp.json", "match_start.json",
                                                                   "eliminated.json"))
     engine = create_engine(SMALL_CROP_PARAMS)
     detector = ScreenDetector(engine)
-    if detector.missing:
-        log(f"自检：这些画面没有参照图（config/templates/）：{'、'.join(detector.missing)}")
+    hud = Hud(engine)
+    if detector.missing or hud.missing:
+        log(f"自检：这些画面没有参照图（config/templates/）：{'、'.join(detector.missing + hud.missing)}")
     for path in paths:
         try:
             img = load_image(path)
@@ -427,7 +430,7 @@ def check_images(paths, log):
             v = {k: show(r["value"]) for k, r in results.items()}
             name = PlayerNameReader(engine).read(img, "summary")
             text = (f"总结页 第 {v['placement']} 名，击杀/助攻/击倒 {v['kda']}，伤害 {v['damage']}，生存 {v['survival_time']}，"
-                    f"玩家名 {name[0] if name else '没读到'}")
+                    f"玩家名 {name[0] if name else '没读到'}{'，捍卫者（冠军）' if is_champion(engine, img, cfg) else ''}")
         elif screen == "xp":
             r, problems = read_xp(engine, img, xp_cfg)
             text = f"经验值页 RP {r['rp_delta']}，第 {r['placement']} 名，段位 {r['rank_tier']} {r['rank_division']} {r['rank_progress']}"
@@ -436,8 +439,18 @@ def check_images(paths, log):
             text = f"开局画面 模式 {r['mode']}，地图 {r['map']}"
         elif screen == "eliminated":
             text = f"淘汰画面 第 {read_eliminated(engine, img, elim_cfg)['placement']} 名"
+        elif screen == "champion":
+            text = "冠军横幅（捍卫者）"
+        elif screen == "lobby":
+            text = f"大厅 {describe(LobbyReader(engine).read(img))}"
+        elif hud.own_legend(img) is not None:
+            values, _ = hud.read_top(hud.top_snip(img))
+            mates = [hud.legends.name(k) if k else "-" for k in hud.mate_legends(img)]
+            top = "，".join(f"{TOP_LABELS[k]} {'-' if values[k] is None else values[k]}" for k in TOP_FIELDS)
+            text = (f"对局中 自己 {hud.legends.name(hud.own_legend(img))}{'（倒地）' if hud.knocked(img) else ''}，"
+                    f"队友 {'、'.join(mates)}；右上角 {top}")
         else:
-            text = "大厅" if screen == "lobby" else "没认出是哪个画面"
+            text = "观战（成盒以后）" if hud.spectating(img) else "没认出是哪个画面"
         log(f"自检 {Path(path).name}：{text}" + "".join(f"\n    ⚠ {p}" for p in problems))
 
 

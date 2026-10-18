@@ -42,7 +42,8 @@ def screenshot_checks():
         mates = read_teammates(engine, img, cfg)
         two += len(mates) == 2
         for m in mates:
-            numbers = all(m[k] is not None for k in storage.MATE_COLUMNS if k not in ("name", "player_id"))
+            # 传奇不在总结页上（对局中左下角认的，见 in_match.py），这里不算
+            numbers = all(m[k] is not None for k in storage.MATE_COLUMNS if k not in ("name", "player_id", "legend"))
             complete += numbers and m["player_id"] is not None and m["name"] is not None
             one_letter += numbers and m["player_id"] is not None and m["name"] is None
             if m["player_id"] and m["name"]:
