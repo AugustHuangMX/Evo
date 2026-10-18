@@ -1,8 +1,16 @@
-"""一局结束后，把总结页和经验值页的数据归到同一局里。
+"""一局结束后，把淘汰画面、总结页和经验值页的数据归到同一局里。
 
-以开局画面为界：两次开局画面之间出现的总结页和经验值页，算同一局。
-- 总结页存进数据库后，用核对通过的经验值页补上 RP、段位；名次缺的话也补上
+以开局画面为界：两次开局画面之间出现的淘汰画面、总结页和经验值页，算同一局。
+- 总结页存进数据库后，用核对通过的经验值页补上 RP、段位
+- 各来源的读数（总结页、经验值页、淘汰画面）都记进 readings 表，不只记最后采用的那个。
+  名次在三处都能读到（_settle_placement）：只有一处读到就用它（总结页没读到名次时，淘汰画面或经验值页补上）；
+  几处对不上就标待确认，备注里写出每处读到的名次（2026-10-18 用户决定）
 - 只有经验值页、没有总结页的局（第 2 名、冠军），在下一局开局或停止运行时单独记一局（不标待确认，备注里说明缺什么）
+- 只看到淘汰画面的局（在淘汰画面直接按"返回大厅"，没进总结页和经验值页）：也单独记一局，只有名次，
+  加上模式、地图、传奇（不标待确认，备注里说明缺什么；2026-10-18 用户决定）
+- 一局只认第一次读到的淘汰画面名次（被淘汰后观战时如果又弹出别的名次，不算）。淘汰画面总在总结页、经验值页之前出现：
+  它们出现 SAME_MATCH_SECONDS 秒以后又来了淘汰画面，说明是新的一局（没认出开局画面），上一局先收尾；
+  这之内的算同一局（比如切回"实况"又看到一次）
 - 经验值页和总结页对不上（名次不同、计分击杀比总结页多、时间相差太久），说明不是同一局
   （比如开局画面没认出来）：单独记一局并标记待确认
 - 开局画面读到的模式和地图，属于接下来这一局：存总结页或单独记一局时一起写进去。
@@ -18,9 +26,15 @@ import ranks
 import storage
 from paths import data_relative
 
-RP_SOURCE_XP = "经验值页"
+SOURCE_SUMMARY, SOURCE_XP, SOURCE_ELIM = "总结页", "经验值页", "淘汰画面"  # 读数来源（readings 表的 source）
+RP_SOURCE_XP = SOURCE_XP
+PLACEMENT_SOURCES = (SOURCE_SUMMARY, SOURCE_XP, SOURCE_ELIM)  # 几处都读到名次、又对不上时，先用排在前面的
+XP_FIELDS = ("rp_delta", "placement", "kills", "assists", "rank_tier", "rank_division", "rank_progress")
 XP_ONLY_NOTE = "没有总结页（第 2 名、冠军时没有这一页）：伤害、生存时间缺失；击杀/助攻是计入排位点数的次数，可能比实际少"
+ELIM_ONLY_NOTE = "只看到淘汰画面（没进总结页和经验值页）：只有名次，击杀、伤害、RP、段位缺失"
+INFO_NOTES = (XP_ONLY_NOTE, ELIM_ONLY_NOTE)  # 只是说明这一局缺什么，不算要确认的问题
 MAX_GAP_SECONDS = 600  # 同一局的总结页和经验值页，时间不会相差这么久
+SAME_MATCH_SECONDS = 120  # 总结页、经验值页之后这么久之内看到的淘汰画面算同一局（新的一局从排队到被淘汰，至少要这么久）
 MODE_LABELS = {"ranked": "排位", "pubs": "匹配", "other": "其他"}
 
 
@@ -56,7 +70,7 @@ def rank_text(reading):
 class PostMatch:
     def __init__(self, conn, log=print, name_slip=0.8, on_round_end=None):
         self.conn, self.log, self.on_round_end = conn, log, on_round_end
-        self.inserted = 0  # 由这里新记下的局数（只有经验值页的局）
+        self.inserted = 0  # 由这里新记下的局数（只有经验值页、只看到淘汰画面的局）
         self.info = {}  # 开局画面读到的这一局的模式、地图，对局中认出的传奇
         self.unknown_maps = set()  # 开局画面上读到、但不在已知地图名单里的文字
         self.player_name = None  # 这次记录认出的玩家名
@@ -69,6 +83,7 @@ class PostMatch:
         self.summary = None  # 这一局总结页的读数和时间
         self.xp = None  # 这一局读得最好的一次经验值页：(读数, 问题, 截图路径, 时间)
         self.xp_done = False  # 核对通过的经验值页已经用过了（补进这一局，或单独记成一局）
+        self.elim = None  # 这一局淘汰画面读到的名次：(名次, 置信度, 时间)
 
     def info_complete(self):
         return "mode" in self.info and "map" in self.info
@@ -115,8 +130,23 @@ class PostMatch:
             self.log(f"           之前存下的 {len(self.unnamed)} 局（编号 {'、'.join(map(str, self.unnamed))}）补上玩家名")
             self.unnamed = []
 
+    def on_eliminated(self, placement, score, when):
+        """淘汰画面读到名次之后调用（见 eliminated.py）。一局只认第一次读到的。"""
+        if self.elim is not None and placement == self.elim[0]:
+            return  # 同一个画面又出现了一次
+        pages = [t for t in (self.summary and self.summary[1], self.xp and self.xp[3]) if t]
+        if pages and (when - max(pages)).total_seconds() > SAME_MATCH_SECONDS:
+            self.finish()  # 新的一局（没认出开局画面）：上一局先收尾
+        elif self.elim is not None:
+            self.log(f"[{when:%H:%M:%S}] 这一局又看到\"排名第 {placement}\"（之前是第 {self.elim[0]}），只认第一次")
+            return
+        self.elim = (placement, score, when)
+        if self.match_id is not None:  # 总结页已经存下了（淘汰画面这次比它晚）
+            self._save_elim(self.match_id)
+            self._settle_placement(self.match_id)
+
     def on_summary_saved(self, match_id, values, when, player_name=None):
-        """总结页存进数据库之后调用。player_name：总结页中间卡片上读到的名字（没读到为 None）。"""
+        """总结页存进数据库之后调用（总结页的读数已经记进 readings 表）。player_name：总结页中间卡片上读到的名字（没读到为 None）。"""
         if self.match_id is not None:  # 没看到开局画面，又来了一局新的总结页：上一局先收尾
             self.finish()
         self.match_id, self.summary = match_id, (values, when)
@@ -128,6 +158,9 @@ class PostMatch:
         if fields:
             storage.update_match(self.conn, match_id, fields)
         self._wait_for_name(match_id)
+        if self.elim is not None:
+            self._save_elim(match_id)
+            self._settle_placement(match_id)
         self._use_xp()
 
     def on_xp(self, reading, problems, path, when):
@@ -143,10 +176,12 @@ class PostMatch:
     def finish(self):
         """这一局彻底结束（下一局开局，或停止运行）。只有经验值页的局在这里单独记一局。
         开局画面会反复进出：只有这一局真的有数据（总结页或经验值页）时，才清掉开局画面读到的模式、地图。"""
-        had_match = self.match_id is not None or self.xp is not None
+        had_match = self.match_id is not None or self.xp is not None or self.elim is not None
         if self.match_id is None and self.xp is not None and not self.xp_done:
             reading, problems, path, when = self.xp
-            self._insert_xp_only(reading, not problems, problems, path, when)
+            self._insert_xp_only(reading, not problems, problems, path, when, with_elim=True)
+        elif self.match_id is None and self.xp is None and self.elim is not None:
+            self._insert_elim_only()
         if had_match:
             if "map" not in self.info and self.unknown_maps:
                 self.log(f"           开局画面没认出地图（读到：{'、'.join(sorted(self.unknown_maps))}）。"
@@ -168,13 +203,13 @@ class PostMatch:
         conflicts = xp_conflicts(reading, when, *self.summary)
         if conflicts:
             note = "经验值页和这段时间的总结页对不上（" + "；".join(conflicts) + "），可能是另一局，请核对"
-            self._insert_xp_only(reading, True, [note], path, when)
+            self._insert_xp_only(reading, True, [note], path, when, with_elim=False)  # 淘汰画面属于总结页那一局
         else:
             self._apply(reading)
         self.xp_done = True
 
     def _apply(self, reading):
-        """把核对通过的经验值页补进这一局。"""
+        """把核对通过的经验值页补进这一局（名次缺的话也补上，见 _settle_placement）。"""
         row = storage.get_match(self.conn, self.match_id)
         fields = {
             "rp_delta": reading["rp_delta"],
@@ -185,17 +220,74 @@ class PostMatch:
         }
         if row["mode"] is None:
             fields["mode"] = "ranked"  # 经验值页有排位点数，说明是排位赛
-        if row["placement"] is None and reading["placement"] is not None:
-            fields["placement"] = reading["placement"]
-            rest = [p for p in (row["review_note"] or "").split("；") if p and not p.startswith("名次")]
-            fields["review_note"] = "；".join(rest) or None
-            fields["needs_review"] = int(bool(rest))
         storage.update_match(self.conn, self.match_id, fields)
         self.log(f"           经验值页：RP {reading['rp_delta']:+d}，第 {reading['placement']} 名，"
                  f"段位 {rank_text(reading)} → 已补进编号 {self.match_id}")
+        self._save_xp(self.match_id)
+        self._settle_placement(self.match_id)
 
-    def _insert_xp_only(self, reading, verified, notes, path, when):
-        """单独记一局（这一局没有总结页）。verified = 经验值页读数核对通过（段位才可信）。"""
+    def _save_xp(self, match_id):
+        reading, _, _, when = self.xp
+        storage.save_readings(self.conn, match_id, SOURCE_XP, {k: reading[k] for k in XP_FIELDS},
+                              f"{when:%Y-%m-%d %H:%M:%S}")
+
+    def _save_elim(self, match_id):
+        placement, score, when = self.elim
+        storage.save_readings(self.conn, match_id, SOURCE_ELIM, {"placement": placement},
+                              f"{when:%Y-%m-%d %H:%M:%S}", {"placement": score})
+
+    def _settle_placement(self, match_id):
+        """按这一局各来源读到的名次（readings 表）定下名次和备注里"名次"那一条：
+        - 只有一处读到，或几处一样：用它；之前因为"名次没读到"标的待确认，取消
+        - 几处对不上：先用 PLACEMENT_SOURCES 里排在前面的来源，标待确认，备注写出每处读到的名次
+        - 一处都没读到：不动"""
+        got = {r["source"]: r["value"] for r in storage.readings_of(self.conn, match_id, "placement")
+               if r["value"] is not None}
+        if not got:
+            return
+        order = [s for s in PLACEMENT_SOURCES if s in got]
+        value = got[order[0]]
+        row = storage.get_match(self.conn, match_id)
+        text = row["review_note"] or ""
+        info = [n for n in INFO_NOTES if n in text]  # 说明本身含"；"，先整条拿出来再拆
+        for n in info:
+            text = text.replace(n, "")
+        notes = [p for p in text.split("；") if p and not p.startswith("名次")]
+        agree = len(set(got.values())) == 1
+        if not agree:
+            notes.insert(0, "名次对不上：" + "、".join(f"{s}第 {got[s]}" for s in order) + "，请核对")
+        storage.update_match(self.conn, match_id, {
+            "placement": value,
+            "review_note": "；".join(notes + info) or None,
+            "needs_review": int(bool(notes)),
+        })
+        if not agree:
+            self.log(f"           ⚠ {notes[0]}（编号 {match_id}，先记第 {value} 名）")
+        elif row["placement"] is None:
+            self.log(f"           名次没读到，用{order[0]}的第 {value} 名补上（编号 {match_id}）")
+        elif len(got) > 1:
+            self.log(f"           名次核对：{'、'.join(order)}都是第 {value}（编号 {match_id}）")
+
+    def _insert_elim_only(self):
+        """单独记一局：只看到了淘汰画面（没进总结页和经验值页），只有名次。"""
+        placement, _, when = self.elim
+        match_id = storage.insert_match(self.conn, {
+            "ended_at": f"{when:%Y-%m-%d %H:%M:%S}",
+            "placement": placement,
+            "review_note": ELIM_ONLY_NOTE,
+            "mode": self.info.get("mode"),
+            "map": self.info.get("map"),
+            "legend": self.info.get("legend"),
+            "player_name": self.player_name,
+        })
+        self._save_elim(match_id)
+        self._wait_for_name(match_id)
+        self.inserted += 1
+        self.log(f"[{when:%H:%M:%S}] 记下一局（编号 {match_id}，只看到淘汰画面）：第 {placement} 名")
+
+    def _insert_xp_only(self, reading, verified, notes, path, when, with_elim):
+        """单独记一局（这一局没有总结页）。verified = 经验值页读数核对通过（段位才可信）；
+        with_elim = 这一局淘汰画面读到的名次也算这一局的（经验值页和总结页对不上、另记一局时不算）。"""
         rp = reading["rp_delta"]
         match = {
             "ended_at": f"{when:%Y-%m-%d %H:%M:%S}",
@@ -222,3 +314,8 @@ class PostMatch:
                  f"RP {rp_text}，段位 {rank_text(reading) if verified else '-'}")
         for n in notes:
             self.log(f"           ⚠ {n}")
+        storage.save_readings(self.conn, match_id, SOURCE_XP, {k: reading[k] for k in XP_FIELDS},
+                              f"{when:%Y-%m-%d %H:%M:%S}")
+        if with_elim and self.elim is not None:
+            self._save_elim(match_id)
+        self._settle_placement(match_id)

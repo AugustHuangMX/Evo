@@ -2,7 +2,8 @@
 
 数据库文件在数据文件夹的 data/evo.db（位置见 paths.py；在项目里时已被 .gitignore 排除，不会上传）。
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
-另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节；一张队友表 teammates（每局最多两行）。
+另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节；一张队友表 teammates（每局最多两行）；
+一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）。
 
 查看最近的记录：python code/storage.py
 导出成 CSV：    python code/storage.py --export data/matches.csv
@@ -17,7 +18,7 @@ from pathlib import Path
 from paths import DB_PATH
 
 APP_VERSION = "0.2.0"
-SCHEMA_VERSION = 4  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+SCHEMA_VERSION = 5  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -74,12 +75,26 @@ MATE_TABLE = """CREATE TABLE IF NOT EXISTS teammates (
   PRIMARY KEY (match_id, slot)
 )"""
 
+# 各来源的读数：同一项（如名次）在几个画面上都能读到，每个来源各记一行，不只记最后采用的那个（2026-10-18 用户决定）。
+# 用来互相核对（对不上就标待确认，见 post_match.py），以后也能统计每个来源有多准。
+# Stata 类比：长格式数据（每局 × 每项 × 每个来源一行）；reshape wide 以后每局一行，各来源读到的名次并排放着
+READING_TABLE = """CREATE TABLE IF NOT EXISTS readings (
+  match_id INTEGER NOT NULL,  -- 哪一局（matches.match_id）
+  field TEXT NOT NULL,  -- 哪一项，和 matches 的列名一样（placement、kills、rp_delta……）
+  source TEXT NOT NULL,  -- 从哪个画面读的：总结页、经验值页、淘汰画面
+  value,  -- 读到的值（数字或文字，所以不写类型）；没读到为空
+  score REAL,  -- 识别的置信度（0–1）；没有为空
+  read_at TEXT,  -- 读的时间
+  PRIMARY KEY (match_id, field, source)
+)"""
+
 # 旧数据库怎么升级：版本号 → 升到这个版本要执行的 SQL。只加列、加表，已有的数据不动
 # （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）
 MIGRATIONS = {
     2: ["ALTER TABLE matches ADD COLUMN player_name TEXT"],  # 2026-10-17 多账号：每局的玩家名
     3: [NAME_TABLE],  # 2026-10-17 多账号：账号对照表
     4: [MATE_TABLE],  # 2026-10-17 队友：总结页上两名队友的数据
+    5: [READING_TABLE],  # 2026-10-18 各来源的读数（淘汰画面、总结页、经验值页读到的名次等）
 }
 
 
@@ -98,6 +113,7 @@ def _upgrade(conn):
             conn.execute(f"CREATE TABLE IF NOT EXISTS matches (\n  {cols}\n)")
             conn.execute(NAME_TABLE)
             conn.execute(MATE_TABLE)
+            conn.execute(READING_TABLE)
         else:
             for v in range(version + 1, SCHEMA_VERSION + 1):
                 for sql in MIGRATIONS[v]:
@@ -204,6 +220,7 @@ def update_match(conn, match_id, fields):
 def delete_match(conn, match_id):
     conn.execute("DELETE FROM matches WHERE match_id = ?", (match_id,))
     conn.execute("DELETE FROM teammates WHERE match_id = ?", (match_id,))
+    conn.execute("DELETE FROM readings WHERE match_id = ?", (match_id,))
     conn.commit()
 
 
@@ -222,6 +239,24 @@ def teammates_of(conn, match_id):
     return conn.execute("SELECT * FROM teammates WHERE match_id = ? ORDER BY slot", (match_id,)).fetchall()
 
 
+def save_readings(conn, match_id, source, values, read_at, scores=None):
+    """记下一个来源（如"淘汰画面"）对这一局读到的各项，同一来源同一项原来有的就覆盖。
+    values：{项: 读到的值}，没读到的值为 None（"没读到"本身也记下）；scores：{项: 置信度}，没有的项不写。"""
+    scores = scores or {}
+    conn.executemany("INSERT OR REPLACE INTO readings (match_id, field, source, value, score, read_at) "
+                     "VALUES (?, ?, ?, ?, ?, ?)",
+                     [(match_id, field, source, value, scores.get(field), read_at) for field, value in values.items()])
+    conn.commit()
+
+
+def readings_of(conn, match_id, field=None):
+    """一局各来源的读数（field：只要这一项，如 "placement"）。"""
+    sql, params = "SELECT * FROM readings WHERE match_id = ?", [match_id]
+    if field is not None:
+        sql, params = sql + " AND field = ?", params + [field]
+    return conn.execute(sql + " ORDER BY field, source", params).fetchall()
+
+
 def backup_db(conn, path):
     """把整个数据库备份到 path（用 SQLite 自带的备份功能，数据库正在使用时也能安全备份）。"""
     target = sqlite3.connect(path)
@@ -235,6 +270,7 @@ def delete_all_matches(conn):
     """删除所有对局，返回删了几局。"""
     n = conn.execute("DELETE FROM matches").rowcount
     conn.execute("DELETE FROM teammates")
+    conn.execute("DELETE FROM readings")
     conn.commit()
     return n
 

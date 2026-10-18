@@ -25,7 +25,7 @@ import test_teammates
 TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）": test_light, "整晚重放": test_replay,
          "传奇识别": test_legends, "玩家名（区分账号）": test_player_name, "多账号（对照表和弹窗）": test_accounts,
          "队友（读卡片、队友表、战绩页）": test_teammates, "截图留不留": test_screenshots, "段位": test_ranks,
-         "源码运行（战绩记进安装版）": test_source_run, "淘汰画面（排名第 X）": test_eliminated}
+         "源码运行（战绩记进安装版）": test_source_run, "淘汰画面（名次入库、和总结页/经验值页核对）": test_eliminated}
 
 
 def main():

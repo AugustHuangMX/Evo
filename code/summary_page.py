@@ -142,6 +142,21 @@ def summary_to_match(results, problems, ended_at, evidence_path=None):
     }
 
 
+READING_FIELDS = ("placement", "squad_kills", "kills", "assists", "knockdowns", "damage", "survival_time", "revives", "respawns")
+
+
+def summary_readings(results):
+    """总结页读到的各项，整理成 (值, 置信度) 两个字典，键是 storage.COLUMNS 的列名（存进各来源读数表 readings 用）。
+    击杀/助攻/击倒是一个小块里读出来的，三项用同一个置信度。"""
+    match = summary_to_match(results, [], None)
+    values = {k: match[k] for k in READING_FIELDS}
+    scores = {}
+    for name, r in results.items():
+        for key in (("kills", "assists", "knockdowns") if name == "kda" else (name,)):
+            scores[key] = r["score"]
+    return values, scores
+
+
 def show(value):
     if value is None:
         return "-"

@@ -7,8 +7,9 @@
 - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上这一局的 RP、段位，名次缺的话也补上。
   没有总结页的局（第 2 名、冠军）只靠经验值页单独记一局。怎么归到同一局见 post_match.py
 - 开局画面：读本局的模式和地图（见 match_start.py），两项都读到就不再读
-- 淘汰画面（小队被淘汰时屏幕中间的"排名第 X"）：读出名次（见 eliminated.py），读到就不再读。现在只写进日志，
-  还没写进数据库
+- 淘汰画面（小队被淘汰时屏幕中间的"排名第 X"）：读出名次（见 eliminated.py），读到就不再读。和总结页、经验值页的名次
+  互相核对；只看到淘汰画面的局（直接返回大厅）也记一局，只有名次（见 post_match.py）
+- 各画面读到的数都记进 readings 表（每局 × 每项 × 每个来源一行），不只记最后采用的那个
 - 对局中：每 3 秒看一眼左下角自己的头像，认出用的是哪个传奇（见 legends.py 和 LegendWatcher，不用识别模型）
 - 玩家名（区分账号，见 player_name.py 和 NameWatcher）：总结页存这一局时读中间卡片上的名字；
   这次记录还不知道名字时，对局中在认出自己传奇的那一帧读头像旁边的名字（知道了就不再读）
@@ -42,10 +43,10 @@ from match_start import read_match_start
 from ocr import SMALL_CROP_PARAMS, LazyEngine, load_config
 from paths import CAPTURES_DIR
 from player_name import PlayerNameReader
-from post_match import PostMatch
+from post_match import SOURCE_SUMMARY, PostMatch
 from process_info import memory_mb, set_low_priority
 from screens import ScreenDetector
-from summary_page import KEY_FIELDS, read_summary, show, summary_to_match
+from summary_page import KEY_FIELDS, read_summary, show, summary_readings, summary_to_match
 from teammates import describe, read_teammates
 from xp_page import read_xp
 
@@ -134,6 +135,8 @@ class SummaryWatcher:
         save_png(image_path, frame)
         match = summary_to_match(results, problems, f"{when:%Y-%m-%d %H:%M:%S}", image_path)
         match_id = storage.insert_match(self.conn, match)
+        readings, scores = summary_readings(results)
+        storage.save_readings(self.conn, match_id, SOURCE_SUMMARY, readings, f"{when:%Y-%m-%d %H:%M:%S}", scores)
         self.saved += 1
         self.last_saved = values
         self.log(f"[{when:%H:%M:%S}] 第 {self.saved} 局（编号 {match_id}）：第 {show(values['placement'])} 名，"
@@ -157,7 +160,7 @@ class SummaryWatcher:
 class ScreenWatcher:
     """经验值页、开局画面、大厅、淘汰画面（见 config/screens.json）。
     离开经验值页时识别最后一帧（数字有动画，最后一帧才是最终结果）；进入开局画面表示上一局彻底结束；
-    在开局画面读本局的模式和地图，读到就不再读；在淘汰画面读名次，这一次停留里读到就不再读。
+    在开局画面读本局的模式和地图，读到就不再读；在淘汰画面读名次，这一次停留里读到就不再读，交给 PostMatch 归到这一局。
     截图：保留全部时，进入时存一张、离开前最后一帧再存一张；否则只存经验值页离开前的最后一帧
     （没有总结页的局要拿它当识别依据），大厅、开局画面、淘汰画面不存。"""
 
@@ -214,6 +217,7 @@ class ScreenWatcher:
         self.placement = reading["placement"]
         if self.placement is not None:
             self.log(f"[{now:%H:%M:%S}] 淘汰画面：排名第 {self.placement}")
+            self.post.on_eliminated(self.placement, reading["score"], now)
         elif self.frames == 1:
             self.log(f"[{now:%H:%M:%S}] 淘汰画面：没读出名次（原文：{reading['raw'] or '无'}），下一帧再读")
 
