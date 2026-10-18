@@ -441,6 +441,8 @@ def check_images(paths, log):
             text = f"淘汰画面 第 {read_eliminated(engine, img, elim_cfg)['placement']} 名"
         elif screen == "champion":
             text = "冠军横幅（捍卫者）"
+        elif screen == "squad_out":
+            text = "返回大厅按钮（小队已淘汰）"
         elif screen == "lobby":
             text = f"大厅 {describe(LobbyReader(engine).read(img))}"
         elif hud.own_legend(img) is not None:

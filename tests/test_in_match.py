@@ -175,9 +175,13 @@ def collect_checks(images):
     r = run("revived", [START, MATES_DOWN, MATES_DOWN, SPECTATING, SPECTATING, KNOCKED, KNOCKED, ELIMINATED],
             keep_all=True)
     r["got"] = [pick(row, "rp_delta", "rp_source", "damage") for row in r["rows"]]
-    # 自己是小队最后一个：成盒后观战的是对手（不是队友），然后直接进了下一局（2026-10-18 实战 #45）
-    r = run("last_one", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, SPECT_ENEMY, START, START])
+    # 自己是小队最后一个：成盒后观战的不是队友（这里观战的动力小子不在这局的队友里），然后直接进了下一局（2026-10-18 实战 #45）
+    r = run("last_one", [START, PLAYING, PLAYING, PLAYING, SPECTATING, SPECTATING, START, START])
     r["got"] = [pick(row, *keys) for row in r["rows"]]
+    # 全队被淘汰后观战对手：右下角有"返回大厅"（2026-10-19 用户决定用它判断小队结束了），淘汰画面没认出来也能收尾
+    r = run("squad_out", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, SPECT_ENEMY, START])
+    r["got"] = [pick(row, *keys) for row in r["rows"]]
+    r["said"] = [line for line in r["log"] if "返回大厅按钮" in line]
     # 拿冠军
     r = run("champion", [START, PLAYING, PLAYING, PLAYING, CHAMP_MOMENT, CHAMP_MOMENT, CHAMP_SUMMARY, CHAMP_SUMMARY,
                          CHAMP_SUMMARY])
@@ -349,6 +353,9 @@ def main():
             and first["rp_at_death"] == {"对局中": -59},
         f"自己是最后一个（成盒后观战的是对手），然后直接进了下一局：名次、RP 用右上角最后的，传奇没丢，不用确认（{c['last_one']['got']}）":
             c["last_one"]["got"] == [(18, 0, 0, 0, 0, -65, "对局中", 0, f"{HUD_ONLY_NOTE}；{REQUEUE_NOTE}", "ranked", "罗芭")],
+        f"全队被淘汰后观战对手（右下角\"返回大厅\"）：这一局结束了，自己一直活到最后，名次、RP 用右上角最后的，不用确认（{c['squad_out']['got']}）":
+            c["squad_out"]["got"] == [(18, 0, 0, 0, 0, -65, "对局中", 0, HUD_ONLY_NOTE, "ranked", "罗芭")]
+            and bool(c["squad_out"]["said"]),
         f"0/0/0 时那一行不显示：背后画面上读出的单独一个数不算老板分（读到 {s['lone_kp'][0]}，记下 {s['lone_kp'][1]}）":
             s["lone_kp"] == (7, None, False),
         f"成盒后被复活：继续记录，RP 照常记（{revived['got']}）":

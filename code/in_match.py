@@ -7,7 +7,7 @@
   - 还不知道自己的玩家名时，把头像旁边的名字裁下来先留着（最多 max_hud_reads 块）
   - 右上角那一块存在内存里：内容变了才存，只留最近的 keep 块（一局结束时每块要读约 0.2 秒）
   - 自己那一行变红 = 倒地；看到"观战"标签 = 成盒；成盒后又看到自己的界面 = 被复活
-- 交火时一律不用识别引擎（原则 3）。一局结束时（淘汰画面、冠军横幅、总结页、经验值页、回到大厅、下一局开局、停止记录）
+- 交火时一律不用识别引擎（原则 3）。一局结束时（淘汰画面、冠军横幅、总结页、经验值页、返回大厅按钮、回到大厅、下一局开局、停止记录）
   才读：右上角从最新的一块往回读，每一项取最后一次读到的值；击杀、助攻、老板分、伤害从没显示过就是 0
   （前提是这几块确实是右上角：剩余小队数或 RP 至少读到过一次，否则全部当作没读到）
 - 对局中截图加快到每 match_interval 秒一张（config/hud.json，2026-10-18 用户决定先用 0.3 秒测 CPU）：
@@ -18,7 +18,7 @@ from collections import deque
 
 from hud import TOP_FIELDS, TOP_LABELS
 
-END_SCREENS = ("eliminated", "champion", "summary", "xp")  # 这一局打完了
+END_SCREENS = ("eliminated", "champion", "summary", "xp", "squad_out")  # 这一局打完了（squad_out：右下角"返回大厅"）
 ZERO_IF_HIDDEN = ("kills", "assists", "participation", "damage")  # 右上角没显示 = 0
 STATE_ALIVE, STATE_KNOCKED, STATE_DEAD = "存活", "倒地", "成盒"
 SAME_MATCH_SECONDS = 180  # 看到自己的界面以后这么久之内又出现开局画面（横幅闪回来），还是同一局
@@ -226,4 +226,5 @@ class InMatchWatcher:
 
 
 _END_TEXT = {"eliminated": "淘汰画面", "champion": "冠军横幅", "summary": "总结页", "xp": "经验值页",
-             "lobby": "回到大厅", "next": "下一局开局", "requeue": "成盒后直接进了下一局", "stop": "停止记录"}
+             "lobby": "回到大厅", "next": "下一局开局", "requeue": "成盒后直接进了下一局", "stop": "停止记录",
+             "squad_out": "返回大厅按钮：小队已淘汰"}

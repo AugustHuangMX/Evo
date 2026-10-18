@@ -405,7 +405,7 @@ class PostMatch:
     def _hud_counts(self):
         """对局中的数据能不能单独记一局：看到了开局画面，或者看到了结算画面（靶场里的不算）。"""
         h = self.hud
-        return h is not None and (h["saw_start"] or h["end"] in ("eliminated", "champion", "summary", "xp")) \
+        return h is not None and (h["saw_start"] or h["end"] in ("eliminated", "champion", "summary", "xp", "squad_out")) \
             and (any(h["values"].get(k) is not None for k in HUD_FIELDS) or h["mates"])
 
     def _wait_for_name(self, match_id):
