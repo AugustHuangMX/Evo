@@ -8,7 +8,7 @@
 - 右上角：先整块存下来（snip），一局结束时再读（read_top）：剩余小队数、击杀、助攻、老板分（参与分）、伤害、本局 RP
 
 检查截图：python code/hud.py 截图1.png [截图2.png ...]   （每张都读一遍，打印结果；会加载识别引擎）
-生成参照图：python code/hud.py --save-template spectate|damage_icon 截图.png   （按配置里的 template_box 截一块）
+生成参照图：python code/hud.py --save-template spectate|damage_icon|kp_icon 截图.png   （按配置里的 template_box 截一块）
 """
 
 import argparse
@@ -114,8 +114,9 @@ class Hud:
         self.mate_templates = self.legends.scaled(mates["scale"])
         self.spectate_template = load_hud_template("spectate")
         self.icon_template = load_hud_template("damage_icon")
-        self.missing = [n for n, t in (("spectate", self.spectate_template), ("damage_icon", self.icon_template))
-                        if t is None]  # 没有参照图的（认不出观战、读不出伤害）
+        self.kp_template = load_hud_template("kp_icon")
+        self.missing = [n for n, t in (("spectate", self.spectate_template), ("damage_icon", self.icon_template),
+                                       ("kp_icon", self.kp_template)) if t is None]  # 没有参照图的（认不出观战、读不出伤害等）
 
     # ---------- 只看外观、不用识别引擎 ----------
 
@@ -180,8 +181,8 @@ class Hud:
 
     def read_top(self, snip):
         """读一块右上角。返回 {项: 值}（没显示或读不出为 None）、{项: 置信度}，和"显示着"的项（集合）。
-        显示着但读不出 ≠ 没显示：击杀、助攻、老板分那一行只要读出其中一个，三个都算显示着；伤害看图标在不在。
-        （2026-10-18 第一局实战：那一行显示着，助攻、老板分读对了，击杀那个数字没读出来——不能当成 0）"""
+        显示着但读不出 ≠ 没显示：击杀、助攻、老板分那一行看最左边的骷髅图标在不在（或者读出了其中一个）；伤害看图标在不在。
+        （2026-10-18 实战：那一行显示着，数字有时只读出一部分、有时一个都没读出来——都不能当成 0）"""
         top = self.cfg["top_right"]
         values, scores = {}, {}
         for name, spec in top["fields"].items():
@@ -190,7 +191,8 @@ class Hud:
             values[name], scores[name] = self._number(piece, pattern, spec["range"], top)
         values["damage"], scores["damage"], icon = self._damage(snip, top)
         shown = {k for k in values if values[k] is not None}
-        if shown & set(KP_ROW):
+        kp = top["kp_icon"]
+        if shown & set(KP_ROW) or best_match(snip.gray(kp["area"]), self.kp_template)[0] >= kp["min_similarity"]:
             shown |= set(KP_ROW)
         if icon:
             shown.add("damage")
@@ -233,7 +235,8 @@ def read_name(engine, snip, left_range=None, min_score=0.9, length=(2, 32)):
 
 def save_template(name, image_path, cfg):
     """按配置里的 template_box 从截图上截出参照图，存到 config/templates/hud/<name>.png。"""
-    box = cfg["spectate"]["template_box"] if name == "spectate" else cfg["top_right"]["damage"]["template_box"]
+    box = {"spectate": cfg["spectate"], "damage_icon": cfg["top_right"]["damage"],
+           "kp_icon": cfg["top_right"]["kp_icon"]}[name]["template_box"]
     gray = gray_crop(load_image(image_path), box, cfg["base_resolution"])
     HUD_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     path = HUD_TEMPLATE_DIR / f"{name}.png"
@@ -245,7 +248,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="读对局中截图的左下角和右上角；或者生成参照图")
     parser.add_argument("images", type=Path, nargs="+", help="截图")
-    parser.add_argument("--save-template", choices=("spectate", "damage_icon"), help="从这张截图生成参照图")
+    parser.add_argument("--save-template", choices=("spectate", "damage_icon", "kp_icon"), help="从这张截图生成参照图")
     args = parser.parse_args()
 
     cfg = load_config(CONFIG_NAME)

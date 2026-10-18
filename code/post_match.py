@@ -10,7 +10,7 @@
 | 击杀、助攻 | 总结页 → 对局中 → 经验值页（计分次数，可能偏少） |
 | 伤害 | 总结页 → 对局中 |
 | 老板分（参与分） | 对局中 |
-| RP | 经验值页 → 对局中（只限自己没有先成盒：最后被淘汰、拿冠军） → 大厅校准 |
+| RP | 经验值页 → 对局中（只限自己最后被淘汰；先成盒的、拿冠军的不用） → 大厅校准 |
 
 对局中的读数比总结页少是正常的（最后一秒的击杀、伤害没截到）；比总结页多，说明有一边读错了，标待确认。
 总结页没读全（停留太短）时，缺的项能用别的来源补上，就不标待确认（2026-10-18 用户决定：玩家很快跳过时，
@@ -53,7 +53,7 @@ LEFT_EARLY_NOTE = "提前回了大厅（没看到结算画面）：名次、RP �
 NO_SUMMARY_NOTES = (XP_ONLY_NOTE, OLD_XP_ONLY_NOTE, HUD_ONLY_NOTE, ELIM_ONLY_NOTE)
 INFO_NOTES = NO_SUMMARY_NOTES + (LEFT_EARLY_NOTE,)
 COUNTED_KILLS_NOTES = (XP_ONLY_NOTE, OLD_XP_ONLY_NOTE)  # 击杀是"计分次数"的局（总览页的场均击杀不算它们）
-NO_END_NOTE = "没看到结算画面（可能掉线、游戏崩溃或中途停止记录），请核对"
+NO_END_NOTE = "没看到结算画面（可能队长直接重新匹配、掉线、游戏崩溃或中途停止记录），请核对"
 
 MAX_GAP_SECONDS = 600  # 同一局的总结页和经验值页，时间不会相差这么久
 SAME_MATCH_SECONDS = 120  # 总结页、经验值页之后这么久之内看到的淘汰画面等算同一局（新的一局从排队到被淘汰，至少要这么久）
@@ -171,8 +171,11 @@ def settle(conn, match_id, log=print):
     if got.get("participation", {}).get(SOURCE_HUD) is not None:
         fields["participation"] = got["participation"][SOURCE_HUD]
 
-    # RP：经验值页 → 对局中（只在自己最后被淘汰、拿冠军时记）→ 大厅校准
-    source, value = _first(got.get("rp_delta", {}), (SOURCE_XP, SOURCE_HUD, SOURCE_LOBBY))
+    # RP：经验值页 → 对局中（只在自己最后被淘汰时记）→ 大厅校准。拿冠军的局不用对局中的：
+    # 冠军的名次分是比赛结束后才加的（2026-10-18 实战：右上角最后 +210，经验值页 +263）
+    champion = got.get("placement", {}).get(SOURCE_CHAMPION) == 1
+    order = (SOURCE_XP, SOURCE_LOBBY) if champion else (SOURCE_XP, SOURCE_HUD, SOURCE_LOBBY)
+    source, value = _first(got.get("rp_delta", {}), order)
     if source is not None:
         fields["rp_delta"], fields["rp_source"] = value, source
         hud = got["rp_delta"].get(SOURCE_HUD)
@@ -448,6 +451,9 @@ class PostMatch:
         values = {k: h["values"].get(k) for k in HUD_FIELDS}
         if h["own_dead"]:
             values["rp_at_death"] = h["values"].get("rp_delta")
+        elif h["end"] == "champion":  # 冠军的名次分比赛结束后才加：右上角最后的 RP 不是最终的，只留着核对
+            values["rp_before_win"] = h["values"].get("rp_delta")
+            values["placement"] = 1
         else:
             values["rp_delta"] = h["values"].get("rp_delta")
             values["placement"] = 1 if h["end"] == "champion" else h["values"].get("squads_left")

@@ -126,7 +126,10 @@ def collect_checks(images):
     out = {}
     blank = images[MATES_DOWN].copy()
     blank[95:123, 1510:1538] = 0  # 1080p 截图：右上角击杀那个数字涂黑（助攻、老板分照样显示）
-    images = {**images, "击杀涂黑": blank}
+    row = blank.copy()
+    row[95:123, 1573:1600] = 0
+    row[95:123, 1631:1663] = 0  # 三个数字都涂黑，只剩骷髅等图标
+    images = {**images, "击杀涂黑": blank, "整行数字涂黑": row}
     ran_on = []  # 每次用识别引擎时屏幕上是哪一帧
     real_create = ocr.create_engine
 
@@ -168,6 +171,8 @@ def collect_checks(images):
     r["placement_sources"] = readings_of(r["rows"][0]["match_id"], "placement") if r["rows"] else {}
     # 右上角那一行显示着、击杀那个数字没读出来（2026-10-18 第一局实战就遇到了）：留空，不当作 0
     r = run("kills_unread", [START, "击杀涂黑", "击杀涂黑", ELIMINATED])
+    r["got"] = [pick(row, "kills", "assists", "participation", "damage") for row in r["rows"]]
+    r = run("row_unread", [START, "整行数字涂黑", "整行数字涂黑", ELIMINATED])
     r["got"] = [pick(row, "kills", "assists", "participation", "damage") for row in r["rows"]]
     # 靶场：不记；中途停止记录：记下但标待确认
     run("range", [RANGE, RANGE, RANGE, LOBBY])
@@ -332,13 +337,15 @@ def main():
         "保留全部截图时：一局结束存下最后一张自己的界面（用来校准对局中的区域）；平时不存":
             any("存下最后一张自己的界面" in line for line in revived["log"])
             and not any("存下最后一张自己的界面" in line for line in last["log"]),
-        f"拿冠军：记第 1 名；总结页名次没读到也不用确认；RP 用对局中的（{champ['got']}）":
-            champ["got"] == [(1, 6, 1733, -65, "对局中", 0, None)],
+        f"拿冠军：记第 1 名；总结页名次没读到也不用确认；RP 不用对局中的（冠军的名次分结束后才加）（{champ['got']}）":
+            champ["got"] == [(1, 6, 1733, None, None, 0, None)],
         f"  名次来源：冠军横幅（{champ['placement_sources']}）": champ["placement_sources"].get("冠军横幅") == 1,
         f"  队友：总结页和对局中按名字对上，补上传奇（{champ['mates']}）":
             len(champ["mates"]) == 1 and any(same_mates([m], [("right", NAMES.get("冠军总结页右边"), "地平线")]) for m in champ["mates"][0]),
         f"右上角那一行显示着、击杀没读出来：击杀留空，不当作 0；助攻、老板分、伤害照常（{c['kills_unread']['got']}）":
             c["kills_unread"]["got"] == [(None, 1, 0, 48)],
+        f"那一行显示着（骷髅图标在）、三个数字一个都没读出来：三项都留空（{c['row_unread']['got']}）":
+            c["row_unread"]["got"] == [(None, None, None, 48)],
         "靶场（没有开局画面、也没有结算画面）：不记": c["range"]["rows"] == [],
         f"中途停止记录：记下，标待确认（{c['stopped']['got']}）":
             c["stopped"]["got"] == [(1, f"{NO_END_NOTE}；{HUD_ONLY_NOTE}", -65)],

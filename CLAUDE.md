@@ -181,7 +181,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 
 `teammates` 表（队友，2026-10-17；0.3.0 加传奇）：match_id, slot（left/right：总结页上左边还是右边的卡片；没有总结页的局是 hud1/hud2：对局中左下角上、下两行）, name, player_id（卡片下面的 ID，数字串）, legend, kills, assists, knockdowns, damage, survival_time, revives, respawns。一局最多两行。名字和传奇以对局中左下角为准（`in_match.py`），ID 和数据来自总结页（`teammates.py`，左右卡片 = 中间卡片的区域平移 ±530），两边按名字对上（`post_match._merge_mates`）；读不准的项留空，不因为队友标待确认
 
-`readings` 表（各来源的读数，2026-10-18 用户决定）：match_id, field（和 matches 的列名一样；另有 rp_at_death：先成盒时的 RP，只留着核对，end_screen：这一局怎么结束的）, source（总结页 / 经验值页 / 淘汰画面 / 冠军横幅 / 对局中 / 大厅校准）, value, score, read_at。同一项在几个画面上都能读到时，每个来源各记一行（没读到也记），不只记最后采用的那个；每一项最后用哪个来源由 `post_match.settle` 统一定（优先级见 `docs/对局全流程图.md`），以后用它统计每个来源有多准
+`readings` 表（各来源的读数，2026-10-18 用户决定）：match_id, field（和 matches 的列名一样；另有 rp_at_death：先成盒时的 RP、rp_before_win：拿冠军时右上角最后的 RP，都只留着核对；end_screen：这一局怎么结束的）, source（总结页 / 经验值页 / 淘汰画面 / 冠军横幅 / 对局中 / 大厅校准）, value, score, read_at。同一项在几个画面上都能读到时，每个来源各记一行（没读到也记），不只记最后采用的那个；每一项最后用哪个来源由 `post_match.settle` 统一定（优先级见 `docs/对局全流程图.md`），以后用它统计每个来源有多准
 
 `lobby_readings` 表（大厅读数，0.3.0）：reading_id, read_at, player_name, rank_tier, rank_division, rank_progress, score（换算成的总分）。每次回大厅连续两次读到一样就记一行；总览页的段位卡片、走势图以它为准；`calibration.py` 用前后两次核对中间各局的 RP
 
@@ -202,7 +202,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 | 角色 | 来源 | 说明 |
 |---|---|---|
 | 主要来源 | 经验值页明细 | rp_delta = 战斗合计 + 奖励合计 + 定级合计（最终画面的定级合计已减去入场费）。拿顶部滚动数字做核对 |
-| 第二来源 | 一局结束前最后一次读到的右上角实时 RP（`in_match.py`） | 只在自己最后被淘汰（包括倒地时全队被淘汰）或拿冠军时用：这时它就是最终值。自己先成盒、队友后被淘汰时不用（另记成 rp_at_death 留着核对）。"阵亡瞬间的 RP 就是最终 RP"还是推测，日志里有"RP 核对"，前几局拿经验值页核对 |
+| 第二来源 | 一局结束前最后一次读到的右上角实时 RP（`in_match.py`） | 只在自己最后被淘汰（包括倒地时全队被淘汰）时用：这时它就是最终值（2026-10-18 实战：倒地时全队被淘汰那局 −19 = 经验值页 −19）。自己先成盒、队友后被淘汰时不用（另记成 rp_at_death；实战一局 145 = 经验值页 145，还要多看几局）。**拿冠军时不用**：冠军的名次分比赛结束后才加（实战：右上角最后 +210，经验值页 +263），另记成 rp_before_win。日志里有"RP 核对" |
 | 校准 | 两次大厅读数之间对账（`calibration.py`） | 上次大厅总分 + 中间各局 rp_delta 之和 = 这次大厅总分（`ranks.score` 换算）。只缺一局时用差值补上；对不上或缺两局以上，相关局标记待确认；跨大段（升段奖励、降段保护）不核对 |
 
 
