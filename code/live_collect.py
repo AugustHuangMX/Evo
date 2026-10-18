@@ -7,16 +7,18 @@
 - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上这一局的 RP、段位，名次缺的话也补上。
   没有总结页的局（第 2 名、冠军）只靠经验值页单独记一局。怎么归到同一局见 post_match.py
 - 开局画面：读本局的模式和地图（见 match_start.py），两项都读到就不再读
+- 淘汰画面（小队被淘汰时屏幕中间的"排名第 X"）：读出名次（见 eliminated.py），读到就不再读。现在只写进日志，
+  还没写进数据库
 - 对局中：每 3 秒看一眼左下角自己的头像，认出用的是哪个传奇（见 legends.py 和 LegendWatcher，不用识别模型）
 - 玩家名（区分账号，见 player_name.py 和 NameWatcher）：总结页存这一局时读中间卡片上的名字；
   这次记录还不知道名字时，对局中在认出自己传奇的那一帧读头像旁边的名字（知道了就不再读）
-- 经验值页、开局画面、大厅（见 config/screens.json）：开局画面用来分隔每一局（见 ScreenWatcher）
+- 经验值页、开局画面、大厅、淘汰画面（见 config/screens.json）：开局画面用来分隔每一局（见 ScreenWatcher）
 - 其他画面：什么都不做（大部分时间都是这样）
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
 - 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留"待确认"的局要用的
-- 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅也存，进入时一张、离开前最后一帧一张
+- 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅、淘汰画面也存，进入时一张、离开前最后一帧一张
 - 设置页的"保留全部截图"开关：每局结束时看一眼，改了从下一局开始生效（见 collect 里的 round_end）
 
 运行：python code/live_collect.py
@@ -34,6 +36,7 @@ import dxcam
 
 import screenshots
 import storage
+from eliminated import read_eliminated
 from legends import LegendDetector
 from match_start import read_match_start
 from ocr import SMALL_CROP_PARAMS, LazyEngine, load_config
@@ -152,19 +155,21 @@ class SummaryWatcher:
 
 
 class ScreenWatcher:
-    """经验值页、开局画面、大厅（见 config/screens.json）。
+    """经验值页、开局画面、大厅、淘汰画面（见 config/screens.json）。
     离开经验值页时识别最后一帧（数字有动画，最后一帧才是最终结果）；进入开局画面表示上一局彻底结束；
-    在开局画面读本局的模式和地图，读到就不再读。
+    在开局画面读本局的模式和地图，读到就不再读；在淘汰画面读名次，这一次停留里读到就不再读。
     截图：保留全部时，进入时存一张、离开前最后一帧再存一张；否则只存经验值页离开前的最后一帧
-    （没有总结页的局要拿它当识别依据），大厅、开局画面不存。"""
+    （没有总结页的局要拿它当识别依据），大厅、开局画面、淘汰画面不存。"""
 
-    def __init__(self, engine, screens, xp_cfg, start_cfg, post, run_dir, log, keep_all=True):
+    def __init__(self, engine, screens, xp_cfg, start_cfg, elim_cfg, post, run_dir, log, keep_all=True):
         self.engine, self.screens, self.xp_cfg, self.start_cfg = engine, screens, xp_cfg, start_cfg
+        self.elim_cfg = elim_cfg
         self.post, self.run_dir, self.log, self.keep_all = post, run_dir, log, keep_all  # 每局结束时可能改（round_end）
         self.current = None  # 现在停在哪个画面（None = 都不是）
         self.last = None  # 这个画面最近的一帧和时间，离开时存下来
         self.frames = 0  # 在这个画面已经看到了几帧
         self.enter_path = None  # 进入这个画面时存的截图（没存为 None）
+        self.placement = None  # 这一次停在淘汰画面读到的名次
 
     def update(self, screen, frame, now):
         """每截一帧调用一次。screen：这一帧是哪个画面（如 "xp"），都不是则为 None。"""
@@ -179,12 +184,14 @@ class ScreenWatcher:
                 self.log(f"[{now:%H:%M:%S}] 进入{self._label(screen)}，已存截图")
             elif screen is not None:
                 self.log(f"[{now:%H:%M:%S}] 进入{self._label(screen)}")
-            self.current, self.frames = screen, 0
+            self.current, self.frames, self.placement = screen, 0, None
         if screen is not None:
             self.last = (frame.copy(), now)
             self.frames += 1
         if screen == "match_start" and not self.post.info_complete():
             self.post.on_match_start(read_match_start(self.engine, frame, self.start_cfg), now)
+        if screen == "eliminated" and self.placement is None:
+            self._read_placement(frame, now)
 
     def leave(self):
         """离开当前画面：存下最后一帧（保留全部时，只看到一帧的话进入时已经存过了；否则只存经验值页）；
@@ -201,6 +208,15 @@ class ScreenWatcher:
             reading, problems = read_xp(self.engine, last_frame, self.xp_cfg)
             self.post.on_xp(reading, problems, path, last_time)
 
+    def _read_placement(self, frame, now):
+        """读淘汰画面上的名次。没读出来时只在第一帧提示一次，之后每帧再试。"""
+        reading = read_eliminated(self.engine, frame, self.elim_cfg)
+        self.placement = reading["placement"]
+        if self.placement is not None:
+            self.log(f"[{now:%H:%M:%S}] 淘汰画面：排名第 {self.placement}")
+        elif self.frames == 1:
+            self.log(f"[{now:%H:%M:%S}] 淘汰画面：没读出名次（原文：{reading['raw'] or '无'}），下一帧再读")
+
     def _label(self, screen):
         return self.screens["screens"][screen]["label"]
 
@@ -209,6 +225,7 @@ class LegendWatcher:
     """对局中认出自己用的传奇：从开局画面之后，到总结页或经验值页之前，每隔几秒看一眼左下角自己的头像，
     同一个传奇认出 2 次就记下（交给 PostMatch，存这一局时一起写进去），这一局就不再看了。
     - 开局画面：新的一局开始，之前认出的不算数（比如在靶场里认出的）
+    - 淘汰画面、总结页、经验值页：这一局打完了
     - 阵亡后观战：左下角是被观战的人，整块还往上移了约 60，在自己头像的位置上认不出来，所以不会认成队友
     - 刚开始记录时也看（可能正在对局中）
     on_own_hud(画面, 时间)：认出传奇的那一帧交给它（这一帧左下角肯定是自己，NameWatcher 在这里读玩家名）"""
@@ -229,7 +246,7 @@ class LegendWatcher:
             self._restart()
             self.post.on_legend(None, now)
             return
-        if screen in ("summary", "xp"):  # 这一局打完了
+        if screen in ("summary", "xp", "eliminated"):  # 这一局打完了
             self.active = False
             return
         if not self.active or screen is not None or tick < self.next_check:
@@ -327,8 +344,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     detector = ScreenDetector(engine, screens)
     names = NameWatcher(PlayerNameReader(engine, name_cfg), post, name_cfg["max_hud_reads"])
     summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout, names)
-    other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"), post, run_dir, log,
-                          keep_all=keep)
+    other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"),
+                          load_config("eliminated.json"), post, run_dir, log, keep_all=keep)
     legend_detector = LegendDetector()
     legend = LegendWatcher(legend_detector, post, on_own_hud=names.on_own_hud)
     log(f"屏幕: {camera.width}x{camera.height}")
@@ -370,7 +387,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 if screen is not None:
                     last_seen, warned = tick, False
                 elif not warned and tick - last_seen > NO_SCREEN_WARNING_MINUTES * 60:
-                    log(f"⚠ 已经 {NO_SCREEN_WARNING_MINUTES} 分钟没认出任何画面（大厅、开局、总结页、经验值页）。"
+                    log(f"⚠ 已经 {NO_SCREEN_WARNING_MINUTES} 分钟没认出任何画面（大厅、开局、淘汰画面、总结页、经验值页）。"
                         "如果这段时间打完过对局，可能是游戏更新了界面：用 python code/screens.py 截图.png 检查，必要时重新生成参照图")
                     warned = True
             engine.release_if_idle()

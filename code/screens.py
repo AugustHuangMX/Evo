@@ -1,9 +1,10 @@
-"""判断当前是哪个画面：总结页、经验值页、开局画面、大厅（规则在 config/screens.json），都不是返回 None。
+"""判断当前是哪个画面：总结页、经验值页、开局画面、大厅、淘汰画面（规则在 config/screens.json），都不是返回 None。
 
 分两步，先便宜后贵：
-1. 外观检查（不到 1 毫秒，不用识别模型）：检查区域里有没有和参照图（config/templates/）一样的文字轮廓。
+1. 外观检查（几毫秒，不用识别模型）：检查区域里有没有和参照图（config/templates/）一样的文字轮廓。
    只比笔画的边缘，不管背景亮暗；参照图在检查区域里上下左右滑动，取最像的位置（关键字前面的数字、模式名
-   长短不同，位置会左右移动）。打游戏的大部分时间画面都不是这几种，这一步就排除了，不用跑识别引擎
+   长短不同，位置会左右移动）。字会慢慢变大的画面（淘汰画面），参照图按配置里的几种大小各比一次。
+   打游戏的大部分时间画面都不是这几种，这一步就排除了，不用跑识别引擎
 2. 外观像了，再用识别引擎读这一块，关键字都在才算。所以多了第 1 步也不会认错，只会少跑识别
 
 游戏更新后界面变了，参照图可能就不像了：重新截一张，用下面的命令重新生成。没有参照图的画面每次都直接跑识别（和以前一样）。
@@ -45,6 +46,17 @@ def load_template(name):
     return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
 
 
+def shrunk(gray, factor):
+    """缩小到 factor 倍（1 = 不变）。"""
+    return gray if factor == 1 else cv2.resize(gray, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
+
+
+def template_outlines(template, spec):
+    """一种画面的参照图轮廓：按配置里的 scales（默认只有原大小）各缩放一份，再一起缩小 shrink 倍（默认不缩小）。"""
+    shrink = spec.get("shrink", 1)
+    return [outline(shrunk(template, scale * shrink)) for scale in spec.get("scales", [1])]
+
+
 class ScreenDetector:
     """detect(画面) 返回画面的名字（如 "summary"），都不是返回 None。
     按配置里的顺序检查，先认出的为准。engine：识别引擎（可以是 ocr.LazyEngine，用到时才加载模型）。"""
@@ -52,21 +64,24 @@ class ScreenDetector:
     def __init__(self, engine, cfg=None):
         self.engine = engine
         self.cfg = cfg or load_config("screens.json")
-        self.templates = {}
-        for name in self.cfg["screens"]:
+        self.templates = {}  # 每种画面的参照图轮廓（几种大小各一份），没有参照图为 None
+        for name, spec in self.cfg["screens"].items():
             template = load_template(name)
-            self.templates[name] = None if template is None else outline(template)
+            self.templates[name] = None if template is None else template_outlines(template, spec)
         self.missing = [name for name, t in self.templates.items() if t is None]  # 没有参照图的画面
         self.looked_alike = 0  # 外观检查通过、跑了识别的次数（统计用）
 
     def similarity(self, frame, name):
-        """检查区域和参照图的外观相似度（-1 到 1，越大越像）。没有参照图返回 None。"""
-        template = self.templates[name]
-        if template is None:
+        """检查区域和参照图的外观相似度（-1 到 1，越大越像；几种大小取最像的）。没有参照图返回 None。"""
+        templates = self.templates[name]
+        if templates is None:
             return None
-        region = outline(gray_crop(frame, self.cfg["screens"][name]["roi"], self.cfg["base_resolution"]))
-        scores = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
-        return float(np.nan_to_num(scores, nan=-1.0).max())  # 纯色的区域（如黑屏）算不出相似度，当作不像
+        spec = self.cfg["screens"][name]
+        gray = gray_crop(frame, spec["roi"], self.cfg["base_resolution"])
+        region = outline(shrunk(gray, spec.get("shrink", 1)))
+        # 纯色的区域（如黑屏）算不出相似度，当作不像
+        return max(float(np.nan_to_num(cv2.matchTemplate(region, t, cv2.TM_CCOEFF_NORMED), nan=-1.0).max())
+                   for t in templates)
 
     def looks_like(self, frame, name):
         """第 1 步：外观像不像。没有参照图的画面一律算像（直接交给识别）。"""

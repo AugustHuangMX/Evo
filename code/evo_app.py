@@ -400,6 +400,7 @@ class PanelServer:
 
 def check_images(paths, log):
     """识别几张截图，把结果写进日志。打包后用来确认识别模型和配置都在；以后排查问题也能用。"""
+    from eliminated import read_eliminated
     from match_start import read_match_start
     from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image
     from player_name import PlayerNameReader
@@ -407,7 +408,8 @@ def check_images(paths, log):
     from summary_page import read_summary, show
     from xp_page import read_xp
 
-    cfg, xp_cfg, start_cfg = (load_config(n) for n in ("summary.json", "xp.json", "match_start.json"))
+    cfg, xp_cfg, start_cfg, elim_cfg = (load_config(n) for n in ("summary.json", "xp.json", "match_start.json",
+                                                                  "eliminated.json"))
     engine = create_engine(SMALL_CROP_PARAMS)
     detector = ScreenDetector(engine)
     if detector.missing:
@@ -432,6 +434,8 @@ def check_images(paths, log):
         elif screen == "match_start":
             r = read_match_start(engine, img, start_cfg)
             text = f"开局画面 模式 {r['mode']}，地图 {r['map']}"
+        elif screen == "eliminated":
+            text = f"淘汰画面 第 {read_eliminated(engine, img, elim_cfg)['placement']} 名"
         else:
             text = "大厅" if screen == "lobby" else "没认出是哪个画面"
         log(f"自检 {Path(path).name}：{text}" + "".join(f"\n    ⚠ {p}" for p in problems))
