@@ -28,8 +28,12 @@ AFTER_END_SECONDS = 60  # 结算以后这么久之内又看到自己的界面（
 class InMatchWatcher:
     VOTES = 2  # 同一个传奇认出这么多次才算数
 
-    def __init__(self, hud, post, log, name_cfg):
+    def __init__(self, hud, post, log, name_cfg, save=None, keep_all=lambda: False):
+        """save(截图, 文件名)：存一张截图（记录程序的截图文件夹）；keep_all()：现在是不是"保留全部截图"。
+        保留全部截图时（用源码运行时永远是），一局结束时存下最后一张自己的界面（hud_时间_last.png），用来校准对局中的区域。"""
         self.hud, self.post, self.log = hud, post, log
+        self.save, self.keep_all = save, keep_all
+        self.last_frame = None  # 保留全部截图时：最近一张右上角有变化的自己的界面（整张）
         self.name_roi = name_cfg["places"]["hud"]["roi"]
         self.max_names = name_cfg["max_hud_reads"]
         top = hud.cfg["top_right"]
@@ -51,6 +55,7 @@ class InMatchWatcher:
         self.mate_names = [[], []]  # 两名队友的名字那一条（最多 3 块）
         self.own_names = []  # 自己的名字那一条
         self.tops = deque(maxlen=self.keep)  # 右上角
+        self.last_frame = None
         self.done = False  # 这一局已经交给 PostMatch 了
         self.done_at = None
 
@@ -104,6 +109,8 @@ class InMatchWatcher:
         snip = self.hud.top_snip(frame)
         if self.hud.changed(snip, self.tops[-1] if self.tops else None):
             self.tops.append(snip)
+            if self.save is not None and self.keep_all():
+                self.last_frame = frame.copy()
 
     def stop(self, now):
         """停止记录时：还有没交的数据就交上去（PostMatch 会标"没看到结算画面"）。"""
@@ -141,10 +148,11 @@ class InMatchWatcher:
 
     def _read_top(self):
         """从最新的一块往回读，每一项取最后一次读到的值。"""
-        got = {}
+        got, shown = {}, set()
         for snip in reversed(self.tops):
-            values, _ = self.hud.read_top(snip)
+            values, _, seen = self.hud.read_top(snip)
             self.top_reads += 1
+            shown |= seen
             for name in TOP_FIELDS:
                 if name not in got and values[name] is not None:
                     got[name] = values[name]
@@ -152,7 +160,8 @@ class InMatchWatcher:
                 break
         if "squads_left" not in got and "rp_delta" not in got:
             return {name: None for name in TOP_FIELDS}  # 这几块不像右上角（分辨率、界面不对？），不当作 0
-        return {name: got.get(name, 0 if name in ZERO_IF_HIDDEN else None) for name in TOP_FIELDS}
+        # 没显示过的才算 0；显示着但没读出来的留空（宁可空着，也不写错的 0）
+        return {name: got.get(name, 0 if name in ZERO_IF_HIDDEN and name not in shown else None) for name in TOP_FIELDS}
 
     def _read_mates(self):
         out = []
@@ -188,8 +197,12 @@ class InMatchWatcher:
             "started": self.started, "ended": now, "end": end, "saw_start": self.saw_start,
             "own_dead": own_dead, "values": values, "mates": mates,
         })
+        if self.last_frame is not None:
+            name = f"hud_{now:%H%M%S}_last.png"
+            self.save(self.last_frame, name)
+            self.log(f"           保留全部截图：存下最后一张自己的界面（{name}），用来核对右上角、队友的区域")
         self.tops.clear()  # 读完就放掉，省内存
-        self.own_names, self.mate_names = [], [[], []]
+        self.own_names, self.mate_names, self.last_frame = [], [[], []], None
 
 
 _END_TEXT = {"eliminated": "淘汰画面", "champion": "冠军横幅", "summary": "总结页", "xp": "经验值页",

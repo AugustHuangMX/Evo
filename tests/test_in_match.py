@@ -73,7 +73,7 @@ def screenshot_checks(images):
         own = hud.own_legend(img)
         legends = [k and hud.legends.name(k) for k in hud.mate_legends(img)]
         names = [hud.read_name(hud.mate_name_snip(img, i), left) for i in range(2)]
-        values, _ = hud.read_top(hud.top_snip(img))
+        values, _, _ = hud.read_top(hud.top_snip(img))
         got = (own and hud.legends.name(own), hud.knocked(img), hud.spectating(img), legends, values)
         want = (legend, knocked, spectating, mates, top)
         want_names = NAMES.get(path, [None, None])
@@ -124,6 +124,9 @@ def pick(row, *keys):
 
 def collect_checks(images):
     out = {}
+    blank = images[MATES_DOWN].copy()
+    blank[95:123, 1510:1538] = 0  # 1080p 截图：右上角击杀那个数字涂黑（助攻、老板分照样显示）
+    images = {**images, "击杀涂黑": blank}
     ran_on = []  # 每次用识别引擎时屏幕上是哪一帧
     real_create = ocr.create_engine
 
@@ -154,7 +157,8 @@ def collect_checks(images):
     r["got"] = [pick(row, *keys) for row in r["rows"]]
     r["rp_at_death"] = readings_of(r["rows"][0]["match_id"], "rp_at_death") if r["rows"] else {}
     # 成盒后被复活，最后倒地时全队被淘汰
-    r = run("revived", [START, MATES_DOWN, MATES_DOWN, SPECTATING, SPECTATING, KNOCKED, KNOCKED, ELIMINATED])
+    r = run("revived", [START, MATES_DOWN, MATES_DOWN, SPECTATING, SPECTATING, KNOCKED, KNOCKED, ELIMINATED],
+            keep_all=True)
     r["got"] = [pick(row, "rp_delta", "rp_source", "damage") for row in r["rows"]]
     # 拿冠军
     r = run("champion", [START, PLAYING, PLAYING, PLAYING, CHAMP_MOMENT, CHAMP_MOMENT, CHAMP_SUMMARY, CHAMP_SUMMARY,
@@ -162,6 +166,9 @@ def collect_checks(images):
     r["got"] = [pick(row, "placement", "kills", "damage", "rp_delta", "rp_source", "needs_review", "review_note")
                 for row in r["rows"]]
     r["placement_sources"] = readings_of(r["rows"][0]["match_id"], "placement") if r["rows"] else {}
+    # 右上角那一行显示着、击杀那个数字没读出来（2026-10-18 第一局实战就遇到了）：留空，不当作 0
+    r = run("kills_unread", [START, "击杀涂黑", "击杀涂黑", ELIMINATED])
+    r["got"] = [pick(row, "kills", "assists", "participation", "damage") for row in r["rows"]]
     # 靶场：不记；中途停止记录：记下但标待确认
     run("range", [RANGE, RANGE, RANGE, LOBBY])
     r = run("stopped", [START, PLAYING, PLAYING, PLAYING])
@@ -322,11 +329,16 @@ def main():
             and first["rp_at_death"] == {"对局中": -59},
         f"成盒后被复活：继续记录，RP 照常记（{revived['got']}）":
             revived["got"] == [(-60, "对局中", 557)] and any("被复活了" in line for line in revived["log"]),
+        "保留全部截图时：一局结束存下最后一张自己的界面（用来校准对局中的区域）；平时不存":
+            any("存下最后一张自己的界面" in line for line in revived["log"])
+            and not any("存下最后一张自己的界面" in line for line in last["log"]),
         f"拿冠军：记第 1 名；总结页名次没读到也不用确认；RP 用对局中的（{champ['got']}）":
             champ["got"] == [(1, 6, 1733, -65, "对局中", 0, None)],
         f"  名次来源：冠军横幅（{champ['placement_sources']}）": champ["placement_sources"].get("冠军横幅") == 1,
         f"  队友：总结页和对局中按名字对上，补上传奇（{champ['mates']}）":
             len(champ["mates"]) == 1 and any(same_mates([m], [("right", NAMES.get("冠军总结页右边"), "地平线")]) for m in champ["mates"][0]),
+        f"右上角那一行显示着、击杀没读出来：击杀留空，不当作 0；助攻、老板分、伤害照常（{c['kills_unread']['got']}）":
+            c["kills_unread"]["got"] == [(None, 1, 0, 48)],
         "靶场（没有开局画面、也没有结算画面）：不记": c["range"]["rows"] == [],
         f"中途停止记录：记下，标待确认（{c['stopped']['got']}）":
             c["stopped"]["got"] == [(1, f"{NO_END_NOTE}；{HUD_ONLY_NOTE}", -65)],

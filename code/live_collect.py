@@ -21,7 +21,7 @@
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
 - 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留"待确认"的局要用的
 - 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅、淘汰画面、冠军横幅也存，
-  进入时一张、离开前最后一帧一张
+  进入时一张、离开前最后一帧一张；每局结束时还存最后一张自己的界面（hud_时间_last.png，校准对局中的区域用）
 - 设置页的"保留全部截图"开关：每局结束时看一眼，改了从下一局开始生效（见 collect 里的 round_end）
 每 5 分钟和记录结束时，日志里写一行 CPU、内存占用（方便实测对局中每 0.3 秒一张对 CPU 的影响）。
 
@@ -320,7 +320,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout, PlayerNameReader(engine, name_cfg))
     other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"),
                           load_config("eliminated.json"), post, run_dir, log, keep_all=keep)
-    in_match = InMatchWatcher(hud, post, log, name_cfg)
+    in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
+                              keep_all=lambda: other.keep_all)
     lobby = LobbyWatcher(LobbyReader(engine), post, conn, log)
     log(f"屏幕: {camera.width}x{camera.height}")
     log(f"数据库: {Path(db_path).resolve()}")

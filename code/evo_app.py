@@ -444,7 +444,7 @@ def check_images(paths, log):
         elif screen == "lobby":
             text = f"大厅 {describe(LobbyReader(engine).read(img))}"
         elif hud.own_legend(img) is not None:
-            values, _ = hud.read_top(hud.top_snip(img))
+            values, _, _ = hud.read_top(hud.top_snip(img))
             mates = [hud.legends.name(k) if k else "-" for k in hud.mate_legends(img)]
             top = "，".join(f"{TOP_LABELS[k]} {'-' if values[k] is None else values[k]}" for k in TOP_FIELDS)
             text = (f"对局中 自己 {hud.legends.name(hud.own_legend(img))}{'（倒地）' if hud.knocked(img) else ''}，"

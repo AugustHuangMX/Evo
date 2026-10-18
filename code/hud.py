@@ -28,6 +28,7 @@ from storage import name_key
 CONFIG_NAME = "hud.json"
 HUD_TEMPLATE_DIR = TEMPLATE_DIR / "hud"
 TOP_FIELDS = ("squads_left", "kills", "assists", "participation", "damage", "rp_delta")
+KP_ROW = ("kills", "assists", "participation")  # 右上角同一行：全是 0 时整行不显示
 TOP_LABELS = {"squads_left": "剩余小队", "kills": "击杀", "assists": "助攻", "participation": "老板分",
               "damage": "伤害", "rp_delta": "RP"}
 
@@ -178,29 +179,37 @@ class Hud:
         return best
 
     def read_top(self, snip):
-        """读一块右上角。返回 {项: 值}（没显示或读不出为 None）和 {项: 置信度}。"""
+        """读一块右上角。返回 {项: 值}（没显示或读不出为 None）、{项: 置信度}，和"显示着"的项（集合）。
+        显示着但读不出 ≠ 没显示：击杀、助攻、老板分那一行只要读出其中一个，三个都算显示着；伤害看图标在不在。
+        （2026-10-18 第一局实战：那一行显示着，助攻、老板分读对了，击杀那个数字没读出来——不能当成 0）"""
         top = self.cfg["top_right"]
         values, scores = {}, {}
         for name, spec in top["fields"].items():
             piece = snip.crop(spec["roi"], top["upscale"], pad=top["pad"])
             pattern = r"^([+-]?\d{1,3})(?:排位.*)?$" if name == "rp_delta" else r"^(\d{1,3})$"
             values[name], scores[name] = self._number(piece, pattern, spec["range"], top)
-        values["damage"], scores["damage"] = self._damage(snip, top)
-        return values, scores
+        values["damage"], scores["damage"], icon = self._damage(snip, top)
+        shown = {k for k in values if values[k] is not None}
+        if shown & set(KP_ROW):
+            shown |= set(KP_ROW)
+        if icon:
+            shown.add("damage")
+        return values, scores, shown
 
     def _damage(self, snip, top):
-        """伤害：先找到前面的图标，只读图标右边的数字。找不到图标 = 这一格没显示（还没造成伤害）。"""
+        """伤害：先找到前面的图标，只读图标右边的数字。返回 (值, 置信度, 图标在不在)。
+        找不到图标 = 这一格没显示（还没造成伤害）。"""
         d = top["damage"]
         cell = d["cell"]
         score, x, _ = best_match(snip.gray(cell), self.icon_template)
         if score < d["min_similarity"]:
-            return None, None
+            return None, None, False
         left = cell[0] + x + d["template_box"][2] + 1
         right = cell[0] + cell[2]
         if right - left < 6:
-            return None, None
+            return None, None, True
         piece = snip.crop([left, cell[1], right - left, cell[3]], top["upscale"], pad=top["pad"])
-        return self._number(piece, r"^(\d{1,5})$", d["range"], top)
+        return (*self._number(piece, r"^(\d{1,5})$", d["range"], top), True)
 
     def read_name(self, snip, left_range=None):
         return read_name(self.engine, snip, left_range)
@@ -253,7 +262,7 @@ def main():
         if own is None:
             print(f"{path.name}：认不出自己的传奇（不是自己的界面）{'，正在观战' if hud.spectating(img) else ''}")
             continue
-        values, _ = hud.read_top(hud.top_snip(img))
+        values, _, _ = hud.read_top(hud.top_snip(img))
         mates = hud.mate_legends(img)
         mate_text = []
         for i, key in enumerate(mates):
