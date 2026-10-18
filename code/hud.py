@@ -136,6 +136,10 @@ class Hud:
         score, _, _ = best_match(gray_crop(frame, s["roi"], self.base), self.spectate_template)
         return score >= s["min_similarity"]
 
+    def spectated_legend(self, frame):
+        """观战时被观战的人用的传奇（编号），认不出返回 None。只在 spectating() 为真时问。"""
+        return self.legends.identify(frame, self.cfg["spectate"]["player_box"])
+
     def mate_legends(self, frame):
         """两名队友的传奇（编号），每个位置一个，认不出（或没有这个队友）为 None。"""
         m = self.cfg["teammates"]
@@ -190,9 +194,15 @@ class Hud:
             pattern = r"^([+-]?\d{1,3})(?:排位.*)?$" if name == "rp_delta" else r"^(\d{1,3})$"
             values[name], scores[name] = self._number(piece, pattern, spec["range"], top)
         values["damage"], scores["damage"], icon = self._damage(snip, top)
-        shown = {k for k in values if values[k] is not None}
         kp = top["kp_icon"]
-        if shown & set(KP_ROW) or best_match(snip.gray(kp["area"]), self.kp_template)[0] >= kp["min_similarity"]:
+        kp_reads = [k for k in KP_ROW if values[k] is not None]
+        icon_seen = best_match(snip.gray(kp["area"]), self.kp_template)[0] >= kp["min_similarity"]
+        if not icon_seen and len(kp_reads) < 2:
+            # 图标不在、只读出一个数：多半是背后的画面（2026-10-18 实战：0/0/0 时这一行不显示，老板分那一格读出了"7"）
+            for k in KP_ROW:
+                values[k] = scores[k] = None
+        shown = {k for k in values if values[k] is not None}
+        if icon_seen or len(kp_reads) >= 2:  # 图标在（参照图万一在别的分辨率下认不出：读出两个以上也算）
             shown |= set(KP_ROW)
         if icon:
             shown.add("damage")

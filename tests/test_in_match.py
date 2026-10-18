@@ -24,13 +24,15 @@ from unittest import mock
 import fake_game
 from fake_game import MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
 
+import cv2
+
 import calibration
 import ocr
 import storage
 from hud import Hud
 from lobby import LobbyReader
 from ocr import SMALL_CROP_PARAMS, create_engine, load_config
-from post_match import HUD_ONLY_NOTE, NO_END_NOTE, SOURCE_HUD, SOURCE_SUMMARY, settle
+from post_match import HUD_ONLY_NOTE, NO_END_NOTE, REQUEUE_NOTE, SOURCE_HUD, SOURCE_SUMMARY, settle
 from screens import ScreenDetector
 from summary_page import is_champion
 
@@ -38,6 +40,7 @@ S = "samples/"
 PLAYING, KNOCKED, MATES_DOWN = S + "对局中.png", S + "玩家倒地队友依然存活.png", S + "玩家存活队友倒地.png"
 SPECTATING, CHAMP_MOMENT, CHAMP_SUMMARY = S + "玩家成盒（观战队友视角）.png", S + "捍卫者瞬间界面.png", S + "捍卫者结算界面.png"
 ELIMINATED, SUMMARY = S + "死亡瞬间.png", S + "vlcsnap-2026-10-16-18h26m12s173.png"
+SPECT_ENEMY = S + "vlcsnap-2026-10-16-18h27m31s652.png"  # 观战对手（侵蚀）：全队被淘汰以后
 START = "live/20261016_211452/match_start_213625_enter.png"  # 开局画面：排位、世界尽头
 LOBBY = "live/20261016_211452/lobby_211506_enter.png"  # 大厅：ImperialHzd，钻石 II 944
 RANGE = "legends/20261017_154752/full_27.jpg"  # 靶场
@@ -80,6 +83,15 @@ def screenshot_checks(images):
         if got != want or not all(name_ok(n, w) for n, w in zip(names, want_names)):
             wrong.append(f"{path}：应为 {want}，读到 {got}，队友名字 {names}")
     out["hud_wrong"] = wrong
+    # 0/0/0 时击杀那一行不显示：背后画面上的一个"7"不能当成老板分（2026-10-18 实战）
+    fake = images[PLAYING].copy()
+    cv2.putText(fake, "7", (1636, 119), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+    top = hud.cfg["top_right"]
+    snip = hud.top_snip(fake)
+    raw = hud._number(snip.crop(top["fields"]["participation"]["roi"], top["upscale"], pad=top["pad"]), r"^(\d{1,3})$",
+                      [0, 60], top)[0]
+    values, _, shown = hud.read_top(snip)
+    out["lone_kp"] = (raw, values["participation"], "participation" in shown)
     out["spectating"] = hud.own_legend(images[SPECTATING]) is None and hud.spectating(images[SPECTATING])
     out["not_spectating"] = [p for p in (PLAYING, KNOCKED, MATES_DOWN, CHAMP_MOMENT, LOBBY, START) if hud.spectating(images[p])]
     detector = ScreenDetector(engine)
@@ -163,6 +175,9 @@ def collect_checks(images):
     r = run("revived", [START, MATES_DOWN, MATES_DOWN, SPECTATING, SPECTATING, KNOCKED, KNOCKED, ELIMINATED],
             keep_all=True)
     r["got"] = [pick(row, "rp_delta", "rp_source", "damage") for row in r["rows"]]
+    # 自己是小队最后一个：成盒后观战的是对手（不是队友），然后直接进了下一局（2026-10-18 实战 #45）
+    r = run("last_one", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, SPECT_ENEMY, START, START])
+    r["got"] = [pick(row, *keys) for row in r["rows"]]
     # 拿冠军
     r = run("champion", [START, PLAYING, PLAYING, PLAYING, CHAMP_MOMENT, CHAMP_MOMENT, CHAMP_SUMMARY, CHAMP_SUMMARY,
                          CHAMP_SUMMARY])
@@ -284,7 +299,7 @@ def main():
     print("0.3.0 新流程：对局中、一局结束、冠军、大厅校准、各来源的优先级")
     try:
         paths = [PLAYING, KNOCKED, MATES_DOWN, SPECTATING, CHAMP_MOMENT, CHAMP_SUMMARY, ELIMINATED, SUMMARY, START,
-                 LOBBY, RANGE]
+                 LOBBY, RANGE, SPECT_ENEMY]
         images = {p: load(shot(p)) for p in paths}
     except MissingShots as e:
         print(f"  ⏭ 截图部分跳过：找不到截图 {e}（截图只在开发者电脑上，不在仓库里）")
@@ -332,6 +347,10 @@ def main():
         f"自己先成盒、队友后被淘汰：击杀、助攻、老板分、伤害用成盒前的，RP 不记（{first['got']}；成盒时的 RP {first['rp_at_death']}）":
             first["got"] == [(17, 0, 1, 0, 48, None, None, 0, HUD_ONLY_NOTE, "ranked", "希尔")]
             and first["rp_at_death"] == {"对局中": -59},
+        f"自己是最后一个（成盒后观战的是对手），然后直接进了下一局：名次、RP 用右上角最后的，传奇没丢，不用确认（{c['last_one']['got']}）":
+            c["last_one"]["got"] == [(18, 0, 0, 0, 0, -65, "对局中", 0, f"{HUD_ONLY_NOTE}；{REQUEUE_NOTE}", "ranked", "罗芭")],
+        f"0/0/0 时那一行不显示：背后画面上读出的单独一个数不算老板分（读到 {s['lone_kp'][0]}，记下 {s['lone_kp'][1]}）":
+            s["lone_kp"] == (7, None, False),
         f"成盒后被复活：继续记录，RP 照常记（{revived['got']}）":
             revived["got"] == [(-60, "对局中", 557)] and any("被复活了" in line for line in revived["log"]),
         "保留全部截图时：一局结束存下最后一张自己的界面（用来校准对局中的区域）；平时不存":

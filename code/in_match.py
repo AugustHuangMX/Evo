@@ -49,6 +49,7 @@ class InMatchWatcher:
         self.started = None  # 这一局第一次看到自己界面的时间
         self.state = None  # 存活 / 倒地 / 成盒
         self.dead_at = None  # 成盒的时间（被复活后清掉）
+        self.spectated = {}  # 成盒以后观战的人用的传奇（编号 → 次数）：是队友 = 队友还活着；不是 = 自己是最后一个
         self.votes, self.legend = {}, None
         self.mate_votes = [{}, {}]
         self.mates = [None, None]  # 两名队友的传奇（编号）
@@ -65,10 +66,10 @@ class InMatchWatcher:
 
     def update(self, screen, frame, now):
         if screen == "match_start":
-            # 新的一局：上一局已经交完；或者手上的数据不是这一局的（靶场里的、看到自己的界面已经很久）。
+            # 新的一局：上一局已经交完；或者手上的数据不是这一局的（靶场里的、自己已经成盒、看到自己的界面已经很久）。
             # 刚看到自己的界面、横幅又闪回来（同一局的跳伞阶段）不算
-            if self.done or (self.pending and (not self.saw_start or (now - self.started).total_seconds()
-                                                > SAME_MATCH_SECONDS)):
+            if self.done or (self.pending and (not self.saw_start or self.dead_at is not None
+                                                or (now - self.started).total_seconds() > SAME_MATCH_SECONDS)):
                 if self.pending:
                     self._finish(now, "next")
                 self._reset(saw_start=True)
@@ -85,9 +86,15 @@ class InMatchWatcher:
         self.checks += 1
         own = self.hud.own_legend(frame)
         if own is None:
-            if self.pending and self.dead_at is None and self.hud.spectating(frame):
-                self.dead_at = now
-                self._set_state(STATE_DEAD, now)
+            if self.pending and self.hud.spectating(frame):
+                if self.dead_at is None:
+                    self.dead_at = now
+                    self._set_state(STATE_DEAD, now)
+                    if self.save is not None and self.keep_all():  # 成盒那一刻：查"排名第 X"有没有认出来用
+                        self.save(frame, f"hud_{now:%H%M%S}_dead.png")
+                watched = self.hud.spectated_legend(frame)
+                if watched is not None:
+                    self.spectated[watched] = self.spectated.get(watched, 0) + 1
             return
         if self.done:  # 结算之后又看到了自己的界面：过了一会儿才算新的一局（没认出开局画面）
             if (now - self.done_at).total_seconds() <= AFTER_END_SECONDS:
@@ -99,7 +106,7 @@ class InMatchWatcher:
             self.log(f"[{now:%H:%M:%S}] 对局中：看到自己的界面，开始记录右上角")
         self.active = True
         if self.dead_at is not None:
-            self.dead_at = None
+            self.dead_at, self.spectated = None, {}
             self.log(f"[{now:%H:%M:%S}] 对局中：被复活了，继续记录")
         self._set_state(STATE_KNOCKED if self.hud.knocked(frame) else STATE_ALIVE, now)
         self._vote_own(own, now)
@@ -163,6 +170,12 @@ class InMatchWatcher:
         # 没显示过的才算 0；显示着但没读出来的留空（宁可空着，也不写错的 0）
         return {name: got.get(name, 0 if name in ZERO_IF_HIDDEN and name not in shown else None) for name in TOP_FIELDS}
 
+    def _was_last(self):
+        """自己成盒以后，观战的都不是队友（认出了被观战的人，队友的传奇也认出来了）：自己是小队最后一个被淘汰的。
+        队友还活着时，游戏默认观战队友；全队被淘汰后观战的是对手。认不出来时当作不是（保守：名次、RP 不用右上角的）。"""
+        mates = {k for votes in self.mate_votes for k in votes}  # 队友位置上认出过的传奇（认出一次也算，宁可当作队友）
+        return bool(self.spectated) and bool(mates) and not (set(self.spectated) & mates)
+
     def _read_mates(self):
         out = []
         left = self.hud.cfg["teammates"]["name_left"]
@@ -189,13 +202,20 @@ class InMatchWatcher:
         values = self._read_top()
         mates = self._read_mates()
         own_dead = self.dead_at is not None
+        last_one = own_dead and self._was_last()
+        if own_dead and end == "next":
+            end = "requeue"  # 成盒以后直接进了下一局（队长重新匹配）：这一局已经打完了，不是掉线
         top = "，".join(f"{TOP_LABELS[k]} {'-' if values[k] is None else values[k]}" for k in TOP_FIELDS)
         mate_text = "、".join(f"{m['name'] or '名字没读到'}（{m['legend'] or '传奇认不出'}）" for m in mates) or "没认出"
         self.log(f"[{now:%H:%M:%S}] 对局结束（{_END_TEXT.get(end, end)}）：右上角最后读到 {top}；"
                  f"自己最后是{self.state or '-'}；队友 {mate_text}")
+        if last_one:
+            watched = "、".join(self.hud.legends.name(k) for k in self.spectated)
+            self.log(f"           成盒以后观战的是 {watched}，不是队友：自己是小队最后一个被淘汰的，右上角最后的名次、RP 就是最终的")
         self.post.on_hud_final({
             "started": self.started, "ended": now, "end": end, "saw_start": self.saw_start,
-            "own_dead": own_dead, "values": values, "mates": mates,
+            "own_dead": own_dead and not last_one, "values": values, "mates": mates,
+            "legend": self.hud.legends.name(self.legend) if self.legend else None,
         })
         if self.last_frame is not None:
             name = f"hud_{now:%H%M%S}_last.png"
@@ -206,4 +226,4 @@ class InMatchWatcher:
 
 
 _END_TEXT = {"eliminated": "淘汰画面", "champion": "冠军横幅", "summary": "总结页", "xp": "经验值页",
-             "lobby": "回到大厅", "next": "下一局开局", "stop": "停止记录"}
+             "lobby": "回到大厅", "next": "下一局开局", "requeue": "成盒后直接进了下一局", "stop": "停止记录"}

@@ -50,8 +50,9 @@ OLD_XP_ONLY_NOTE = "没有总结页（第 2 名、冠军时没有这一页）：
 HUD_ONLY_NOTE = "没有总结页：击杀、助攻、伤害来自对局中右上角；击倒、生存时间、急救、重生缺失"
 ELIM_ONLY_NOTE = "只看到淘汰画面（没进总结页和经验值页）：只有名次，击杀、伤害、RP、段位缺失"
 LEFT_EARLY_NOTE = "提前回了大厅（没看到结算画面）：名次、RP 等下次回大厅时校准"
+REQUEUE_NOTE = "成盒后直接进了下一局（队长重新匹配），没看到结算画面"
 NO_SUMMARY_NOTES = (XP_ONLY_NOTE, OLD_XP_ONLY_NOTE, HUD_ONLY_NOTE, ELIM_ONLY_NOTE)
-INFO_NOTES = NO_SUMMARY_NOTES + (LEFT_EARLY_NOTE,)
+INFO_NOTES = NO_SUMMARY_NOTES + (LEFT_EARLY_NOTE, REQUEUE_NOTE)
 COUNTED_KILLS_NOTES = (XP_ONLY_NOTE, OLD_XP_ONLY_NOTE)  # 击杀是"计分次数"的局（总览页的场均击杀不算它们）
 NO_END_NOTE = "没看到结算画面（可能队长直接重新匹配、掉线、游戏崩溃或中途停止记录），请核对"
 
@@ -207,7 +208,9 @@ def settle(conn, match_id, log=print):
     end = got.get("end_screen", {}).get(SOURCE_HUD)
     if end == "lobby":
         info.append(LEFT_EARLY_NOTE)
-    elif end in ("stop", "next"):
+    elif end == "requeue":
+        info.append(REQUEUE_NOTE)
+    elif end in ("stop", "next"):  # 还活着就没了下文：掉线、崩溃、停止记录
         notes.append(NO_END_NOTE)
 
     all_notes = notes + problems
@@ -332,6 +335,8 @@ class PostMatch:
             self.finish()  # 这些数据比上一局的结算画面还晚：是新的一局
         self.hud = hud
         if self.match_id is not None:
+            if hud.get("legend") and storage.get_match(self.conn, self.match_id)["legend"] is None:
+                storage.update_match(self.conn, self.match_id, {"legend": hud["legend"]})
             self._save_hud(self.match_id)
             self._merge_mates(self.match_id)
             self._settle(self.match_id)
@@ -344,6 +349,8 @@ class PostMatch:
         if player_name is not None:
             self.on_player_name(player_name, when, "总结页")
         fields = dict(self.info)
+        if self._legend():
+            fields["legend"] = self._legend()
         if self.player_name is not None:
             fields["player_name"] = self.player_name
         if fields:
@@ -499,9 +506,14 @@ class PostMatch:
             "ended_at": f"{when:%Y-%m-%d %H:%M:%S}",
             "mode": self.info.get("mode"),
             "map": self.info.get("map"),
-            "legend": self.info.get("legend"),
+            "legend": self._legend(),
             "player_name": self.player_name,
         }
+
+    def _legend(self):
+        """这一局自己的传奇：对局中认出的；对局中的数据交上来时一起带着，免得下一局开局时被清掉
+        （2026-10-18 实战：成盒后直接进下一局的那局，传奇认出来了却没记上）。"""
+        return self.info.get("legend") or (self.hud or {}).get("legend")
 
     def _save_others(self, match_id):
         """没有总结页的局：把淘汰画面、冠军横幅、对局中的读数和队友都记进这一局。"""
