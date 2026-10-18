@@ -90,7 +90,7 @@
         {% else %}<span class="muted"{% if m.player_id %} title="ID {{ m.player_id }}"{% endif %}>名字没读到</span>{% endif %}
         <span class="mate-extra">急救 {{ m.revives }} · 重生 {{ m.respawns }}</span>
       </td>
-      <td class="muted">—</td>
+      <td class="{{ 'muted' if m.legend == '—' }}">{{ m.legend }}</td>
       <td class="right num">{{ m.kda }}</td>
       <td class="right num">{{ m.damage }}</td>
       <td class="right num">{{ m.survival }}</td>
@@ -99,7 +99,7 @@
     {% else %}
     <tr class="mate-row {{ 'review' if r.needs_review }}">
       <td class="first"><span class="branch end" aria-hidden="true"></span></td>
-      <td colspan="8" class="mate-none">{{ '这局没有总结页（第 2 名、冠军时没有这一页），读不到队友' if r.xp_only else '没有队友的数据' }}</td>
+      <td colspan="8" class="mate-none">{{ '这局没有总结页，对局中也没认出队友' if r.no_summary else '没有队友的数据' }}</td>
     </tr>
     {% endfor %}
     {% if not r.needs_review %}
@@ -128,7 +128,7 @@
             <div class="evidence-empty">没有截图：识别完、确认过的局不保留截图</div>
             {% endif %}
             {% if r.review_note %}<div class="note">{{ r.review_note }}</div>{% endif %}
-            <div class="note">玩家名 {{ r.player_name }} · 小队总击杀 {{ r.squad_kills }} · 急救 {{ r.revives }} · 重生 {{ r.respawns }}</div>
+            <div class="note">玩家名 {{ r.player_name }} · 老板分 {{ r.participation }} · 小队总击杀 {{ r.squad_kills }} · 急救 {{ r.revives }} · 重生 {{ r.respawns }}{% if r.rp_source %} · RP 来自{{ r.rp_source }}{% endif %}</div>
           </div>
 
           <div class="edit">

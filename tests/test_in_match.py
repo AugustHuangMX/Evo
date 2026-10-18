@@ -239,6 +239,35 @@ def rule_checks():
     return out
 
 
+def panel_checks():
+    """战绩页：点开一局显示队友的传奇；详情里有老板分、RP 从哪来；修改表单能改老板分。"""
+    import panel_app
+    path = fake_game._TEMP / "panel_0_3.db"
+    conn = storage.connect(path)
+    match_id = storage.insert_match(conn, {"ended_at": "2026-10-18 21:00:00", "placement": 3, "kills": 2, "assists": 1,
+                                           "participation": 4, "damage": 800, "rp_delta": 25, "rp_source": "对局中",
+                                           "review_note": HUD_ONLY_NOTE})
+    storage.save_teammates(conn, match_id, [{"slot": "hud1", "name": "MateA", "legend": "地平线"},
+                                            {"slot": "hud2", "name": "MateB", "legend": None}])
+    conn.close()
+    panel_app.app.config.update(DB=path, TESTING=True)
+    client = panel_app.app.test_client()
+    opened = client.get(f"/matches?open={match_id}").get_data(as_text=True)
+    detail = client.get(f"/matches?open={match_id}&detail=1").get_data(as_text=True)
+    token = panel_app.app.config["TOKEN"]
+    form = {"token": token, "placement": "3", "kills": "2", "assists": "1", "knockdowns": "", "participation": "6",
+            "damage": "800", "rp_delta": "25"}
+    client.post(f"/matches/{match_id}/update", data=form)
+    conn = storage.connect(path)
+    saved = storage.get_match(conn, match_id)["participation"]
+    conn.close()
+    return {
+        "战绩页：点开一局，队友那一行显示对局中认出的传奇": ">地平线<" in opened and "MateB" in opened,
+        "详情：有老板分、RP 从哪来（对局中右上角）": "老板分 4" in detail and "RP 来自对局中右上角" in detail,
+        "修改表单：能改老板分": 'name="participation"' in detail and saved == 6,
+    }
+
+
 def main():
     print("0.3.0 新流程：对局中、一局结束、冠军、大厅校准、各来源的优先级")
     try:
@@ -250,6 +279,7 @@ def main():
         images = None
     r = rule_checks()
     checks = {
+        **panel_checks(),
         f"大厅校准：只缺一局的 RP，用差值补上（{r['fill']}）": r["fill"] == (-45, "大厅校准"),
         f"大厅校准：都有 RP 但对不上，标待确认（{r['mismatch_note']}）": r["mismatch"] == (1,) and "大厅校准" in r["mismatch_note"],
         "大厅校准：对上了，不标": r["agree"] == (0,),

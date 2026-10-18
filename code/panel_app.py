@@ -26,7 +26,7 @@ import screenshots
 import storage
 import update_check
 from paths import CAPTURES_DIR, PANEL_DIR, data_absolute
-from post_match import XP_ONLY_NOTE
+from post_match import COUNTED_KILLS_NOTES, NO_SUMMARY_NOTES
 
 PER_PAGE = 20
 # 顶部导航：(页面, 显示名)。顺序也决定切换页面时，选中标签的底色从哪边滑过来
@@ -38,6 +38,7 @@ EDITABLE = {
     "kills": ("击杀", 0, 99),
     "assists": ("助攻", 0, 99),
     "knockdowns": ("击倒", 0, 99),
+    "participation": ("老板分", 0, 99),
     "damage": ("伤害", 0, 99999),
     "rp_delta": ("RP 变化", -999, 999),
 }
@@ -49,7 +50,12 @@ REVIEW_FIELDS = {
     "伤害": ["damage"],
     "击杀数": ["kills"],  # "击杀数 X 大于小队总击杀 Y"
     "RP": ["rp_delta"],
+    "对局中读到的击杀": ["kills"],  # 对局中右上角比总结页多（见 post_match.settle）
+    "对局中读到的助攻": ["assists"],
+    "对局中读到的伤害": ["damage"],
+    "大厅校准": ["rp_delta"],  # 前后两次大厅的总分和各局 RP 对不上（见 calibration.py）
 }
+RP_SOURCES = {"经验值页": "经验值页", "对局中": "对局中右上角", "大厅校准": "大厅校准"}  # 每局 RP 从哪来
 
 # ---- 总览页 ----
 TIER_BADGE = {"菜鸟": ("R", "rookie"), "青铜": ("B", "bronze"), "白银": ("S", "silver"), "黄金": ("G", "gold"),
@@ -258,6 +264,7 @@ def view(row):
         "title": " · ".join(x for x in (row["legend"], row["map"]) if x) or "传奇、地图未识别",
         "subtitle": " · ".join(x for x in (MODES.get(row["mode"]), time_text(row["ended_at"])) if x),
         "kda": " / ".join(dash(row[k]) for k in ("kills", "assists", "knockdowns")),
+        "participation": dash(row["participation"]),
         "damage": dash(row["damage"], "{:,}"),
         "survival": storage.mmss(row["survival_time"]).replace("-", "—"),
         "revives": dash(row["revives"]),
@@ -265,9 +272,10 @@ def view(row):
         "squad_kills": dash(row["squad_kills"]),
         "rp": "—" if rp is None else signed(rp),
         "rp_class": "none" if rp is None else ("good" if rp >= 0 else "bad"),
+        "rp_source": RP_SOURCES.get(row["rp_source"], row["rp_source"]) if rp is not None else None,
         "needs_review": bool(row["needs_review"]),
         "review_note": row["review_note"],
-        "xp_only": XP_ONLY_NOTE in (row["review_note"] or ""),  # 没有总结页的局：也就读不到队友
+        "no_summary": any(n in (row["review_note"] or "") for n in NO_SUMMARY_NOTES),  # 没有总结页的局：队友只能靠对局中认
         "has_evidence": bool(row["evidence_path"]),
         "evidence_recorded": screenshots.recorded(row["evidence_path"]),  # 记录程序存的截图：确认、删除这一局时会删掉
         "form": {name: "" if row[name] is None else row[name] for name in EDITABLE},
@@ -280,6 +288,7 @@ def mate_view(mate):
     return {
         "name": mate["name"],
         "player_id": mate["player_id"],
+        "legend": mate["legend"] or "—",  # 对局中左下角认的（0.3.0 以前的局没有）
         "kda": " / ".join(dash(mate[k]) for k in ("kills", "assists", "knockdowns")),
         "damage": dash(mate["damage"], "{:,}"),
         "survival": storage.mmss(mate["survival_time"]).replace("-", "—"),
@@ -295,13 +304,25 @@ def rank_score(row):
     return ranks.score(row["rank_tier"], row["rank_division"], row["rank_progress"])
 
 
-def rank_card(rows):
-    """最近一次读到的段位：段位名和段内的排位点数。不显示分母、进度条和"距下一段还差"
-    （2026-10-17 用户决定：游戏里每段要多少分不一样，有的还没核实）。"""
+def latest_rank(rows, lobby):
+    """最近一次读到的段位：经验值页（每局结束后）和大厅读数里更新的那个。时间一样时以大厅为准
+    （2026-10-18 用户决定：总分以大厅为准）。返回 (段位, 段, 段内进度, 时间, 来源)，都没有返回 None。"""
     row = next((r for r in reversed(rows) if rank_score(r) is not None), None)
-    if row is None:
+    last = lobby[-1] if lobby else None
+    if last is not None and (row is None or (last["read_at"] or "") >= (row["ended_at"] or "")):
+        return last["rank_tier"], last["rank_division"], last["rank_progress"], last["read_at"], "大厅"
+    if row is not None:
+        return row["rank_tier"], row["rank_division"], row["rank_progress"], row["ended_at"], None
+    return None
+
+
+def rank_card(rows, lobby=()):
+    """最近一次读到的段位（见 latest_rank）：段位名和段内的排位点数。不显示分母、进度条和"距下一段还差"
+    （2026-10-17 用户决定：游戏里每段要多少分不一样，有的还没核实）。"""
+    found = latest_rank(rows, lobby)
+    if found is None:
         return None
-    tier, division = row["rank_tier"], row["rank_division"]
+    tier, division, progress, when, source = found
     letter, css = TIER_BADGE.get(tier, ("?", "unknown"))
     whole = not ranks.has_divisions(tier)  # 大师、猎杀者：只写段位名
     return {
@@ -311,17 +332,22 @@ def rank_card(rows):
         "division": None if whole else division,
         "tier_class": css,
         "name": ranks.rank_name(tier, division),
-        "progress": row["rank_progress"],
-        "as_of": time_text(row["ended_at"]),
+        "progress": progress,
+        "as_of": time_text(when) + (f" · {source}" if source else ""),
     }
 
 
-def rp_chart(rows):
+def rp_chart(rows, lobby=()):
     """RP 走势图：每局结束后的段位换算成分数，连成折线；范围内的段位分界线画成虚线。
-    有段位的局少于 2 局时返回 None。"""
-    points = [s for s in (rank_score(r) for r in rows) if s is not None]
+    最后一次大厅读数比最后一局晚、分数又不一样时，接在最后（总分以大厅为准）。有段位的局少于 2 局时返回 None。"""
+    scored = [r for r in rows if rank_score(r) is not None]
+    points = [rank_score(r) for r in scored]
     if len(points) < 2:
         return None
+    count = len(points)
+    if lobby and lobby[-1]["score"] is not None and (lobby[-1]["read_at"] or "") > (scored[-1]["ended_at"] or "") \
+            and lobby[-1]["score"] != points[-1]:
+        points.append(lobby[-1]["score"])
     low, high = min(points), max(points)
     bounds = ranks.boundaries()
     target = next((b for b, _ in bounds if b > points[-1]), None)  # 下一段的起点（已经是最高段时没有）
@@ -344,14 +370,15 @@ def rp_chart(rows):
         "area": f"0,{CHART_H} {line} {CHART_W},{CHART_H}",
         "lines": lines,
         "end_top": round(y(points[-1]) / CHART_H * 100, 1),
-        "count": len(points),
+        "count": count,  # 有段位的局数（"N 局前"按局数算；接在最后的大厅读数在最后一局之后，不多算一局）
     }
 
 
 def stat_cards(rows):
     placements = [r["placement"] for r in rows if r["placement"] is not None]
-    # 只有经验值页的局，击杀是"计分次数"（可能比实际少），不算进场均击杀
-    kills = [r["kills"] for r in rows if r["kills"] is not None and XP_ONLY_NOTE not in (r["review_note"] or "")]
+    # 击杀来自经验值页的局（没有总结页，也没读到对局中右上角），击杀是"计分次数"（可能比实际少），不算进场均击杀
+    kills = [r["kills"] for r in rows if r["kills"] is not None
+             and not any(n in (r["review_note"] or "") for n in COUNTED_KILLS_NOTES)]
     damages = [r["damage"] for r in rows if r["damage"] is not None]
 
     def avg(values, fmt):
@@ -425,13 +452,14 @@ def overview():
     in_range = rows[-30:] if range_key == "30" else rows
     since = f"{day_start(datetime.now()):%Y-%m-%d %H:%M:%S}"
     today = [r for r in rows if (r["ended_at"] or "") >= since]
+    lobby = storage.lobby_readings(db(), names)  # 每次回大厅读到的段位（总分以它为准）
 
     return render_template(
         "overview.html",
         range_key=range_key,
         ranges=RANGES,
-        rank=rank_card(rows),
-        chart=rp_chart(in_range),
+        rank=rank_card(rows, lobby),
+        chart=rp_chart(in_range, lobby),
         range_rp=rp_sum(in_range),
         today_rp=rp_sum(today),
         today_games=len(today),
