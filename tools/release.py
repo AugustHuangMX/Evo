@@ -7,7 +7,7 @@
 4. 用打包好的 Evo.exe 自检一张总结页截图，确认识别模型、参照图都打进去了（截图只在开发者电脑上，没有就跳过）
 5. 压缩：最外层是一个 Evo 文件夹，附上《使用说明（先看这个）.txt》（原文在 release/使用说明.txt）
 6. 算 SHA-256：写在官网上，下载的人可以核对文件有没有被改过
-7. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新日志.md 里这一版；
+7. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt；
    还写上压缩包的地址、SHA-256 和大小，Evo 里的一键更新（updater.py）按它下载、核对
 
 版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己的 %LOCALAPPDATA%\\Evo。
@@ -25,7 +25,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -41,7 +40,7 @@ DIST = ROOT / "dist"
 APP = DIST / "Evo"
 README = ROOT / "release" / "使用说明.txt"
 README_NAME = "使用说明（先看这个）.txt"
-NOTES = ROOT / "release" / "更新日志.md"  # 所有版本的更新内容，开发者直接在这里改（2026-10-19 用户要求）
+NOTES = ROOT / "release" / "更新内容.txt"
 DOWNLOAD_PAGE = "https://evotracker.cn/#download"
 DOWNLOAD_BASE = "https://dl.evotracker.cn"  # 压缩包传到 R2 后的地址（publish.py 也是这个）
 CHECK_IMAGE = ROOT / "captures" / "live" / "20261016_211452" / "05_222749.png"
@@ -115,20 +114,11 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def read_notes(version, path=None):
-    """release/更新日志.md 里这一版的更新内容："## 0.3.3（日期）"下面用"- "开头的每一行。没有这一版就停下。"""
-    path = path or NOTES
-    for section in re.split(r"^## ", path.read_text(encoding="utf-8"), flags=re.M)[1:]:
-        head, _, body = section.partition("\n")
-        if re.match(rf"{re.escape(version)}(?![\d.])", head.strip()):
-            return [line[2:].strip() for line in body.splitlines() if line.startswith("- ") and line[2:].strip()]
-    raise Stop(f"{path.name} 里没有 {version} 这一版：先在最上面加上（标题 ## {version}（日期），每条一行，用\"- \"开头）")
-
-
 def write_latest(today, name, digest, size):
-    """写 dist/latest.json（格式见 update_check.py）。更新内容：release/更新日志.md 里这一版（read_notes）。
+    """写 dist/latest.json（格式见 update_check.py）。更新内容：release/更新内容.txt 里每行一条，# 开头的行不算。
     download 是一键更新用的（updater.py）：Evo 从这个地址下载压缩包，核对 SHA-256 和大小。"""
-    notes = read_notes(APP_VERSION)
+    notes = [line.strip() for line in NOTES.read_text(encoding="utf-8").splitlines()
+             if line.strip() and not line.strip().startswith("#")] if NOTES.is_file() else []
     if len(notes) > 10 or any(len(n) > 200 for n in notes):
         raise Stop(f"{NOTES.name} 最多 10 条、每条不超过 200 字（Evo 只显示这么多）")
     latest = {"version": APP_VERSION, "date": today, "page": DOWNLOAD_PAGE, "notes": notes,

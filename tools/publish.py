@@ -1,4 +1,4 @@
-"""发布新版本。先改 storage.py 的 APP_VERSION，在 release/更新日志.md 最上面加这一版，提交，然后：
+"""发布新版本。先改 storage.py 的 APP_VERSION 和 release/更新内容.txt 并提交，然后：
 
     python tools/publish.py --dry-run   试一遍：准备压缩包、预览官网要改的地方和更新日志的原文，不上传任何东西
     python tools/publish.py             第一段：确认更新日志的原文后，上传压缩包和官网，逐项核对
@@ -18,7 +18,7 @@
   2. 上传压缩包到 R2 存储桶（dl.evotracker.cn）；线上已经是同一个文件就跳过
   3. 从 dl.evotracker.cn 下载回来，核对 SHA-256
   4. 改官网：site/index.html 的下载链接、版本号、大小、SHA-256；
-     site/changelog.html 最上面加这一版（内容来自 latest.json，也就是 release/更新日志.md 里这一版），"最新"标签挪过来
+     site/changelog.html 最上面加这一版（内容来自 latest.json，也就是 release/更新内容.txt），"最新"标签挪过来
   5. 上传官网（Cloudflare Pages）；线上已经是新版本就跳过
   6. 打开 evotracker.cn，确认下载链接和 SHA-256 已经是新的，更新日志页有这一版
 第二段（--live）：
@@ -248,7 +248,7 @@ def changelog_entry(latest):
     day_text = f"{day.year} 年 {day.month} 月 {day.day} 日"
     groups = changelog_groups(latest["notes"])
     if not groups:
-        raise Stop("latest.json 里没有更新内容（来自 release/更新日志.md），更新日志页没法写这一版")
+        raise Stop("latest.json 里没有更新内容（来自 release/更新内容.txt），更新日志页没法写这一版")
     text = [f"{version} · {day_text} · 最新 · 预览版"]
     html = [
         f'      <li class="release release-latest" id="v{version}">',
