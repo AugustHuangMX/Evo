@@ -214,6 +214,11 @@
       <li class="pr-4"><div class="setting-name">开源</div><div class="setting-desc">所有代码公开，任何人都可以检查</div></li>
     </ul>
     <a class="source-link" href="{{ source_url }}" target="_blank" rel="noopener noreferrer">查看源代码 ↗</a>
+    {# 意见反馈：和"查看源代码"一样交给系统浏览器打开（pywebview 默认这样处理 _blank），Evo 自己不联网 #}
+    <div class="feedback">
+      <a class="btn feedback-btn" href="{{ feedback_url }}" target="_blank" rel="noopener noreferrer">意见反馈 ↗</a>
+      <div class="setting-desc">遇到问题、想提建议，加 QQ 群 <span class="num">{{ feedback_group }}</span></div>
+    </div>
   </aside>
 </div>
 {% endblock %}

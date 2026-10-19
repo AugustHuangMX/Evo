@@ -411,6 +411,11 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .btn[aria-busy="true"] { cursor: progress; }
 .source-link { color: var(--p3-bg); }
 .source-link:hover { text-decoration: underline; }
+/* "关于 Evo"底部的"意见反馈"：占满卡片宽度，下面一行写群号 */
+.feedback { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--row-border); }
+.feedback-btn { width: 100%; justify-content: center; min-height: 40px; }
+.feedback-btn:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.feedback .setting-desc { margin-top: 8px; text-align: center; text-wrap: balance; }
 
 /* ---------- 动效 ----------
    只用 opacity、transform、clip-path，都很便宜；面板窗口只在你打开它时运行，不影响游戏。

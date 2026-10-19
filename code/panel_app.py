@@ -70,6 +70,8 @@ CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片�
 
 # ---- 设置页 ----
 SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
+FEEDBACK_URL = "https://qm.qq.com/q/6L2kTbmCWc"  # "意见反馈"：加 QQ 群（和 README、隐私政策里的是同一个群）
+FEEDBACK_GROUP = "1128519951"
 
 # ---- 多账号 ----
 SIMILAR_NAME = 0.6  # 新名字和某个账号的名字这么像，弹窗里提示"名字很像"（可能是识别误差，也可能是改名）
@@ -627,6 +629,8 @@ def settings():
         clean_size=size_text(clean_bytes),
         version=storage.APP_VERSION,
         source_url=SOURCE_URL,
+        feedback_url=FEEDBACK_URL,
+        feedback_group=FEEDBACK_GROUP,
         update_auto=app_settings.get("update_auto") is True,
         last_check=app_settings.get("update_last_check"),
         newest=update_check.known_newer(),
