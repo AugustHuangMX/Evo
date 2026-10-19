@@ -351,9 +351,9 @@ def apply_update(target, wait_pid, from_version):
         result["error"] = str(e) or type(e).__name__
         log(f"没装上：\n{traceback.format_exc()}")
     _finish(work, result)
+    log("重新打开 Evo")  # 先写：新打开的 Evo 会读完、删掉这份记录，打开以后再写就可能留下一个删不掉的新文件
     try:
         spawn([str(target / "Evo.exe")], target)
-        log("已重新打开 Evo")
     except OSError as e:
         log(f"重新打开 Evo 失败：{e}")
         _message_box(f"Evo {'已更新到 ' + APP_VERSION if result['ok'] else '更新没装上'}，但没能自动打开。请双击 {target / 'Evo.exe'} 打开。")

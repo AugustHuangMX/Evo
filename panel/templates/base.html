@@ -246,6 +246,14 @@
     });
   });
 
+  // 安装并重新启动：先让窗口告诉 Windows"允许接下来打开的程序到最前面"，装好后新窗口才不会被别的程序挡住（app_window.py）
+  document.querySelectorAll("form[data-allow-foreground]").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var api = window.pywebview && window.pywebview.api;
+      if (api && api.allow_foreground) api.allow_foreground();
+    });
+  });
+
   // 一键更新正在下载 / 解压：每半秒问一次进度，更新进度条；阶段变了（下载好了、失败了）就重新打开这一页
   (function () {
     var box = document.querySelector("[data-update-poll]");

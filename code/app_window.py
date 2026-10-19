@@ -99,6 +99,11 @@ class WindowApi:
     def close(self):
         self._window.destroy()
 
+    def allow_foreground(self):
+        """点"安装并重新启动"时调用（base.html）：允许接下来新打开的 Evo 把窗口放到最前、拿到焦点。
+        Windows 只让刚被点过的程序这样做，新 Evo 是后台的安装程序打开的，没有这个许可窗口会被别的程序挡住。"""
+        _user32.AllowSetForegroundWindow(-1)  # ASFW_ANY：到用户下一次按键、点鼠标为止
+
     def _bring_to_front(self):
         def go():
             form = self._form()
@@ -141,7 +146,13 @@ def run(url, focus=None):
         frameless=True, easy_drag=False, background_color=BACKGROUND,
     )
     api._window = window
-    window.events.shown += lambda: _style_window(window)
+
+    def shown():
+        _style_window(window)
+        # 打开时调到最前：一键更新后新版本自己打开，不调的话窗口会被刚才在用的程序挡住，像是没打开
+        api._bring_to_front()
+
+    window.events.shown += shown
     if focus is not None:
         threading.Thread(target=_watch_focus, args=(api, focus), name="focus", daemon=True).start()
     webview.start(gui="edgechromium", private_mode=False, storage_path=str(DATA_DIR / "webview"),

@@ -32,7 +32,7 @@
 
 {% macro install_button(job, next, describe_id) -%}
 {# Apex 开着时不能装：按钮变灰，原因写在旁边（describe_id 指向那段文字），不只放在悬停提示里 #}
-<form method="post" action="{{ url_for('install_update') }}" data-busy="正在准备安装…">
+<form method="post" action="{{ url_for('install_update') }}" data-busy="正在准备安装…" data-allow-foreground>
   {{ hidden(next) }}
   <button type="submit" class="btn btn-primary"
           {% if job.blocked %}disabled aria-describedby="{{ describe_id }}"{% endif %}>安装并重新启动</button>
