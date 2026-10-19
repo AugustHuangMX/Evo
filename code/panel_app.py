@@ -11,6 +11,7 @@ import ctypes
 import io
 import json
 import math
+import mimetypes
 import os
 import secrets
 import threading
@@ -30,6 +31,12 @@ import update_check
 import updater
 from paths import CAPTURES_DIR, PANEL_DIR, data_absolute
 from post_match import COUNTED_KILLS_NOTES, NO_SUMMARY_NOTES
+
+# 面板文件的类型写死：Flask 按 Windows 注册表判断文件类型，有的软件会把 .css 改成 text/plain，
+# WebView2 和浏览器就不用这个样式表，面板只剩一堆没排好的文字
+for _type, _ext in (("text/css", ".css"), ("text/javascript", ".js"), ("font/woff2", ".woff2"),
+                    ("image/webp", ".webp"), ("image/png", ".png")):
+    mimetypes.add_type(_type, _ext)
 
 PER_PAGE = 20
 # 顶部导航：(页面, 显示名)。顺序也决定切换页面时，选中标签的底色从哪边滑过来

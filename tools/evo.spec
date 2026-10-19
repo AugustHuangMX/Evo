@@ -12,6 +12,8 @@ datas = [
     (os.path.join(ROOT, "panel", "templates"), "panel/templates"),  # 面板网页
     (os.path.join(ROOT, "panel", "static"), "panel/static"),        # 面板样式、字体
     (os.path.join(ROOT, "assets"), "assets"),                    # 图标
+    # 微软的 WebView2 安装程序（build.py 先下载、核对签名；电脑上没有 WebView2 时用，见 webview2.py）
+    (os.path.join(ROOT, "build", "webview2", "MicrosoftEdgeWebview2Setup.exe"), "webview2"),
 ]
 datas += collect_data_files("rapidocr")      # 识别模型（.onnx）和识别引擎的配置（.yaml）
 datas += copy_metadata("pystray")            # pystray 的许可证信息（LGPL 要求）

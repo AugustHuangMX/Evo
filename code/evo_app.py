@@ -47,6 +47,7 @@ from PIL import Image, ImageDraw, ImageOps  # noqa: E402
 
 import app_settings  # noqa: E402
 import storage  # noqa: E402
+import webview2  # noqa: E402
 from game_detect import GAME_PROCESSES, game_running  # noqa: E402
 from icons import base_icon  # noqa: E402
 from paths import ASSETS_DIR, CAPTURES_DIR, DATA_DIR, DB_PATH, FROZEN, LOG_DIR  # noqa: E402
@@ -327,8 +328,19 @@ def port_free(port):
 
 
 def window_process(url, focus, queue):
-    """窗口子进程的入口：打开 Evo 窗口，关掉窗口这个进程就退出。打不开时把原因交给托盘程序。"""
+    """窗口子进程的入口：打开 Evo 窗口，关掉窗口这个进程就退出。打不开时把原因交给托盘程序。
+    电脑上没有 WebView2 时先问用户要不要装（webview2.py）；不装、没装上，就让托盘程序改用浏览器打开。"""
     try:
+        if not webview2.available():
+            if not webview2.ask():
+                queue.put(("no-webview2", "用户选了先不装"))
+                return
+            ok, detail = webview2.install()
+            if not ok:
+                webview2.tell_failed()
+                queue.put(("no-webview2", detail))
+                return
+            queue.put(("installed", detail))
         import app_window
 
         app_window.run(url, focus)
@@ -340,13 +352,14 @@ def window_process(url, focus, queue):
 
 class PanelServer:
     """第一次点"打开面板"时，在本程序里启动面板（只接受本机访问），然后在单独的进程里打开 Evo 窗口。
-    窗口已经开着，就把它调到最前面；窗口打不开（比如电脑上没有 WebView2），改用浏览器打开。"""
+    窗口已经开着，就把它调到最前面；窗口打不开（比如电脑上没有 WebView2、用户不装），改用浏览器打开。"""
 
     def __init__(self, log, on_window_closed=None):
         self.log, self.url, self._server = log, None, None
         self._window, self._focus = None, None
         self.on_window_closed = on_window_closed or (lambda: None)  # 用户关掉窗口后调用（退出程序时不算）
         self._closing = False
+        self._no_webview2 = False  # 这次运行里已经问过要不要装 WebView2、没装上：不再问，直接用浏览器
 
     def open(self, window=True):
         url = self._start_server()
@@ -354,6 +367,9 @@ class PanelServer:
             return url
         if self._window is not None and self._window.is_alive():
             self._focus.set()  # 已经开着：调到最前面
+            return url
+        if self._no_webview2 and not webview2.available():  # 用户后来自己装好了，就照常打开窗口
+            webbrowser.open(url)
             return url
         ctx = multiprocessing.get_context("spawn")
         self._focus, queue = ctx.Event(), ctx.Queue()
@@ -365,14 +381,28 @@ class PanelServer:
         return url
 
     def _watch_window(self, proc, queue, url):
-        proc.join()  # 等窗口关闭
-        try:
-            _, detail = queue.get(timeout=1)
-        except Empty:
+        problem = None
+        while True:  # 等窗口关闭；中间装好 WebView2 时马上记进日志
+            try:
+                kind, detail = queue.get(timeout=1)
+            except Empty:
+                if proc.is_alive():
+                    continue
+                break
+            if kind == "installed":
+                self.log(detail)
+            else:
+                problem = kind, detail
+        if problem is None:
             if not self._closing:
                 self.on_window_closed()  # 用户关掉了窗口（Evo 还在托盘里）
             return
-        self.log(f"Evo 窗口打不开，改用浏览器打开面板。原因：\n{detail}")
+        kind, detail = problem
+        if kind == "no-webview2":
+            self._no_webview2 = True
+            self.log(f"电脑上没有 WebView2（{detail}），改用浏览器打开面板")
+        else:
+            self.log(f"Evo 窗口打不开，改用浏览器打开面板。原因：\n{detail}")
         webbrowser.open(url)
 
     def _start_server(self):

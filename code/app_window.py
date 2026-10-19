@@ -139,6 +139,12 @@ def _watch_focus(api, focus):
 
 def run(url, focus=None):
     """打开 Evo 窗口，直到窗口关闭才返回。focus：托盘程序用来"把窗口调到最前"的信号（multiprocessing.Event）。"""
+    # 再确认一次 pywebview 用的是 WebView2：它找不到 WebView2 时会悄悄改用 IE 内核，面板会乱成一堆文字（见 webview2.py）。
+    # 不是的话报错，托盘程序改用浏览器打开
+    from webview.platforms import winforms
+
+    if winforms.renderer != "edgechromium":
+        raise RuntimeError(f"没有可用的 WebView2，pywebview 要改用 {winforms.renderer}")
     webview.settings["ALLOW_DOWNLOADS"] = True  # 导出 CSV
     api = WindowApi()
     window = webview.create_window(
