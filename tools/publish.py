@@ -1,20 +1,26 @@
 """发布新版本。先改 storage.py 的 APP_VERSION 和 release/更新内容.txt 并提交，然后：
 
-    python tools/publish.py --dry-run   试一遍：准备压缩包、预览官网要改的地方，不上传任何东西
-    python tools/publish.py             第一段：上传压缩包和官网，逐项核对
+    python tools/publish.py --dry-run   试一遍：准备压缩包、预览官网要改的地方和更新日志的原文，不上传任何东西
+    python tools/publish.py             第一段：确认更新日志的原文后，上传压缩包和官网，逐项核对
     python tools/publish.py --live      第二段：上传 latest.json，开着"自动检查新版本"的 Evo 开始提醒更新
 
 为什么分两段：latest.json 一换，所有开着自动检查的 Evo 都会提醒更新，收不回来。
 所以先把压缩包、官网都传好、核对过，人也看过了，再做最后一步。
 
+更新日志（2026-10-19 用户要求）：官网更新日志页要加的这一版，原文必须先给开发者看、点头以后才能发布。
+--dry-run 会显示原文和核对码（按原文算的）；在终端里运行第一段会直接问你，否则要加 --changelog-ok 核对码。
+确认以后更新内容又改过的话，核对码就对不上，要重新确认。
+
 第一段：
   1. 准备压缩包：dist 里已经有当前提交打的压缩包就直接用，否则运行 release.py
-     （检查提交、测试、打包、自检、压缩、算 SHA-256、写 latest.json）
+     （检查提交、测试、打包、自检、压缩、算 SHA-256、写 latest.json）；
+     然后显示更新日志页要加的这一版（原文），确认过才往下做，没确认就什么都不上传
   2. 上传压缩包到 R2 存储桶（dl.evotracker.cn）；线上已经是同一个文件就跳过
   3. 从 dl.evotracker.cn 下载回来，核对 SHA-256
-  4. 改官网 site/index.html：下载链接、版本号、大小、SHA-256
+  4. 改官网：site/index.html 的下载链接、版本号、大小、SHA-256；
+     site/changelog.html 最上面加这一版（内容来自 latest.json，也就是 release/更新内容.txt），"最新"标签挪过来
   5. 上传官网（Cloudflare Pages）；线上已经是新版本就跳过
-  6. 打开 evotracker.cn，确认下载链接和 SHA-256 已经是新的
+  6. 打开 evotracker.cn，确认下载链接和 SHA-256 已经是新的，更新日志页有这一版
 第二段（--live）：
   7. 再核对一次线上的压缩包（比 MD5，不用重新下载）和官网
   8. 上传 latest.json（CDN 只缓存 5 分钟）
@@ -26,6 +32,7 @@
 
 import argparse
 import hashlib
+import html as htmllib
 import json
 import re
 import shutil
@@ -35,6 +42,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from datetime import date
 from pathlib import Path
 
 import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
@@ -44,10 +52,14 @@ from storage import APP_VERSION
 
 ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹（本文件在 tools/ 里）
 INDEX = ROOT / "site" / "index.html"
+CHANGELOG = ROOT / "site" / "changelog.html"
 BUCKET = "evotracker"         # R2 存储桶，公开地址是 dl.evotracker.cn
 PAGES_PROJECT = "evotracker"  # Cloudflare Pages 项目，网址是 evotracker.cn
 DL = "https://dl.evotracker.cn"
 SITE_URL = "https://evotracker.cn/"
+CHANGELOG_URL = f"{SITE_URL}changelog"
+# 更新日志页按每条开头的"新增：""改进：""修复："分组（按这个顺序），别的开头都归到"其他"；后面是网页上小标签的样式
+NOTE_GROUPS = (("新增", "chg-new"), ("改进", "chg-better"), ("修复", "chg-fix"), ("其他", ""))
 ZIP_NAME = f"Evo-{APP_VERSION}-win64.zip"
 ZIP = DIST / ZIP_NAME
 ZIP_URL = f"{DL}/{ZIP_NAME}"
@@ -123,9 +135,10 @@ def online_version():
 
 
 def site_is_new(digest):
-    """线上官网的下载链接和 SHA-256 是不是已经是这个压缩包的。"""
-    html = remote_bytes(SITE_URL)
-    return html is not None and ZIP_URL in html.decode("utf-8") and digest in html.decode("utf-8")
+    """线上官网的下载链接和 SHA-256 是不是已经是这个压缩包的，更新日志页有没有这一版。"""
+    html, changelog = remote_bytes(SITE_URL), remote_bytes(CHANGELOG_URL)
+    return (html is not None and ZIP_URL in html.decode("utf-8") and digest in html.decode("utf-8")
+            and changelog is not None and f'id="v{APP_VERSION}"' in changelog.decode("utf-8"))
 
 
 # ---------- 第一段 ----------
@@ -215,7 +228,102 @@ def update_site(digest, size, dry_run):
     return True
 
 
-def publish(dry_run):
+# ---------- 更新日志页（site/changelog.html） ----------
+
+def changelog_groups(notes):
+    """更新内容按开头的"新增：""改进：""修复："分组、去掉开头。返回 [(组名, 样式, [条目…])…]，空的组不要。"""
+    groups = {name: [] for name, _ in NOTE_GROUPS}
+    for note in notes:
+        name, sep, rest = note.partition("：")
+        if sep and name in groups and name != "其他" and rest.strip():
+            groups[name].append(rest.strip())
+        else:
+            groups["其他"].append(note)
+    return [(name, css, groups[name]) for name, css in NOTE_GROUPS if groups[name]]
+
+
+def changelog_entry(latest):
+    """这一版在更新日志页上的样子。返回 (给人看的原文, 网页里的 HTML, 核对码)。核对码按原文算，原文一变就不一样。"""
+    version, day = latest["version"], date.fromisoformat(latest["date"])
+    day_text = f"{day.year} 年 {day.month} 月 {day.day} 日"
+    groups = changelog_groups(latest["notes"])
+    if not groups:
+        raise Stop("latest.json 里没有更新内容（来自 release/更新内容.txt），更新日志页没法写这一版")
+    text = [f"{version} · {day_text} · 最新 · 预览版"]
+    html = [
+        f'      <li class="release release-latest" id="v{version}">',
+        '        <div class="release-side">',
+        f'          <h2 class="release-ver">{version}</h2>',
+        f'          <p class="release-date"><time datetime="{day:%Y-%m-%d}">{day_text}</time></p>',
+        '          <p class="release-tags"><span class="tag tag-latest">最新</span><span class="tag">预览版</span></p>',
+        '        </div>',
+        '        <div class="release-body">',
+    ]
+    for name, css, items in groups:
+        text.append(name)
+        text += [f"  · {item}" for item in items]
+        html.append(f'          <h3 class="chg-title"><span class="{f"chg {css}" if css else "chg"}">{name}</span></h3>')
+        html.append('          <ul class="chg-list">')
+        html += [f"            <li>{htmllib.escape(item, quote=False)}</li>" for item in items]
+        html.append('          </ul>')
+    html += ['        </div>', '      </li>', '']
+    text = "\n".join(text)
+    return text, "\n".join(html), hashlib.sha256(text.encode("utf-8")).hexdigest()[:6]
+
+
+def ask_yes(prompt):
+    """在终端里问一句，输入 y 才算同意。没有终端可问（比如被别的程序调用）时返回 None。
+    Windows 上标准输入接到 NUL 时 isatty() 也是 True，所以还要接住读不到输入的 EOFError。"""
+    if not sys.stdin.isatty():
+        return None
+    try:
+        return input(prompt).strip().lower() in ("y", "yes")
+    except EOFError:
+        return None
+
+
+def confirm_changelog(code, given):
+    """更新日志的原文要先给开发者看、点头以后才能发布。原文已经打在上面了。"""
+    if given == code:
+        print(f"    ✅ 已确认（核对码 {code}）")
+        return
+    if given:
+        raise Stop(f"这段原文的核对码是 {code}，不是 {given}：更新内容在确认以后改过，请把上面的原文重新确认一遍")
+    answer = ask_yes("    原文没问题吗？输入 y 后回车：")
+    if answer is None:
+        raise Stop(f"要先确认上面的原文：在终端里运行（会问你），或者确认过以后加 --changelog-ok {code}")
+    if not answer:
+        raise Stop("没有确认更新日志的原文，什么都没上传")
+
+
+def update_changelog(entry, dry_run):
+    """在 site/changelog.html 最上面加这一版，"最新"标签和蓝色圆点从上一版挪过来。返回有没有改动。"""
+    html = CHANGELOG.read_bytes().decode("utf-8")  # 按原样读写，不改换行符
+    nl = "\r\n" if "\r\n" in html else "\n"
+    entry = entry.replace("\n", nl)
+    if f'id="v{APP_VERSION}"' in html:
+        if entry in html:
+            print("    更新日志页已经有这一版，不用改")
+            return False
+        raise Stop(f"site/changelog.html 里已经有 {APP_VERSION}，但和这次的更新内容不一样：请手动核对")
+    head = f'<ol class="releases">{nl}'
+    top = re.search(r'<li class="release release-latest" id="v(\d+\.\d+\.\d+)">', html)
+    marks = (head, ' release-latest"', '<span class="tag tag-latest">最新</span>')
+    if not top or any(html.count(m) != 1 for m in marks):
+        raise Stop("site/changelog.html 里找不到时间线的开头，或者\"最新\"的不止一版：网页的写法可能变了，请手动改")
+    if version_tuple(top.group(1)) >= version_tuple(APP_VERSION):
+        raise Stop(f"更新日志页最上面是 {top.group(1)}，不比 {APP_VERSION} 旧")
+    new = html.replace(' release-latest"', '"').replace('<span class="tag tag-latest">最新</span>', "")
+    new = new.replace(head, head + nl + entry)
+    print(f"    更新日志页：最上面加 {APP_VERSION}，\"最新\"从 {top.group(1)} 挪过来")
+    if dry_run:
+        print("    （试运行）不写文件")
+    else:
+        CHANGELOG.write_bytes(new.encode("utf-8"))
+    return True
+
+
+def publish(dry_run, changelog_ok):
     step(1, "准备压缩包")
     digest, size = prepare()
     print(f"    {ZIP_NAME}，{size / 2**20:.0f} MB，SHA-256 {digest}")
@@ -223,6 +331,15 @@ def publish(dry_run):
     print(f"    线上的 latest.json 现在是 {online or '（没有）'}")
     if online and version_tuple(online) >= version_tuple(APP_VERSION):
         raise Stop(f"线上已经发布了 {online}，不比 {APP_VERSION} 旧：已经发布的版本不能再覆盖，要发新版本先改 storage.py 的 APP_VERSION")
+    text, entry, code = changelog_entry(json.loads(LATEST.read_text(encoding="utf-8")))
+    print("\n    官网更新日志页最上面会加这一版（原文）：")
+    for line in text.splitlines():
+        print(f"      {line}")
+    print(f"    核对码：{code}")
+    if dry_run:
+        print(f"    （试运行）正式发布前要确认这段原文；确认过以后：python tools/publish.py --changelog-ok {code}")
+    else:
+        confirm_changelog(code, changelog_ok)
 
     step(2, "上传压缩包到 R2（dl.evotracker.cn）")
     upload_zip(size, dry_run)
@@ -237,8 +354,9 @@ def publish(dry_run):
             raise Stop(f"线上文件的 SHA-256 是 {online_digest}，和本机的不一样")
         print("    ✅ 和本机的一样")
 
-    step(4, "改官网 site/index.html")
+    step(4, "改官网 site/index.html 和更新日志页 site/changelog.html")
     update_site(digest, size, dry_run)
+    update_changelog(entry, dry_run)
 
     step(5, "上传官网（Cloudflare Pages）")
     if site_is_new(digest):
@@ -257,8 +375,8 @@ def publish(dry_run):
                 break
             time.sleep(5)
         else:
-            raise Stop(f"{SITE_URL} 上还不是新的下载链接和 SHA-256，过一会儿重新运行 python tools/publish.py 看看")
-        print(f"    ✅ {SITE_URL} 的下载链接是 {ZIP_NAME}，SHA-256 也对")
+            raise Stop(f"{SITE_URL} 上还不是新的下载链接和 SHA-256，或者 {CHANGELOG_URL} 还没有这一版，过一会儿重新运行 python tools/publish.py 看看")
+        print(f"    ✅ {SITE_URL} 的下载链接是 {ZIP_NAME}，SHA-256 也对；{CHANGELOG_URL} 有 {APP_VERSION}")
 
     if dry_run:
         print("\n试运行完成，没有上传任何东西。正式上传：python tools/publish.py")
@@ -292,9 +410,10 @@ def go_live(yes):
     for note in latest["notes"]:
         print(f"      · {note}")
     if not yes:
-        if not sys.stdin.isatty():
+        answer = ask_yes("    确认发布吗？输入 y 后回车：")
+        if answer is None:
             raise Stop("需要确认：在终端里运行（会问你），或者确认过以后加 --yes")
-        if input("    确认发布吗？输入 y 后回车：").strip().lower() not in ("y", "yes"):
+        if not answer:
             print("    没有发布")
             return
 
@@ -317,12 +436,13 @@ def main():
     mode.add_argument("--dry-run", action="store_true", help="试一遍：准备压缩包、预览官网要改的地方，不上传")
     mode.add_argument("--live", action="store_true", help="最后一步：上传 latest.json，Evo 开始提醒更新")
     parser.add_argument("--yes", action="store_true", help="和 --live 一起用：已经确认过，不再问")
+    parser.add_argument("--changelog-ok", metavar="核对码", help="第一段用：更新日志的原文已经确认过（核对码见 --dry-run 的输出）")
     args = parser.parse_args()
     try:
         if args.live:
             go_live(args.yes)
         else:
-            publish(args.dry_run)
+            publish(args.dry_run, args.changelog_ok)
     except Stop as e:
         print(f"\n❌ 停下了：{e}")
         return 1
