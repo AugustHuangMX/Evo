@@ -7,7 +7,8 @@
 4. 用打包好的 Evo.exe 自检一张总结页截图，确认识别模型、参照图都打进去了（截图只在开发者电脑上，没有就跳过）
 5. 压缩：最外层是一个 Evo 文件夹，附上《使用说明（先看这个）.txt》（原文在 release/使用说明.txt）
 6. 算 SHA-256：写在官网上，下载的人可以核对文件有没有被改过
-7. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt
+7. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt；
+   还写上压缩包的地址、SHA-256 和大小，Evo 里的一键更新（updater.py）按它下载、核对
 
 版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己的 %LOCALAPPDATA%\\Evo。
 只是想试一下流程、还有没提交的改动时：python tools/release.py --allow-dirty（文件名会带上 -dirty，不要发布这种；也不写 latest.json）
@@ -41,6 +42,7 @@ README = ROOT / "release" / "使用说明.txt"
 README_NAME = "使用说明（先看这个）.txt"
 NOTES = ROOT / "release" / "更新内容.txt"
 DOWNLOAD_PAGE = "https://evotracker.cn/#download"
+DOWNLOAD_BASE = "https://dl.evotracker.cn"  # 压缩包传到 R2 后的地址（publish.py 也是这个）
 CHECK_IMAGE = ROOT / "captures" / "live" / "20261016_211452" / "05_222749.png"
 CHECK_EXPECT = "总结页 第 8 名，击杀/助攻/击倒 3/0/3，伤害 688"  # 这张截图的正确结果
 
@@ -112,13 +114,15 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def write_latest(today):
-    """写 dist/latest.json（格式见 update_check.py）。更新内容：release/更新内容.txt 里每行一条，# 开头的行不算。"""
+def write_latest(today, name, digest, size):
+    """写 dist/latest.json（格式见 update_check.py）。更新内容：release/更新内容.txt 里每行一条，# 开头的行不算。
+    download 是一键更新用的（updater.py）：Evo 从这个地址下载压缩包，核对 SHA-256 和大小。"""
     notes = [line.strip() for line in NOTES.read_text(encoding="utf-8").splitlines()
              if line.strip() and not line.strip().startswith("#")] if NOTES.is_file() else []
     if len(notes) > 10 or any(len(n) > 200 for n in notes):
         raise Stop(f"{NOTES.name} 最多 10 条、每条不超过 200 字（Evo 只显示这么多）")
-    latest = {"version": APP_VERSION, "date": today, "page": DOWNLOAD_PAGE, "notes": notes}
+    latest = {"version": APP_VERSION, "date": today, "page": DOWNLOAD_PAGE, "notes": notes,
+              "download": {"url": f"{DOWNLOAD_BASE}/{name}", "sha256": digest, "size": size}}
     target = DIST / "latest.json"
     target.write_text(json.dumps(latest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"    {target}：版本 {APP_VERSION}，{len(notes)} 条更新内容")
@@ -166,7 +170,7 @@ def main():
         if dirty:
             print("    ⏭ 跳过：有没提交的改动，这次的压缩包不能发布")
         else:
-            write_latest(today)
+            write_latest(today, name, digest, size)
     except Stop as e:
         print(f"\n❌ 停下了：{e}")
         return 1

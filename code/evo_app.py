@@ -10,6 +10,8 @@
 - 图标：平时是 Evo 图标；正在记录时右下角有个小红点；暂停时变灰。鼠标停在图标上能看到状态
 - 同一个数据文件夹同时只能运行一个 Evo（防止同一局被记两遍）
 - 运行记录写在数据文件夹的 logs/evo.log（打包后没有终端窗口，出了问题看这里）
+- 一键更新（updater.py）：用户点了"安装并重新启动"，新版本的 Evo.exe 跑起来后托盘程序自己退出，
+  新版本换好程序文件再把 Evo 打开（它带 --apply-update 运行，不弹窗口、不记录）
 
 运行：python code/evo_app.py
   用源码运行、这台电脑上装过 Evo 时：战绩记进安装版的数据文件夹（启动前先备份数据库），截图全部存进项目的 captures/，
@@ -469,7 +471,17 @@ def main():
     parser.add_argument("--no-window", action="store_true", help="启动时只启动面板服务，不弹窗口（测试用）")
     parser.add_argument("--check-image", type=Path, nargs="+", metavar="截图",
                         help="自检：识别这些截图，把结果写进日志后退出")
+    # 一键更新时，旧的 Evo 用这几个参数打开新版本的 Evo.exe，让它把自己装进程序文件夹（见 updater.py）
+    parser.add_argument("--apply-update", type=Path, metavar="程序文件夹", help=argparse.SUPPRESS)
+    parser.add_argument("--wait-pid", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--from-version", default="", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.apply_update:
+        import updater
+
+        updater.apply_update(args.apply_update, args.wait_pid, args.from_version)
+        return
 
     if args.check_image:
         log = setup_logging().info
@@ -493,6 +505,10 @@ def main():
         f"把这些进程当作游戏：{'、'.join(args.game)}")
     if INSTALLED_DATA is not None:
         backup_before_source_run(log)
+    import updater
+
+    if FROZEN:
+        updater.after_start(log)  # 刚一键更新过：结果写进日志、窗口顶部显示一次；过一会儿删掉装过的版本
 
     icons = load_icons()
     tips = {"waiting": "等待 Apex 启动", "recording": "正在记录", "paused": "已暂停记录"}
@@ -522,11 +538,14 @@ def main():
     stop_update_checker = threading.Event()
 
     def quit_app(_icon, _item):
-        log("正在退出……")
+        log("正在退出……" if _item is not None else "一键更新：新版本已经开始安装，正在退出……")
         stop_update_checker.set()
         recorder.quit()
         panel.close()
         icon.stop()
+
+    # 一键更新：Apex 开着时不能安装；安装时新版本跑起来以后，让托盘程序像点了"退出"一样退出
+    updater.connect(game_running=lambda: game_running(recorder.game_names), quit_app=lambda: quit_app(None, None))
 
     icon.menu = pystray.Menu(
         pystray.MenuItem("打开 Evo", lambda _i, _m: panel.open(), default=True),

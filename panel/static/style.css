@@ -409,6 +409,21 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .update-new { margin-top: 8px; font-size: 13px; }
 .update-notes { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
 .btn[aria-busy="true"] { cursor: progress; }
+/* 一键更新（_update.html）：提示条里的按钮矮一点；进度条用蓝色，和提示条一个颜色 */
+.update-banner .btn { padding: 6px 14px; }
+.update-banner .update-progress { flex: 1 1 200px; }
+.update-progress { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.progress { position: relative; flex: 1 1 auto; min-width: 120px; height: 6px; border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, var(--info-text) 22%, transparent); }
+.progress-bar { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: inherit; background: var(--p3-bg);
+  transition: width 0.45s linear; }  /* 匀速前进：每半秒更新一次，正好接上 */
+.progress-busy .progress-bar { width: 35%; animation: evo-busy 1.4s ease-in-out infinite; }  /* 解压：不知道还要多久 */
+@keyframes evo-busy { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.progress-text { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.update-error { color: var(--bad); }
+.update-hint { display: block; margin-top: 2px; font-size: 13px; color: var(--warn-text); }  /* 现在不能安装的原因 */
+.update-status { margin-top: 10px; font-size: 13px; }
+.update-status .update-progress { max-width: 420px; margin-top: 6px; }
 .source-link { color: var(--p3-bg); }
 .source-link:hover { text-decoration: underline; }
 /* "关于 Evo"底部的"意见反馈"：占满卡片宽度，下面一行写群号 */
@@ -469,6 +484,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after, ::backdrop { animation: none !important; transition: none !important; }
+  .progress-busy .progress-bar { left: 32%; }  /* 解压的横条不来回走，停在中间 */
 }
 
 @media (max-width: 900px) {

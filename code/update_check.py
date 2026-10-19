@@ -1,11 +1,13 @@
-"""检查 Evo 有没有新版本。这是 Evo 唯一会联网的功能，用户可以关掉（原则 2）。
+"""检查 Evo 有没有新版本。Evo 会联网的只有这里和一键更新（updater.py，用户点了"立即更新"才下载），用户可以关掉（原则 2）。
 
 只做一件事：下载 https://dl.evotracker.cn/latest.json 这个公开的小文件，看里面写的最新版本号。
 请求里只带"Evo/<版本号>"，不发送任何战绩、截图或电脑信息；和打开任何网页一样，服务器能看到访问者的 IP 地址。
 几秒钟连不上、文件格式不对，都当作"这次没查到"，不影响 Evo 的其他功能。
 
 latest.json 由 release.py 在发布时生成，和安装包一起传到 R2：
-    {"version": "0.2.0", "date": "2026-10-20", "page": "https://evotracker.cn/#download", "notes": ["……"]}
+    {"version": "0.2.0", "date": "2026-10-20", "page": "https://evotracker.cn/#download", "notes": ["……"],
+     "download": {"url": "https://dl.evotracker.cn/Evo-0.2.0-win64.zip", "sha256": "……", "size": 109332130}}
+download 是一键更新用的安装包（0.3.3 起才有）：地址只接受 dl.evotracker.cn，没有或格式不对就只能去官网下载。
 
 用到的设置（app_settings，存在数据文件夹的 settings.json）：
 - update_auto：自动检查（True / False；还没问过用户时没有这一项）
@@ -31,6 +33,10 @@ from storage import APP_VERSION
 UPDATE_URL = os.environ.get("EVO_UPDATE_URL", "https://dl.evotracker.cn/latest.json")
 DEFAULT_PAGE = "https://evotracker.cn/#download"
 TRUSTED_HOSTS = {"evotracker.cn", "www.evotracker.cn", "dl.evotracker.cn"}  # 只打开自己网站上的链接
+DOWNLOAD_HOSTS = {"dl.evotracker.cn"}  # 一键更新只从这里下载安装包
+# 用 EVO_UPDATE_URL 换成本机的测试地址时，也接受从同一个地址下载安装包（http 也行），方便不上线就试一键更新
+TEST_HOST = urlparse(UPDATE_URL).hostname if os.environ.get("EVO_UPDATE_URL") else None
+MAX_PACKAGE = 1024 ** 3  # 安装包现在约 105 MB，超过 1 GB 一定是写错了
 TIMEOUT = 5  # 秒
 MAX_BYTES = 64 * 1024  # latest.json 只有几百字节，多的不读
 
@@ -54,8 +60,28 @@ def safe_page(url):
     return str(url) if parsed.scheme == "https" and parsed.hostname in TRUSTED_HOSTS else DEFAULT_PAGE
 
 
+def safe_download(info):
+    """latest.json 里的安装包信息 {"url", "sha256", "size"}：地址只接受 dl.evotracker.cn 的 https（测试地址除外），
+    SHA-256 和大小的格式要对。没有或不对返回 None（这个版本只能去官网下载）。"""
+    if not isinstance(info, dict):
+        return None
+    url, digest, size = info.get("url"), info.get("sha256"), info.get("size")
+    try:
+        parsed = urlparse(str(url))
+    except ValueError:
+        return None
+    host_ok = (parsed.scheme == "https" and parsed.hostname in DOWNLOAD_HOSTS) or \
+              (TEST_HOST is not None and parsed.scheme in ("http", "https") and parsed.hostname == TEST_HOST)
+    if not host_ok or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        return None
+    if not isinstance(size, int) or isinstance(size, bool) or not 0 < size <= MAX_PACKAGE:
+        return None
+    return {"url": str(url), "sha256": digest, "size": size}
+
+
 def fetch_latest(timeout=TIMEOUT):
-    """下载并检查 latest.json，返回 {"version", "date", "page", "notes"}。连不上或格式不对抛出 UpdateError。"""
+    """下载并检查 latest.json，返回 {"version", "date", "page", "notes", "download"}（download 没有时为 None）。
+    连不上或格式不对抛出 UpdateError。"""
     request = urllib.request.Request(
         UPDATE_URL, headers={"User-Agent": f"Evo/{APP_VERSION}", "Cache-Control": "no-cache"})
     try:
@@ -75,6 +101,7 @@ def fetch_latest(timeout=TIMEOUT):
         "date": str(data.get("date", ""))[:20],
         "page": safe_page(data.get("page", DEFAULT_PAGE)),
         "notes": [str(n)[:200] for n in notes if isinstance(n, str)][:10],
+        "download": safe_download(data.get("download")),
     }
 
 

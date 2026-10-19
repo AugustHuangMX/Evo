@@ -1,12 +1,12 @@
 # Evo 隐私政策
 
-生效日期：2026 年 10 月 17 日　·　适用于 Evo 0.1.0 及以后的版本
+生效日期：2026 年 10 月 19 日　·　适用于 Evo 0.1.0 及以后的版本
 
 Evo 是一个开源的 Apex Legends 战绩记录工具，由个人开发者制作和维护，与 EA、Respawn 没有任何关系。
 
-**一句话说明：Evo 记录的所有数据都只保存在你自己的电脑上，不会上传给开发者或任何人。** 没有账号，没有统计代码，没有广告，不收集崩溃报告。唯一会联网的功能是"检查新版本"，第一次打开 Evo 时会先问你要不要开启，开了也可以随时关掉（0.1.0 还没有这个功能，完全不联网；0.1.0 之后的版本才有）。
+**一句话说明：Evo 记录的所有数据都只保存在你自己的电脑上，不会上传给开发者或任何人。** 没有账号，没有统计代码，没有广告，不收集崩溃报告。会联网的只有"检查新版本"和你点了才开始的"一键更新"：自动检查在第一次打开 Evo 时会先问你要不要开启，开了也可以随时关掉；一键更新只在你点了"立即更新"之后才下载（0.1.0 还没有这些功能，完全不联网；0.1.0 之后的版本才有检查新版本，0.3.3 起才有一键更新）。
 
-Evo 的源代码是公开的（[GitHub](https://github.com/AugustHuangMX/Evo)），这份说明里的每一条都能在代码里核对：Evo 唯一联网的代码在 `update_check.py`。
+Evo 的源代码是公开的（[GitHub](https://github.com/AugustHuangMX/Evo)），这份说明里的每一条都能在代码里核对：Evo 联网的代码只在 `update_check.py`（检查新版本）和 `updater.py`（一键更新）。
 
 ---
 
@@ -19,7 +19,7 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 | 战绩数据库 | `data\evo.db` | 每一局的开始和结束时间、你自己的游戏名、模式、地图、传奇、名次、击杀/助攻/击倒、伤害、生存时间、急救和重生次数、排位分（RP）变化、段位、"待确认"标记和你写的修正说明、对应截图的位置、Evo 的版本号；以及你自己的几个游戏名分别属于哪个账号（多账号功能用）；0.2.0 之后的版本还有总结页上两名队友的游戏名、卡片下面的 ID 和他们这一局的击杀/助攻/击倒、伤害、生存时间、急救和重生次数；0.3.1 起还有：每次回到大厅时读到的你自己的段位和段内分数、你的老板分（参与分）、对局中认出的两名队友用的传奇，以及同一项在不同画面上各读到的数（用来互相核对） |
 | 截图 | `captures\` | 记录时保存的游戏画面（见下面第二节）。默认识别完就删，只留需要你确认的那几局要用的；设置页可以打开"保留全部截图"（0.2.0 及以前的版本会保留全部截图） |
 | 运行记录 | `logs\evo.log` | Evo 什么时候开始和停止记录、屏幕分辨率、数据文件在电脑上的路径（路径里可能有你的 Windows 用户名）、识别结果、你的游戏名、内存占用、出错信息。文件最多约 4 MB，写满后自动覆盖最旧的内容 |
-| 设置 | `settings.json` | 你在设置页选的选项、是否开启自动检查更新、上次检查的时间和结果、哪些提示已经显示过 |
+| 设置 | `settings.json` | 你在设置页选的选项、是否开启自动检查更新、上次检查的时间和结果、上次一键更新的结果、哪些提示已经显示过 |
 | 窗口缓存 | `webview\` | Evo 窗口（WebView2）自己的缓存，只和 Evo 的本地页面有关 |
 | 数据库备份 | `data\evo.db.bak-…` | 只在你点"清空所有战绩"时自动生成，防止误删 |
 
@@ -35,16 +35,17 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 
 这些截图只留在你的电脑上。如果你要把截图发给别人（包括发给我反馈问题），请先看一眼里面有没有你不想公开的内容。
 
-## 三、唯一会联网的功能：检查新版本
+## 三、会联网的功能：检查新版本和一键更新
 
-0.1.0 还没有这个功能；0.1.0 之后的版本才有。
+0.1.0 还没有这些功能；0.1.0 之后的版本才有检查新版本，0.3.3 起才有一键更新。
 
-- **什么时候联网**：只有两种情况——你开启了"自动检查新版本"（第一次打开 Evo 时会问你，你同意之前不会检查；开启后每次启动 Evo 时检查一次，Evo 一直开着时每天再检查一次）；或者你在设置页手动点了"检查更新"。
-- **下载了什么**：只下载一个公开的小文件 `https://dl.evotracker.cn/latest.json`，里面写着最新的版本号、发布日期和更新内容。
+- **什么时候联网**：只有两种情况——你开启了"自动检查新版本"（第一次打开 Evo 时会问你，你同意之前不会检查；开启后每次启动 Evo 时检查一次，Evo 一直开着时每天再检查一次）；或者你在设置页手动点了"检查更新"。另外，你点了"立即更新"时会下载新版本的安装包（见下面"一键更新"）。
+- **下载了什么**：检查时只下载一个公开的小文件 `https://dl.evotracker.cn/latest.json`，里面写着最新的版本号、发布日期、更新内容，以及新版本安装包的地址和校验码（SHA-256）。
+- **一键更新（0.3.3 起）**：发现新版本后，你点了"立即更新"，Evo 才从 `https://dl.evotracker.cn` 下载新版本的安装包（和官网上下载的是同一个文件，约 100 MB），下载完核对 SHA-256，对不上就删掉。安装包临时放在 Evo 程序文件夹里的 `_update` 文件夹，装好后自动删掉。下载好以后，你再点"安装并重新启动"，Evo 才会安装：关闭几秒钟，换上新版本的程序文件，自动重新打开。你的战绩数据不受影响。
 - **发送了什么**：请求里只带 Evo 自己的版本号（`Evo/0.1.0` 这样的文字）。**不发送任何战绩、截图、游戏名、电脑信息或设备编号。**
 - **服务器能看到什么**：和打开任何网页一样，提供这个文件的服务器（Cloudflare，见第五节）能看到你的 IP 地址和请求时间。
-- **发现新版本以后**：Evo 只会提醒你，不会自动下载或安装。要不要更新、去哪里下载，由你决定。
-- **怎么关掉**：Evo 窗口 →【设置】→【更新】→ 关掉"自动检查新版本"。关掉以后 Evo 完全不联网（除非你手动点"检查更新"）。
+- **发现新版本以后**：Evo 只会提醒你，不会在你不知道的时候下载或安装任何东西。要不要更新、在 Evo 里更新还是去官网下载，由你决定。
+- **怎么关掉**：Evo 窗口 →【设置】→【更新】→ 关掉"自动检查新版本"。关掉以后 Evo 完全不联网（除非你手动点"检查更新"或"立即更新"）。
 
 如果 Evo 以后要加任何新的联网功能，会先在 Evo 里问你、默认不开启，并更新这份说明。
 
@@ -111,7 +112,7 @@ Evo 不收集任何人的个人信息，也包括未成年人。如果你未满 
 
 ## Privacy Policy (English)
 
-Effective date: October 17, 2026 · Applies to Evo 0.1.0 and later
+Effective date: October 19, 2026 · Applies to Evo 0.1.0 and later
 
 Evo is an open-source match tracker for Apex Legends, made and maintained by an individual developer. It is not affiliated with EA or Respawn.
 
@@ -120,7 +121,7 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 - **All data stays on your computer.** Evo captures the screen while the game is running and saves match results, screenshots, a log file and settings in its local data folder (shown in Evo's Settings page; `%LOCALAPPDATA%\Evo` by default). Nothing is uploaded. There is no account system, no analytics, no telemetry, no ads and no automatic crash reporting.
 - **Teammates (versions after 0.2.0).** From the post-match summary screen, Evo also saves your two teammates' in-game names, the IDs shown under their cards, and their stats for that match (kills/assists/knockdowns, damage, survival time, revives, respawns), so the Matches page can show who you played with. Opponents' names and IDs are not saved, and nobody's rank is saved.
 - **Screenshots** show the whole screen at that moment, so they may contain other players' in-game names and anything else on screen (for example a Discord or Steam overlay). They stay on your computer.
-- **Update check (the only network feature, opt-in; added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once a day while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json`. The request contains only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates by itself.
+- **Update check and in-app update (the only network features; added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once a day while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json` (latest version number, release date, release notes, and the address and SHA-256 checksum of the new package). From version 0.3.3, when you click "立即更新" (Update now), Evo downloads the new package from `https://dl.evotracker.cn` (the same file as on the website), verifies its SHA-256 and keeps it in the `_update` folder inside Evo's program folder; it installs it (closes for a few seconds, replaces its program files and reopens) only after you click "安装并重新启动" (Install and restart). Your match data is not affected. The requests contain only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates without you asking.
 - **The Evo window** shows a local page served on `127.0.0.1` only, and loads nothing from the internet. It uses Microsoft Edge WebView2, whose diagnostic data is governed by your Windows privacy settings.
 - **Website.** `evotracker.cn` and `dl.evotracker.cn` are served by Cloudflare. The website uses no cookies, no analytics and no scripts. Cloudflare processes access data such as IP addresses to deliver the site and protect it from attacks ([Cloudflare Privacy Policy](https://www.cloudflare.com/privacypolicy/)). The developer only looks at aggregated statistics.
 - **Feedback files.** If you choose to send your log file or screenshots to the developer, they are used only to investigate your issue, are not shared, and are deleted once the issue is resolved (at most 90 days). Screenshots are added to Evo's test set only with your explicit consent, with unrelated content (including other players' names and IDs) blacked out; you can withdraw consent at any time.

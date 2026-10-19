@@ -1,4 +1,5 @@
-"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；唯一会联网的是"检查更新"（update_check.py，可以关掉）。
+"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；会联网的只有"检查更新"（update_check.py，可以关掉）
+和你点了才下载的一键更新（updater.py）。
 
 运行：python code/panel_app.py                    读正式数据库 data/evo.db
 演示：python code/panel_app.py --db data/demo.db   读伪数据（先运行 python tools/demo_data.py 生成）
@@ -18,13 +19,15 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse
 
-from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, session, url_for
+from flask import (Flask, Response, abort, flash, g, jsonify, redirect, render_template, request, send_file, session,
+                   url_for)
 
 import app_settings
 import ranks
 import screenshots
 import storage
 import update_check
+import updater
 from paths import CAPTURES_DIR, PANEL_DIR, data_absolute
 from post_match import COUNTED_KILLS_NOTES, NO_SUMMARY_NOTES
 
@@ -111,6 +114,7 @@ def security_checks():
 
 @app.context_processor
 def template_globals():
+    offer = update_check.available()
     return {
         # 在 Evo 自己的窗口里打开（app_window.py 会在 User-Agent 里带上 EvoApp）：显示自定义标题栏
         "in_app": "EvoApp/" in request.headers.get("User-Agent", ""),
@@ -119,9 +123,11 @@ def template_globals():
         "db_name": Path(app.config["DB"]).name,
         "nav": NAV,
         "switch": page_switch(),
-        # 检查更新：还没问过要不要自动检查 → 页面顶部问一次；已知有新版本 → 顶部提示条
+        # 检查更新：还没问过要不要自动检查 → 页面顶部问一次；已知有新版本 → 顶部提示条（一键更新的各个阶段见 updater.state）
         "ask_update": app_settings.get("update_auto") is None,
-        "update_offer": update_check.available(),
+        "update_offer": offer,
+        "update_job": updater.state(offer),
+        "update_result": updater.take_result(),  # 刚一键更新过：顶部说一次"已更新到 x.y.z"或"没装上"
         "version": storage.APP_VERSION,
         # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"；有 2 个以上账号时，右上角切换账号
         "name_question": name_question(),
@@ -634,6 +640,7 @@ def settings():
         update_auto=app_settings.get("update_auto") is True,
         last_check=app_settings.get("update_last_check"),
         newest=update_check.known_newer(),
+        job=updater.state(update_check.known_newer()),
         accounts=[{**a, "last_text": time_text(a["last"]),
                    "name_stats": [{**one, "last_text": time_text(one["last"])} for one in a["name_stats"]]}
                   for a in account_view()["accounts"]],
@@ -742,6 +749,45 @@ def dismiss_update():
     """提示条上的"以后再说"：这个版本不再提示（出了更新的版本会再提示）。"""
     app_settings.set_value("update_dismissed", request.form.get("version", ""))
     return back_to_page()
+
+
+@app.post("/update/download")
+def download_update():
+    """"立即更新"（和下载失败后的"重试"）：在后台下载新版本，页面上显示进度（updater.start_download）。"""
+    try:
+        updater.start_download(update_check.known_newer())
+    except updater.UpdateError as e:
+        flash(str(e), "error")
+    return back_to_page()
+
+
+@app.post("/update/cancel")
+def cancel_update():
+    """下载中点了"取消"。"""
+    updater.cancel_download()
+    return back_to_page()
+
+
+@app.post("/update/install")
+def install_update():
+    """"安装并重新启动"：新版本跑起来后 Evo 自己退出，装好后重新打开（updater.start_install）。Apex 开着时不装。"""
+    latest = update_check.known_newer()
+    if latest is None:
+        flash("已经是最新版本，不用安装", "ok")
+        return back_to_page()
+    try:
+        updater.start_install(latest["version"])
+    except updater.UpdateError as e:
+        flash(str(e), "error")
+        return back_to_page()
+    flash(f"正在安装 {latest['version']}：Evo 会关闭几秒钟，装好后自动重新打开。", "ok")
+    return back_to_page()
+
+
+@app.get("/update/progress")
+def update_progress():
+    """页面每半秒问一次下载进度（base.html 里的脚本）；阶段变了，页面就重新打开一次。"""
+    return jsonify(updater.state(update_check.known_newer()) or {"phase": "none"})
 
 
 # ---------- 多账号：新玩家名的弹窗（base.html） ----------

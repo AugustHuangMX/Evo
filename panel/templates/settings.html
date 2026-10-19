@@ -149,12 +149,13 @@
       </div>
     </section>
 
+    {% import "_update.html" as upd with context %}
     <section class="card settings-card" aria-labelledby="h-update">
       <h2 id="h-update">更新</h2>
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="update-auto-name">自动检查新版本</div>
-          <div class="setting-desc">每天联网一次，只下载官网上公开的版本号文件，不发送任何战绩、截图或电脑信息。有新版本只提醒，不会自动下载</div>
+          <div class="setting-desc">每天联网一次，只下载官网上公开的版本号文件，不发送任何战绩、截图或电脑信息。有新版本时提醒你，点了"立即更新"才下载</div>
         </div>
         <form method="post" action="{{ url_for('update_auto') }}">
           <input type="hidden" name="token" value="{{ token }}">
@@ -187,16 +188,11 @@
             </ul>
             {% endif %}
           </div>
+          {{ upd.status(job) }}
           {% endif %}
         </div>
         <div class="setting-actions">
-          {% if newest %}
-          <a class="btn btn-primary" href="{{ newest.page }}" target="_blank" rel="noopener noreferrer">去官网下载 ↗</a>
-          {% endif %}
-          <form method="post" action="{{ url_for('check_update') }}" id="check-form">
-            <input type="hidden" name="token" value="{{ token }}">
-            <button type="submit" class="btn" id="check-btn">检查更新</button>
-          </form>
+          {{ upd.actions(job, newest) }}
         </div>
       </div>
     </section>
@@ -209,7 +205,7 @@
     <div class="setting-desc">版本 <span class="num">{{ version }}</span> · MIT 开源许可</div>
     <ul class="principles">
       <li class="pr-1"><div class="setting-name">只看不动</div><div class="setting-desc">只读取屏幕画面，不接触游戏进程，不模拟任何操作</div></li>
-      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不上传任何数据，不用注册登录；只有"检查更新"会联网，可以关掉</div></li>
+      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不上传任何数据，不用注册登录；只有检查和下载更新会联网，都由你决定</div></li>
       <li class="pr-3"><div class="setting-name">轻量</div><div class="setting-desc">后台运行占用低，不影响游戏帧数</div></li>
       <li class="pr-4"><div class="setting-name">开源</div><div class="setting-desc">所有代码公开，任何人都可以检查</div></li>
     </ul>
@@ -247,12 +243,6 @@
     btn.setAttribute("aria-busy", "true");
     btn.textContent = "正在删除…";
   });
-  // 检查更新要联网，最多等几秒：按钮先变成"正在检查…"，免得以为没反应
-  document.getElementById("check-form").addEventListener("submit", function () {
-    var btn = document.getElementById("check-btn");
-    btn.disabled = true;
-    btn.setAttribute("aria-busy", "true");
-    btn.textContent = "正在检查…";
-  });
+  // 检查更新、立即更新、安装：按钮变成"正在…"（form 上的 data-busy，见 base.html）
 </script>
 {% endblock %}
