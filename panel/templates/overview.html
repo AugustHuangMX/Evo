@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_legend.html" import legend_icon %}
 {% block title %}总览 · Evo{% endblock %}
 
 {% block content %}
@@ -105,7 +106,7 @@
         <a href="{{ url_for('matches', open=r.id) }}#m{{ r.id }}" class="recent-row">
           <span class="badge {{ r.badge }}">{{ r.placement }}</span>
           <span class="recent-main">
-            <span class="recent-title {{ 'muted' if r.legend == '—' and r.map == '—' }}">{{ r.title }}{% if r.needs_review %} <span class="tag-review">待确认</span>{% endif %}</span>
+            <span class="recent-title legend-label {{ 'muted' if r.legend == '—' and r.map == '—' }}">{{ legend_icon(r.legend_icon) }}<span class="clip">{{ r.title }}</span>{% if r.needs_review %}<span class="tag-review">待确认</span>{% endif %}</span>
             <span class="recent-sub">{{ r.subtitle }}</span>
           </span>
           <span class="recent-num recent-kda"><span class="num">{{ r.kda }}</span><span class="recent-sub">击杀/助攻/击倒</span></span>
@@ -124,7 +125,7 @@
       {% for l in legends %}
       <div class="legend-item">
         <div class="legend-line">
-          <span class="legend-name {{ 'muted' if l.other }}">{{ l.name }}</span>
+          <span class="legend-name legend-label {{ 'muted' if l.other }}">{{ legend_icon(l.icon) }}{{ l.name }}</span>
           <span class="muted small"><span class="num">{{ l.games }}</span> 局{% if l.avg_damage %} · 均伤 <span class="num">{{ l.avg_damage }}</span>{% endif %}</span>
         </div>
         <div class="bar stacked">

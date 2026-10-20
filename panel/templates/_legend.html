@@ -1,0 +1,9 @@
+{# 传奇名字前的小头像（panel/static/legends/，python tools/legend_icons.py 生成；许可见那里的 LICENSE.txt）。
+   只是装饰：名字就在旁边，读屏软件跳过它。没有图标时（没认出来、以后出的新传奇）留出同样宽的空位，名字上下对齐 #}
+{% macro legend_icon(icon) -%}
+{%- if icon -%}
+<span class="legend-icon" style="--icon: url('{{ url_for('static', filename=icon) }}')" aria-hidden="true"></span>
+{%- else -%}
+<span class="legend-icon blank" aria-hidden="true"></span>
+{%- endif -%}
+{%- endmacro %}

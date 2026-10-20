@@ -240,6 +240,15 @@ table.matches { width: 100%; min-width: 900px; border-collapse: collapse; }
 .matches tr.row:hover .p4, .matches tr.open .p4 { box-shadow: inset 0 0 0 1px var(--dashed); }
 .p-none { border: 1px dashed var(--dashed); color: var(--muted); }
 .tag-review { margin-left: 6px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--warn-pill-bg); border: 1px solid var(--warn-pill-border); color: var(--warn-text); }
+
+/* 传奇名字前的小头像（panel/static/legends/，见 _legend.html）：单色，颜色跟随文字，深浅主题都看得清。
+   没有图标时（.blank）留出同样的位置，名字上下对齐 */
+.legend-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; vertical-align: middle; }
+.legend-label > .tag-review { flex: none; margin-left: 2px; }
+.legend-icon { flex: none; width: 18px; height: 18px; background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+.legend-icon.blank { background: none; }
+@media (forced-colors: active) { .legend-icon:not(.blank) { forced-color-adjust: none; background: CanvasText; } }
 .rp-good { color: var(--good); }
 .rp-bad { color: var(--bad); }
 .rp-none { color: var(--muted); }
@@ -350,12 +359,13 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .recent-row:hover .recent-title { text-decoration: underline; }
 .recent-main, .recent-num { display: flex; flex-direction: column; min-width: 0; }
 .recent-num { align-items: flex-end; }
-.recent-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-title { font-weight: 500; }
+.recent-title .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-sub { color: var(--muted); font-size: 12px; }
 .recent-rp { text-align: right; }
 
 .legend-list { display: flex; flex-direction: column; gap: 18px; }
-.legend-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.legend-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
 .legend-name { font-weight: 600; }
 .seg-p1 { background: var(--p1-bg); } .seg-p2 { background: var(--p2-bg); }
 .seg-p3 { background: var(--p3-bg); } .seg-p4 { background: var(--seg-other); }

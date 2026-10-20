@@ -32,7 +32,7 @@ import storage
 import update_check
 import updater
 import paths
-from paths import CAPTURES_DIR, PANEL_DIR, data_absolute
+from paths import CAPTURES_DIR, CONFIG_DIR, PANEL_DIR, data_absolute
 from post_match import COUNTED_KILLS_NOTES, NO_SUMMARY_NOTES
 
 # 面板文件的类型写死：Flask 按 Windows 注册表判断文件类型，有的软件会把 .css 改成 text/plain，
@@ -80,6 +80,22 @@ except (OSError, ValueError):
 DAY_START_HOUR = 5  # "今日"从早上 5 点算起：打到凌晨的局仍算前一天
 RANGES = {"30": "近 30 局", "all": "全部"}
 CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片宽度拉伸）
+
+# ---- 传奇头像（战绩页、总览页）----
+
+
+def load_legend_icons():
+    """传奇头像：中文名 → static 里的图标（python tools/legend_icons.py 生成，文件名是 config/legends.json 的编号；
+    许可各不相同，见 panel/static/legends/LICENSE.txt）。没有图标的传奇不在里面，面板上只显示名字。"""
+    try:
+        legends = json.loads((CONFIG_DIR / "legends.json").read_text(encoding="utf-8"))["legends"]
+    except (OSError, ValueError, KeyError):
+        return {}
+    folder = PANEL_DIR / "static" / "legends"
+    return {info["zh"]: f"legends/{key}.svg" for key, info in legends.items() if (folder / f"{key}.svg").is_file()}
+
+
+LEGEND_ICONS = load_legend_icons()
 
 # ---- 设置页 ----
 SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
@@ -285,6 +301,7 @@ def view(row):
         "mode": MODES.get(row["mode"], "—"),
         "map": row["map"] or "—",
         "legend": row["legend"] or "—",
+        "legend_icon": LEGEND_ICONS.get(row["legend"]),
         # 总览页"最近对局"的标题和副标题：有什么显示什么
         "title": " · ".join(x for x in (row["legend"], row["map"]) if x) or "传奇、地图未识别",
         "subtitle": " · ".join(x for x in (MODES.get(row["mode"]), time_text(row["ended_at"])) if x),
@@ -314,6 +331,7 @@ def mate_view(mate):
         "name": mate["name"],
         "player_id": mate["player_id"],
         "legend": mate["legend"] or "—",  # 对局中左下角认的（0.3.0 以前的局没有）
+        "legend_icon": LEGEND_ICONS.get(mate["legend"]),
         "kda": " / ".join(dash(mate[k]) for k in ("kills", "assists", "knockdowns")),
         "damage": dash(mate["damage"], "{:,}"),
         "survival": storage.mmss(mate["survival_time"]).replace("-", "—"),
@@ -454,6 +472,7 @@ def legend_bars(rows, top=3):
         damages = [r["damage"] for r in rs if r["damage"] is not None]
         bars.append({
             "name": name,
+            "icon": LEGEND_ICONS.get(name),
             "games": len(rs),
             "avg_damage": f"{sum(damages) / len(damages):,.0f}" if damages else None,
             "segments": [(css, n / widest * 100) for css, n in buckets if n],

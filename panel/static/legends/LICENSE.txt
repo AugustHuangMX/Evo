@@ -1,0 +1,52 @@
+传奇头像图标（Evo 面板里传奇名字前面的小头像）
+
+这些图标不适用 Evo 代码的 MIT 许可证，每个文件的许可见下表。
+
+来源：Apex Legends Wiki（https://apexlegends.wiki.gg/），和 wiki 上的文件逐字节相同。
+每个文件的原始页面：https://apexlegends.wiki.gg/wiki/File:<文件名>
+许可以 wiki 上每个文件页面写的为准（2026-10-20 查的）。
+
+文件                          传奇        上传者         wiki 上写的许可
+Alter_Icon.svg                变幻        Specgineff     CC BY-NC-SA 3.0
+Ash_Icon.svg                  艾许        Osvaldatore    EA 版权
+Axle_Icon.svg                 艾克赛尔    Specgineff     EA 版权
+Ballistic_Icon.svg            弹道        Metafysika     公有领域
+Bangalore_Icon.svg            班加罗尔    Osvaldatore    EA 版权
+Bloodhound_Icon.svg           寻血猎犬    Osvaldatore    EA 版权
+Catalyst_Icon.svg             卡特莉丝    Osvaldatore    公有领域
+Caustic_Icon.svg              侵蚀        Osvaldatore    EA 版权
+Conduit_Icon.svg              导线管      Specgineff     CC BY-SA 3.0
+Crypto_Icon.svg               密客        Osvaldatore    EA 版权
+Fuse_Icon.svg                 暴雷        Osvaldatore    EA 版权
+Gibraltar_Mobile_Icon.svg     直布罗陀    Metafysika     公有领域
+Horizon_Icon.svg              地平线      Osvaldatore    EA 版权
+Lifeline_Icon.svg             命脉        Osvaldatore    EA 版权
+Loba_Icon.svg                 罗芭        Osvaldatore    EA 版权
+Mad_Maggie_Icon.svg           疯玛吉      Osvaldatore    EA 版权
+Mirage_Icon.svg               幻象        Osvaldatore    EA 版权
+Newcastle_Icon.svg            纽卡斯尔    Osvaldatore    EA 版权
+Octane_Icon.svg               动力小子    Osvaldatore    EA 版权
+Pathfinder_Mobile_Icon.svg    探路者      Metafysika     公有领域
+Rampart_Icon.svg              兰伯特      Osvaldatore    EA 版权
+Revenant_Icon.svg             亡灵        Specgineff     EA 版权
+Seer_Icon.svg                 希尔        Osvaldatore    EA 版权
+Sparrow_Icon.svg              琉雀        Specgineff     CC BY-NC-SA 3.0
+Valkyrie_Icon.svg             瓦尔基里    Osvaldatore    EA 版权
+Vantage_Icon.svg              万蒂奇      Osvaldatore    公有领域
+Wattson_Icon.svg              沃特森      Osvaldatore    EA 版权
+Wraith_Mobile_Icon.svg        恶灵        Metafysika     公有领域
+
+各种许可：
+- CC BY-NC-SA 3.0：知识共享 署名-非商业性使用-相同方式共享 3.0（Attribution-NonCommercial-ShareAlike 3.0），
+  https://creativecommons.org/licenses/by-nc-sa/3.0/
+- CC BY-SA 3.0：知识共享 署名-相同方式共享 3.0（Attribution-ShareAlike 3.0），
+  https://creativecommons.org/licenses/by-sa/3.0/
+- 公有领域：上传者声明放弃这个文件的版权（wiki 上的 "Copyright self"）
+- EA 版权：wiki 写明文件来自游戏或 EA、Respawn 的网站，版权属于 Electronic Arts Inc.（wiki 上的 "Copyright game"）
+
+不管是哪种许可，传奇的形象都属于 Electronic Arts Inc. 和 Respawn Entertainment。
+Apex Legends 是 Electronic Arts Inc. 的商标。Evo 是玩家自制的非官方工具，与它们没有任何关系，也没有得到它们的认可。
+
+Evo 面板用的版本（panel/static/legends/，用 tools/legend_icons.py 从这些文件生成）做了这些改动：
+去掉绘图软件（Inkscape）留下的编辑信息；把四周的空白裁成一样多；文件名改成传奇编号（如 wraith.svg）；
+面板上只显示图形的轮廓，颜色跟随文字。改过的文件和原文件用同样的许可。

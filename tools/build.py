@@ -38,6 +38,8 @@ Evo 使用了以下第三方库，它们各自的许可证随库一起放在 _in
 - 其他主要依赖：RapidOCR（Apache 2.0）、ONNX Runtime（MIT）、OpenCV（Apache 2.0）、NumPy（BSD）、
   Flask（BSD）、Pillow（MIT-CMU）、dxcam（MIT）、PP-OCR 模型（Apache 2.0）
 - 面板字体 Chakra Petch：SIL Open Font License 1.1，见 _internal/panel/static/fonts/OFL.txt
+- 面板里传奇名字前的小头像：来自 Apex Legends Wiki（https://apexlegends.wiki.gg/），不适用 MIT，
+  每个文件的许可不一样，见 _internal/panel/static/legends/LICENSE.txt
 - _internal/webview2/MicrosoftEdgeWebview2Setup.exe：微软的 Microsoft Edge WebView2 安装程序，按微软的许可随 Evo 分发。
   只在电脑上没有 WebView2、你同意安装时才运行
 """

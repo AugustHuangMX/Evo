@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_legend.html" import legend_icon %}
 {% block title %}战绩 · Evo{% endblock %}
 
 {% block content %}
@@ -73,7 +74,7 @@
       <td class="muted">{{ r.time }}</td>
       <td>{{ r.mode }}</td>
       <td>{{ r.map }}</td>
-      <td>{{ r.legend }}{% if r.needs_review %} <span class="tag-review">待确认</span>{% endif %}</td>
+      <td><span class="legend-label">{{ legend_icon(r.legend_icon) }}{{ r.legend }}{% if r.needs_review %}<span class="tag-review">待确认</span>{% endif %}</span></td>
       <td class="right num">{{ r.kda }}</td>
       <td class="right num">{{ r.damage }}</td>
       <td class="right num">{{ r.survival }}</td>
@@ -90,7 +91,7 @@
         {% else %}<span class="muted"{% if m.player_id %} title="ID {{ m.player_id }}"{% endif %}>名字没读到</span>{% endif %}
         <span class="mate-extra">急救 {{ m.revives }} · 重生 {{ m.respawns }}</span>
       </td>
-      <td class="{{ 'muted' if m.legend == '—' }}">{{ m.legend }}</td>
+      <td class="{{ 'muted' if m.legend == '—' }}"><span class="legend-label">{{ legend_icon(m.legend_icon) }}{{ m.legend }}</span></td>
       <td class="right num">{{ m.kda }}</td>
       <td class="right num">{{ m.damage }}</td>
       <td class="right num">{{ m.survival }}</td>

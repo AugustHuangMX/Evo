@@ -87,4 +87,5 @@ Evo 和录屏软件一样，只截取屏幕上显示的画面，再在你自己�
 ## 许可证和声明
 
 - Evo 的代码使用 [MIT 许可证](LICENSE)
+- 面板里传奇名字前的小头像（`assets/legends/`、`panel/static/legends/`）不适用 MIT：来自 [Apex Legends Wiki](https://apexlegends.wiki.gg/)，每个文件的许可不一样（CC BY-NC-SA 3.0、CC BY-SA 3.0、公有领域，或版权属于 EA），逐个写在 [assets/legends/LICENSE.txt](assets/legends/LICENSE.txt) 里
 - Evo 是玩家自制的非官方工具，与 Electronic Arts、Respawn Entertainment 没有任何关系，也没有得到它们的认可。Apex Legends 是 Electronic Arts Inc. 的商标
