@@ -750,9 +750,9 @@ def update_auto():
     on = request.form.get("auto") == "1"
     app_settings.set_value("update_auto", on)
     if on:
-        # 马上在后台查一次（最多几秒），页面不用等；托盘程序之后每天查一次
+        # 马上在后台查一次（最多几秒），页面不用等；托盘程序之后每 8 小时查一次
         threading.Thread(target=update_check.check, name="update-check-now", daemon=True).start()
-        flash("已开启自动检查：Evo 每天联网检查一次有没有新版本。", "ok")
+        flash("已开启自动检查：Evo 开着时每 8 小时联网检查一次有没有新版本。", "ok")
     else:
         flash("已关闭自动检查。需要时可以在设置页手动检查更新。", "ok")
     return back_to_page()

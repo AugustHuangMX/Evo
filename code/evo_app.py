@@ -119,11 +119,11 @@ def listen_for_show(callback):
 
 
 UPDATE_FIRST_DELAY = 15  # 秒：启动后等一会儿再检查新版本，不和打开窗口抢
-UPDATE_EVERY = 24 * 3600  # 之后每天检查一次
+UPDATE_EVERY = 8 * 3600  # 之后每 8 小时检查一次
 
 
 def start_update_checker(log, notify, stop):
-    """用户同意了自动检查新版本（设置 update_auto）才联网：启动 15 秒后查一次，之后每天一次。
+    """用户同意了自动检查新版本（设置 update_auto）才联网：启动 15 秒后查一次，之后每 8 小时一次。
     发现新版本时用托盘通知提醒，同一个版本只提醒一次；窗口顶部的提示条由面板根据检查结果显示。"""
 
     def loop():

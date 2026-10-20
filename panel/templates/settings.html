@@ -173,7 +173,7 @@
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="update-auto-name">自动检查新版本</div>
-          <div class="setting-desc">每天联网一次，只下载官网上公开的版本号文件，不发送任何战绩、截图或电脑信息。有新版本时提醒你，点了"立即更新"才下载</div>
+          <div class="setting-desc">Evo 开着时每 8 小时联网一次，只下载官网上公开的版本号文件，不发送任何战绩、截图或电脑信息。有新版本时提醒你，点了"立即更新"才下载</div>
         </div>
         <form method="post" action="{{ url_for('update_auto') }}">
           <input type="hidden" name="token" value="{{ token }}">
