@@ -424,6 +424,22 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .progress-text { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .update-error { color: var(--bad); }
 .update-hint { display: block; margin-top: 2px; font-size: 13px; color: var(--warn-text); }  /* 现在不能安装的原因 */
+
+/* 更改数据位置（设置页，data_move.py）：平时收起；检查过一次后展开、显示结果 */
+.move-data { padding: 4px 0 14px; }
+.move-data > summary { display: inline-flex; align-items: center; min-height: 36px; padding: 0 2px; cursor: pointer; color: var(--info-text); border-radius: 4px; }
+.move-data > summary:hover { text-decoration: underline; }
+.move-data > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.move-data[open] > summary { margin-bottom: 4px; }
+.move-data > .setting-desc { margin: 4px 0 0; }
+.move-form { margin-top: 12px; }
+.move-input { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.move-input input { flex: 1 1 260px; min-width: 0; min-height: 36px; font-family: Consolas, monospace; }
+.move-check { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; }
+.move-check p { margin: 0; line-height: 1.6; }
+.move-actions { justify-content: flex-start; align-items: center; margin-top: 10px; }
+.move-path { font-family: Consolas, monospace; word-break: break-all; }
+.move-banner .move-path { font-size: 13px; }
 .update-status { margin-top: 10px; font-size: 13px; }
 .update-status .update-progress { max-width: 420px; margin-top: 6px; }
 .source-link { color: var(--p3-bg); }

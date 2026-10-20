@@ -10,7 +10,8 @@
 7. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt；
    还写上压缩包的地址、SHA-256 和大小，Evo 里的一键更新（updater.py）按它下载、核对
 
-版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己的 %LOCALAPPDATA%\\Evo。
+版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己电脑上程序旁边的
+Evo Tracker Data（规则见 paths.py）。
 只是想试一下流程、还有没提交的改动时：python tools/release.py --allow-dirty（文件名会带上 -dirty，不要发布这种；也不写 latest.json）
 
 做好以后用 python tools/publish.py 上传和核对（压缩包、官网、最后 latest.json，见 publish.py 开头）。

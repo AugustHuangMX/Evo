@@ -35,7 +35,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="Evo",
-    console=False,  # 不显示黑色终端窗口；运行记录写在 %LOCALAPPDATA%\Evo\logs\evo.log
+    console=False,  # 不显示黑色终端窗口；运行记录写在数据文件夹的 logs\evo.log（数据文件夹在哪见 paths.py）
     icon=os.path.join(ROOT, "build", "icon", "evo.ico"),
     upx=False,  # 不压缩：压缩过的 exe 更容易被杀毒软件误报
 )

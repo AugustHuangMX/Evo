@@ -24,12 +24,14 @@ from flask import (Flask, Response, abort, flash, g, jsonify, redirect, render_t
                    url_for)
 
 import app_settings
+import data_move
 import game_aspect
 import ranks
 import screenshots
 import storage
 import update_check
 import updater
+import paths
 from paths import CAPTURES_DIR, PANEL_DIR, data_absolute
 from post_match import COUNTED_KILLS_NOTES, NO_SUMMARY_NOTES
 
@@ -118,6 +120,10 @@ def security_checks():
     # 修改、删除必须带上口令（防止别的网页偷偷替你提交）
     if request.method == "POST" and request.form.get("token") != app.config["TOKEN"]:
         abort(403)
+    # 正在搬数据文件夹（data_move.py）：这时改的东西会留在旧位置、被删掉，所以先不让改
+    if request.method == "POST" and data_move.busy():
+        flash("正在搬数据文件夹，搬完 Evo 会重新打开，到时候再改。", "error")
+        return back_to_page()
 
 
 @app.context_processor
@@ -136,6 +142,9 @@ def template_globals():
         "update_offer": offer,
         "update_job": updater.state(offer),
         "update_result": updater.take_result(),  # 刚一键更新过：顶部说一次"已更新到 x.y.z"或"没装上"
+        # 搬数据文件夹（data_move.py）：正在搬时顶部显示进度；刚搬好时顶部说一次搬到了哪里
+        "move_job": data_move.state(),
+        "move_result": data_move.take_result(),
         "version": storage.APP_VERSION,
         # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"；有 2 个以上账号时，右上角切换账号
         "name_question": name_question(),
@@ -629,6 +638,7 @@ def settings():
         "settings.html",
         resolution=f"{size[0]} × {size[1]}" if size else None,
         aspect=aspect_view(size),
+        move=move_view(),
         data_dir=db_path().parent,
         db_file=db_path().name,
         db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
@@ -663,6 +673,46 @@ def aspect_view(size):
         found = size[0] / size[1]  # 没读到游戏设置：和屏幕一样
     return {"choice": game_aspect.choice(), "auto": game_aspect.AUTO, "options": list(game_aspect.ASPECTS),
             "detected": game_aspect.name(found) if found else None, "why": why}
+
+
+def move_view():
+    """设置页"战绩数据"一栏的"更改位置"（data_move.py）：能不能改、上次检查的结果（检查后回到这一页时显示）。"""
+    checked = session.pop("move_check", None)
+    auto = data_move.auto_target()
+    return {"blocked": data_move.blocker(), "check": checked, "name": paths.DATA_NAME,
+            "legacy": paths.DATA_SOURCE == "legacy", "auto_target": str(auto) if auto else None,
+            "auto_failed": app_settings.get(data_move.AUTO_FAILED_KEY)}
+
+
+@app.post("/data/check")
+def check_data_move():
+    """"更改位置"选好文件夹后："下一步"：检查能不能搬（data_move.check），回到设置页显示结果和"开始搬"按钮。"""
+    session["move_check"] = data_move.check(request.form.get("folder", ""))
+    return redirect(url_for("settings") + "#data-move")
+
+
+@app.post("/data/move")
+def start_data_move():
+    """"开始搬"或"改用那份数据"：在后台搬，顶部显示进度；搬好后 Evo 自己重新打开（data_move.start）。"""
+    try:
+        data_move.start(request.form.get("folder", ""), use_existing=request.form.get("use_existing") == "1")
+    except data_move.MoveError as e:
+        flash(f"没开始搬：{e}", "error")
+        return redirect(url_for("settings") + "#data-move")
+    return back_to_page()
+
+
+@app.post("/data/dismiss")
+def dismiss_data_move():
+    """搬失败的提示上点了"知道了"。"""
+    data_move.dismiss()
+    return back_to_page()
+
+
+@app.get("/data/progress")
+def data_move_progress():
+    """页面每半秒问一次搬的进度（base.html 里的脚本）；阶段变了，页面就重新打开一次。"""
+    return jsonify(data_move.state() or {"phase": "none"})
 
 
 @app.post("/settings/game-aspect")

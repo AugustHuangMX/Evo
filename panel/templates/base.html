@@ -93,6 +93,40 @@
 <div class="flash flash-error" role="alert">Evo <span class="num">{{ update_result.version }}</span> 没装上：{{ update_result.error }}。可以在"设置"页重试，或者去官网下载新版本。</div>
 {% endif %}
 {% endif %}
+{% if move_result %}
+{# 刚搬过数据文件夹（data_move.after_start）：只显示这一次 #}
+{% if move_result.ok %}
+<div class="flash flash-ok" role="status">数据文件夹已经{{ '改' if move_result.kept else '搬' }}到 <span class="move-path">{{ move_result.to }}</span>（<span class="num">{{ move_result.games }}</span> 局）。{% if move_result.kept %}原来位置的数据还在 <span class="move-path">{{ move_result.from }}</span>，不用了可以自己删掉。{% elif move_result.left %}旧位置有几样没删掉（{{ move_result.left|join('、') }}），可以自己删：<span class="move-path">{{ move_result.from }}</span>{% else %}旧位置的数据已经删掉。{% endif %}</div>
+{% else %}
+<div class="flash flash-error" role="alert">数据文件夹改到了 <span class="move-path">{{ move_result.to }}</span>，但那里的数据库读不出来，旧位置 <span class="move-path">{{ move_result.from }}</span> 的数据没有删。请在"设置"里打开数据文件夹，把 logs 里的 evo.log 发给我们。</div>
+{% endif %}
+{% endif %}
+{% if move_job %}
+{# 正在搬数据文件夹（data_move.py）：复制时每半秒问一次进度（下面的脚本，看 data-move-poll），阶段变了就重新打开页面 #}
+<div class="banner-info move-banner" role="{{ 'alert' if move_job.phase == 'failed' else 'status' }}"
+     {% if move_job.phase in ('copying', 'verifying', 'restarting') %}data-move-poll="{{ move_job.phase }}"{% endif %}>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 Z"></path><path d="M10 13 h6"></path><path d="M13.5 10.5 L16 13 L13.5 15.5"></path></svg>
+  {% if move_job.phase == 'copying' %}
+  <span>{{ 'Evo 的默认数据位置改到了程序旁边，' if move_job.auto }}正在把数据{{ '' if move_job.use_existing else '搬' }}到 <span class="move-path">{{ move_job.target }}</span></span>
+  <div class="update-progress">
+    <div class="progress" role="progressbar" aria-label="搬数据的进度" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="{{ move_job.percent }}" data-move-progress><span class="progress-bar" style="width: {{ move_job.percent }}%"></span></div>
+    <span class="progress-text num" data-move-progress-text>{{ move_job.percent }}% · {{ move_job.done_mb }} / {{ move_job.total_mb }} MB</span>
+  </div>
+  {% elif move_job.phase == 'verifying' %}
+  <span class="grow">正在核对搬过去的数据…</span>
+  {% elif move_job.phase == 'restarting' %}
+  <span class="grow">数据{{ '已经改好' if move_job.use_existing else '搬好了' }}，Evo 正在重新打开…</span>
+  {% elif move_job.phase == 'failed' %}
+  <span class="grow">数据没搬成：<span class="update-error">{{ move_job.error }}</span>。数据还在原来的位置，照常记录。</span>
+  <form method="post" action="{{ url_for('dismiss_data_move') }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <button type="submit" class="btn-text">知道了</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 {% if update_offer %}
 {# 有新版本：点"立即更新"在 Evo 里下载，下载完点"安装并重新启动"；不能在 Evo 里更新时去官网下载（见 _update.html） #}
 {{ upd.banner(update_offer, update_job) }}
@@ -279,6 +313,50 @@
     }
     setTimeout(tick, 500);
   })();
+
+  // 正在搬数据文件夹：每半秒问一次进度；阶段变了就重新打开这一页。快要重新打开 Evo 时，先让窗口允许新窗口到最前面
+  (function () {
+    var box = document.querySelector("[data-move-poll]");
+    if (!box) return;
+    var phase = box.dataset.movePoll;
+    function tick() {
+      fetch("{{ url_for('data_move_progress') }}", { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          if (s.phase === "restarting") {
+            var api = window.pywebview && window.pywebview.api;
+            if (api && api.allow_foreground) api.allow_foreground();
+          }
+          if (s.phase !== phase) { location.reload(); return; }
+          if (s.phase === "copying") {
+            document.querySelectorAll("[data-move-progress]").forEach(function (bar) {
+              bar.setAttribute("aria-valuenow", s.percent);
+              bar.firstElementChild.style.width = s.percent + "%";
+            });
+            document.querySelectorAll("[data-move-progress-text]").forEach(function (el) {
+              el.textContent = s.percent + "% · " + s.done_mb + " / " + s.total_mb + " MB";
+            });
+          }
+          setTimeout(tick, 500);
+        })
+        .catch(function () { setTimeout(tick, 2000); });  // Evo 正在重新打开时连不上，等它关掉窗口
+    }
+    setTimeout(tick, 500);
+  })();
+
+  // 设置页"更改数据位置"的"浏览…"：在 Evo 窗口里弹出 Windows 选文件夹的对话框（app_window.py），选好就直接"下一步"
+  document.querySelectorAll("[data-pick-folder]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var api = window.pywebview && window.pywebview.api;
+      if (!api || !api.pick_folder) return;
+      var form = btn.closest("form"), input = form.querySelector("input[name=folder]");
+      api.pick_folder(input.value).then(function (folder) {
+        if (!folder) return;
+        input.value = folder;
+        form.requestSubmit();
+      });
+    });
+  });
 </script>
 {% if in_app %}
 <script>

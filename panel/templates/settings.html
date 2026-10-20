@@ -103,6 +103,55 @@
           <a class="btn" href="{{ url_for('export') }}">导出全部 CSV</a>
         </div>
       </div>
+      {# 更改数据位置（data_move.py）：平时收起；点了"下一步"检查过一次，回到这一页时展开、显示结果 #}
+      <details class="move-data" id="data-move" {{ 'open' if move.check }}>
+        <summary>更改数据位置…</summary>
+        <p class="setting-desc">数据库、截图、运行记录和设置一起搬，放在你选的文件夹下面的"{{ move.name }}"里。搬的时候 Evo 会关掉再自动打开，搬好后删掉旧位置的数据。</p>
+        {% if move.legacy %}
+        <p class="setting-desc">数据还在 C 盘以前的默认位置。{% if move.auto_target %}Apex 没在运行时，Evo 会自动把它搬到程序旁边的 <span class="move-path">{{ move.auto_target }}</span>。{% elif move.auto_failed %}自动搬到程序旁边没成功（{{ move.auto_failed }}），可以在这里手动选一个位置。{% endif %}</p>
+        {% endif %}
+        <form method="post" action="{{ url_for('check_data_move') }}" class="move-form" data-busy="正在检查…">
+          <input type="hidden" name="token" value="{{ token }}">
+          <label class="label" for="move-folder">放到哪个文件夹下面</label>
+          <div class="move-input">
+            <input type="text" id="move-folder" name="folder" value="{{ move.check.chosen if move.check else '' }}"
+                   placeholder="比如 D:\Games" autocomplete="off" spellcheck="false"
+                   {% if move.blocked %}disabled aria-describedby="move-blocked"{% endif %}>
+            {% if in_app %}<button type="button" class="btn" data-pick-folder {{ 'disabled' if move.blocked }}>浏览…</button>{% endif %}
+            <button type="submit" class="btn" {{ 'disabled' if move.blocked }}>下一步</button>
+          </div>
+          {% if move.blocked %}<p class="update-hint" id="move-blocked">{{ move.blocked }}</p>{% endif %}
+        </form>
+        {% if move.check %}
+        {% set c = move.check %}
+        <div class="move-check" role="{{ 'alert' if c.problem else 'status' }}">
+          {% if c.problem %}
+          <p><span class="update-error">不能搬到这里：{{ c.problem }}</span></p>
+          {% elif c.existing %}
+          <p><span class="move-path">{{ c.target }}</span> 里已经有一份 Evo 的数据（{% if c.existing.games is not none %}<span class="num">{{ c.existing.games }}</span> 局{% if c.existing.last %}，最近一局 <span class="num">{{ c.existing.last }}</span>{% endif %}{% else %}数据库读不出来{% endif %}）。两份不会合并，也不会覆盖：可以改用那份数据（现在的数据留在原处），或者换一个文件夹。</p>
+          <div class="setting-actions move-actions">
+            <form method="post" action="{{ url_for('start_data_move') }}" data-busy="正在准备…" data-allow-foreground>
+              <input type="hidden" name="token" value="{{ token }}">
+              <input type="hidden" name="folder" value="{{ c.chosen }}">
+              <input type="hidden" name="use_existing" value="1">
+              <button type="submit" class="btn btn-primary" {{ 'disabled' if move.blocked }}>改用那份数据</button>
+            </form>
+            <a class="btn-text" href="{{ url_for('settings') }}">取消</a>
+          </div>
+          {% else %}
+          <p>数据会搬到 <span class="move-path">{{ c.target }}</span>（{% if c.size_mb %}约 <span class="num">{{ c.size_mb }}</span> MB{% else %}不到 1 MB{% endif %}{% if c.free_gb is not none %}，那个盘还剩 <span class="num">{{ c.free_gb }}</span> GB{% endif %}）。搬的时候 Evo 会关掉再自动打开，搬好后删掉旧位置的数据。</p>
+          <div class="setting-actions move-actions">
+            <form method="post" action="{{ url_for('start_data_move') }}" data-busy="正在准备…" data-allow-foreground>
+              <input type="hidden" name="token" value="{{ token }}">
+              <input type="hidden" name="folder" value="{{ c.chosen }}">
+              <button type="submit" class="btn btn-primary" {{ 'disabled' if move.blocked }}>开始搬</button>
+            </form>
+            <a class="btn-text" href="{{ url_for('settings') }}">取消</a>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </details>
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name">截图</div>

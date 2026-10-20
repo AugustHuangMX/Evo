@@ -1,6 +1,6 @@
 """运行全部测试：python tests/run_all.py（约 5 分钟）
 
-什么时候跑：改了识别（layout.py、game_aspect.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）
+什么时候跑：改了识别（layout.py、game_aspect.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）
 或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；
@@ -12,6 +12,7 @@ import time
 import fake_game  # noqa: F401  要在项目代码之前导入（设置临时数据文件夹）
 import test_accounts
 import test_aspect
+import test_data_move
 import test_eliminated
 import test_in_match
 import test_legends
@@ -33,7 +34,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "0.3.0 新流程（对局中、冠军、大厅校准、各来源优先级）": test_in_match,
          "一键更新（下载、核对、安装、恢复、面板）": test_updater,
          "WebView2 检查（没有时问要不要装、不装用浏览器、不用 IE 内核）": test_webview2,
-         "游戏画面比例（16:10、4:3：换算、自动检测、设置页、整局重放）": test_aspect}
+         "游戏画面比例（16:10、4:3：换算、自动检测、设置页、整局重放）": test_aspect,
+         "数据文件夹（放在哪里、搬家、指路文件、老玩家自动搬）": test_data_move}
 
 
 def main():

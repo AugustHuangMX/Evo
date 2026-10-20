@@ -4,20 +4,20 @@
 
 - 把 dist/Evo 整个复制到安装文件夹。以前装过的话先删掉旧的程序文件——只删里面有 Evo.exe 的文件夹，免得误删别的东西
 - --data：数据文件夹（数据库、截图、日志）。写进安装文件夹里的 data_location.txt，Evo.exe 启动时据此找数据；
-  不写就用 %LOCALAPPDATA%\\Evo。安装只动程序文件，不碰数据文件夹
+  不写就按 Evo 自己的规则找（paths.resolve_data_dir：一般是安装文件夹旁边的 Evo Tracker Data）。安装只动程序文件，不碰数据文件夹
 - 在桌面和开始菜单建"Evo"快捷方式
 - 在项目里记下数据文件夹（installed_data_location.txt，不提交）：用源码运行 evo_app.py 时，战绩也记进这个数据文件夹（见 source_run.py）
 - Evo 正在运行时不安装（文件被占用，也免得装到一半）
 """
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
+import paths
 from game_detect import process_names
 from source_run import POINTER_FILE
 
@@ -43,7 +43,7 @@ def special_folder(name):
 def main():
     parser = argparse.ArgumentParser(description="安装打包好的 Evo")
     parser.add_argument("target", type=Path, help="安装到哪个文件夹，如 E:\\Evo Tracker")
-    parser.add_argument("--data", type=Path, help="数据文件夹，如 E:\\Evo Tracker Data（不写就用 %%LOCALAPPDATA%%\\Evo）")
+    parser.add_argument("--data", type=Path, help="数据文件夹，如 E:\\Evo Tracker Data（不写就用安装文件夹旁边的 Evo Tracker Data）")
     args = parser.parse_args()
     target = args.target.resolve()
     data = args.data.resolve() if args.data else None
@@ -69,7 +69,8 @@ def main():
         data.mkdir(parents=True, exist_ok=True)
         print(f"数据文件夹：{data}（写进了 data_location.txt）")
 
-    data_dir = data or Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Evo"  # 和 paths.py 里打包版的规则一样
+    # 安装好的 Evo 会用哪个数据文件夹：和 paths.py 里打包版的规则一样（直接调用它）
+    data_dir = data or paths.resolve_data_dir(environ={}, frozen=True, exe_dir=target)[0]
     POINTER_FILE.write_text(f"{data_dir}\n", encoding="utf-8")
     print(f"用源码运行 evo_app.py 时，战绩也记进 {data_dir}（写进了项目里的 {POINTER_FILE.name}）")
 

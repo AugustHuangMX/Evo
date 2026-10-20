@@ -12,7 +12,7 @@ Evo 的源代码是公开的（[GitHub](https://github.com/AugustHuangMX/Evo)）
 
 ## 一、Evo 在你电脑上保存了什么
 
-Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这一局的数据。下面这些都保存在 Evo 的**数据文件夹**里（默认是 `%LOCALAPPDATA%\Evo`；用安装程序装的，是你安装时选的数据文件夹；具体位置可以在 Evo 窗口的【设置】页看到并直接打开）：
+Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这一局的数据。下面这些都保存在 Evo 的**数据文件夹**里（0.3.5 起默认是程序旁边的 `Evo Tracker Data` 文件夹，可以在设置页改到别的地方；0.3.4 及以前默认是 `%LOCALAPPDATA%\Evo`，0.3.5 第一次打开时会自动搬到程序旁边；用安装程序装的，是你安装时选的数据文件夹；具体位置可以在 Evo 窗口的【设置】页看到并直接打开）。数据不在 `%LOCALAPPDATA%\Evo` 时，那里只留一个小文件 `data_location.txt`，里面写着数据文件夹在哪里（换新版本时靠它找到数据）：
 
 | 内容 | 文件 | 里面有什么 |
 |---|---|---|
@@ -119,7 +119,7 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 
 **This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.**
 
-- **All data stays on your computer.** Evo captures the screen while the game is running and saves match results, screenshots, a log file and settings in its local data folder (shown in Evo's Settings page; `%LOCALAPPDATA%\Evo` by default). Nothing is uploaded. There is no account system, no analytics, no telemetry, no ads and no automatic crash reporting.
+- **All data stays on your computer.** Evo captures the screen while the game is running and saves match results, screenshots, a log file and settings in its local data folder (shown in Evo's Settings page; from 0.3.5 the default is an `Evo Tracker Data` folder next to the program and it can be moved in Settings; earlier versions used `%LOCALAPPDATA%\Evo`). Nothing is uploaded. There is no account system, no analytics, no telemetry, no ads and no automatic crash reporting.
 - **Teammates (versions after 0.2.0).** From the post-match summary screen, Evo also saves your two teammates' in-game names, the IDs shown under their cards, and their stats for that match (kills/assists/knockdowns, damage, survival time, revives, respawns), so the Matches page can show who you played with. Opponents' names and IDs are not saved, and nobody's rank is saved.
 - **Screenshots** show the whole screen at that moment, so they may contain other players' in-game names and anything else on screen (for example a Discord or Steam overlay). They stay on your computer.
 - **Update check and in-app update (network features added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once every 8 hours while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json` (latest version number, release date, release notes, and the address and SHA-256 checksum of the new package). From version 0.3.3, when you click "立即更新" (Update now), Evo downloads the new package from `https://dl.evotracker.cn` (the same file as on the website), verifies its SHA-256 and keeps it in the `_update` folder inside Evo's program folder; it installs it (closes for a few seconds, replaces its program files and reopens) only after you click "安装并重新启动" (Install and restart). Your match data is not affected. The requests contain only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates without you asking.

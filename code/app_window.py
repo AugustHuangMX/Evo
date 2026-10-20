@@ -99,9 +99,14 @@ class WindowApi:
     def close(self):
         self._window.destroy()
 
+    def pick_folder(self, start=""):
+        """设置页"更改位置"的"浏览…"（data_move.py）：弹出 Windows 选文件夹的对话框，返回选的文件夹，没选返回 None。"""
+        chosen = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=start or "")
+        return chosen[0] if chosen else None
+
     def allow_foreground(self):
-        """点"安装并重新启动"时调用（base.html）：允许接下来新打开的 Evo 把窗口放到最前、拿到焦点。
-        Windows 只让刚被点过的程序这样做，新 Evo 是后台的安装程序打开的，没有这个许可窗口会被别的程序挡住。"""
+        """点"安装并重新启动""数据搬好后重新打开"时调用（base.html）：允许接下来新打开的 Evo 把窗口放到最前、拿到焦点。
+        Windows 只让刚被点过的程序这样做，新 Evo 是后台打开的，没有这个许可窗口会被别的程序挡住。"""
         _user32.AllowSetForegroundWindow(-1)  # ASFW_ANY：到用户下一次按键、点鼠标为止
 
     def _bring_to_front(self):

@@ -12,6 +12,8 @@
 - 运行记录写在数据文件夹的 logs/evo.log（打包后没有终端窗口，出了问题看这里）
 - 一键更新（updater.py）：用户点了"安装并重新启动"，新版本的 Evo.exe 跑起来后托盘程序自己退出，
   新版本换好程序文件再把 Evo 打开（它带 --apply-update 运行，不弹窗口、不记录）
+- 数据文件夹搬家（data_move.py）：设置页"更改位置"，或数据还在 C 盘旧的默认位置时自动搬到程序旁边。
+  搬好后打开新的 Evo（--wait-pid 等这个退出），托盘程序自己退出；新的 Evo 启动时删掉旧位置里搬走的东西
 
 运行：python code/evo_app.py
   用源码运行、这台电脑上装过 Evo 时：战绩记进安装版的数据文件夹（启动前先备份数据库），截图全部存进项目的 captures/，
@@ -46,6 +48,7 @@ import pystray  # noqa: E402
 from PIL import Image, ImageDraw, ImageOps  # noqa: E402
 
 import app_settings  # noqa: E402
+import data_move  # noqa: E402
 import storage  # noqa: E402
 import webview2  # noqa: E402
 from game_detect import GAME_PROCESSES, game_running  # noqa: E402
@@ -233,6 +236,7 @@ class Recorder:
         self.log, self.game_names, self.check_seconds = log, game_names, check_seconds
         self.on_change = on_change or (lambda: None)
         self.paused = False
+        self.held = False  # 正在搬数据文件夹（data_move.py）：不开始记录，正在记录的也停下
         self.state = "waiting"  # waiting 等待游戏 / recording 正在记录 / paused 已暂停
         self.saved_before = 0  # 之前几段记录一共记下的局数
         self.status = {"saved": 0}  # 当前这一段记录记下的局数（子程序实时告诉我们）
@@ -253,6 +257,11 @@ class Recorder:
         self.log(f"点了{'暂停' if self.paused else '继续'}记录")
         self._wake.set()
 
+    def hold(self, on):
+        """搬数据文件夹时按住记录（data_move.py）：on=True 不开始记录、正在记录的停下；on=False 恢复。"""
+        self.held = on
+        self._wake.set()
+
     def quit(self):
         self._quit.set()
         self._wake.set()
@@ -265,7 +274,8 @@ class Recorder:
     def _loop(self):
         while not self._quit.is_set():
             game = game_running(self.game_names)
-            want = game and not self.paused and time.monotonic() - self._last_error > RETRY_AFTER_ERROR
+            want = (game and not self.paused and not self.held
+                    and time.monotonic() - self._last_error > RETRY_AFTER_ERROR)
             if want and not self._recording():
                 self.log("检测到游戏在运行，开始记录")
                 self._start_collect()
@@ -503,6 +513,7 @@ def main():
                         help="自检：识别这些截图，把结果写进日志后退出")
     # 一键更新时，旧的 Evo 用这几个参数打开新版本的 Evo.exe，让它把自己装进程序文件夹（见 updater.py）
     parser.add_argument("--apply-update", type=Path, metavar="程序文件夹", help=argparse.SUPPRESS)
+    # 一键更新装好后、数据文件夹搬好后（data_move.py），新打开的 Evo 先等旧的退出
     parser.add_argument("--wait-pid", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--from-version", default="", help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -519,6 +530,11 @@ def main():
         check_images(args.check_image, log)
         return
 
+    if args.wait_pid:
+        import updater
+
+        updater.wait_exit(args.wait_pid, data_move.OLD_EXIT_WAIT)
+
     if already_running():
         # 再次双击 Evo：让已经在运行的那个把窗口弹出来，自己安静退出
         if INSTALLED_DATA is not None:
@@ -531,10 +547,14 @@ def main():
 
     logger = setup_logging()
     log = logger.info
+    # 后台线程里没接住的错误也写进日志（打包后没有终端窗口，出了问题只能看日志）
+    threading.excepthook = lambda a: logger.error(f"后台线程 {a.thread.name if a.thread else ''} 出错",
+                                                  exc_info=(a.exc_type, a.exc_value, a.exc_traceback))
     log(f"Evo {storage.APP_VERSION} 启动{'（源码运行）' if not FROZEN else ''}。数据文件夹：{DATA_DIR}；"
         f"把这些进程当作游戏：{'、'.join(args.game)}")
     if INSTALLED_DATA is not None:
         backup_before_source_run(log)
+    data_move.after_start(log)  # 刚搬过数据文件夹：删掉旧位置里搬走的东西，窗口顶部说一次
     import updater
 
     if FROZEN:
@@ -567,15 +587,23 @@ def main():
 
     stop_update_checker = threading.Event()
 
-    def quit_app(_icon, _item):
-        log("正在退出……" if _item is not None else "一键更新：新版本已经开始安装，正在退出……")
+    def shut_down(reason):
+        log(reason)
         stop_update_checker.set()
         recorder.quit()
         panel.close()
         icon.stop()
 
+    def quit_app(_icon, _item):  # 托盘菜单的"退出"（pystray 只接受 0–2 个参数的函数）
+        shut_down("正在退出……")
+
     # 一键更新：Apex 开着时不能安装；安装时新版本跑起来以后，让托盘程序像点了"退出"一样退出
-    updater.connect(game_running=lambda: game_running(recorder.game_names), quit_app=lambda: quit_app(None, None))
+    updater.connect(game_running=lambda: game_running(recorder.game_names),
+                    quit_app=lambda: shut_down("一键更新：新版本已经开始安装，正在退出……"))
+    # 搬数据文件夹：Apex 开着时不搬；搬的时候按住记录；搬好后打开新的 Evo，自己像点了"退出"一样退出
+    data_move.connect(game_running=lambda: game_running(recorder.game_names), hold=recorder.hold,
+                      quit_app=lambda: shut_down("数据文件夹搬好了，正在退出，新位置的 Evo 马上打开……"),
+                      relaunch=data_move.relaunch)
 
     icon.menu = pystray.Menu(
         pystray.MenuItem("打开 Evo", lambda _i, _m: panel.open(), default=True),
@@ -585,12 +613,16 @@ def main():
     )
 
     def setup(ic):
-        ic.visible = True
-        recorder.start()
-        listen_for_show(lambda: panel.open())  # 再次双击 Evo 时弹出窗口
-        start_update_checker(log, icon.notify, stop_update_checker)  # 用户同意了才联网检查新版本
-        if not args.background:
-            panel.open(window=not args.no_window)  # 一打开 Evo 就弹出窗口，而不是只在托盘里
+        try:
+            ic.visible = True
+            recorder.start()
+            listen_for_show(lambda: panel.open())  # 再次双击 Evo 时弹出窗口
+            start_update_checker(log, icon.notify, stop_update_checker)  # 用户同意了才联网检查新版本
+            data_move.watch_auto_move(log, stop_update_checker)  # 数据还在 C 盘旧的默认位置：Apex 没开时自动搬到程序旁边
+            if not args.background:
+                panel.open(window=not args.no_window)  # 一打开 Evo 就弹出窗口，而不是只在托盘里
+        except Exception:  # noqa: BLE001  打包后没有终端窗口：出错要写进日志，不然什么都看不到
+            logger.exception("启动时出错")
 
     icon.run(setup=setup)
     log("Evo 已退出")
