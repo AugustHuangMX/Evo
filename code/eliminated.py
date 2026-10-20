@@ -21,7 +21,7 @@ CONFIG_NAME = "eliminated.json"
 def read_eliminated(engine, img, cfg):
     """识别一张淘汰画面。返回 {"placement": 17 或 None, "raw": 读到的原文, "score": 置信度或 None}。"""
     spec = cfg["placement"]
-    lines = read_lines(engine, img, spec["roi"], cfg)
+    lines = read_lines(engine, img, spec["roi"], cfg, spec.get("anchor"))
     low, high = spec["range"]
     for text, score in lines:
         for wrong, right in cfg["replace"].items():

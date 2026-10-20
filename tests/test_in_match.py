@@ -88,8 +88,8 @@ def screenshot_checks(images):
     cv2.putText(fake, "7", (1636, 119), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
     top = hud.cfg["top_right"]
     snip = hud.top_snip(fake)
-    raw = hud._number(snip.crop(top["fields"]["participation"]["roi"], top["upscale"], pad=top["pad"]), r"^(\d{1,3})$",
-                      [0, 60], top)[0]
+    lone = [1631, 95, 32, 28]  # 老板分数字平时在的地方（"7"画在这里，先确认单独读这一块确实读得出 7）
+    raw = hud._number(snip.crop(lone, top["upscale"], pad=top["pad"]), r"^(\d{1,3})$", [0, 60], top)[0]
     values, _, shown = hud.read_top(snip)
     out["lone_kp"] = (raw, values["participation"], "participation" in shown)
     out["spectating"] = hud.own_legend(images[SPECTATING]) is None and hud.spectating(images[SPECTATING])

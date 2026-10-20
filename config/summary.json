@@ -3,11 +3,13 @@
   "base_resolution": [1920, 1080],
   "upscale": 2,
   "grayscale": true,
+  "anchor": "center",
+  "_说明_anchor": "比 16:9 窄的画面（16:10、4:3）上下会多出一截，每块界面贴哪条边（见 layout.py）：三张卡片居中，顶部横幅、右上角名次和小队总击杀贴上边。2026-10-20 用 16:10、4:3 实战截图量的",
   "min_score": 0.9,
   "replace": {"O": "0", "o": "0", "l": "1", "I": "1", "：": ":"},
   "fields": {
-    "placement":     {"label": "名次",         "roi": [1415, 138, 195, 98], "expect": "integer",  "range": [1, 20]},
-    "squad_kills":   {"label": "小队总击杀",   "roi": [1714, 145, 166, 90], "expect": "integer",  "range": [0, 99]},
+    "placement":     {"label": "名次",         "roi": [1415, 138, 195, 98], "expect": "integer",  "range": [1, 20], "anchor": "top"},
+    "squad_kills":   {"label": "小队总击杀",   "roi": [1714, 145, 166, 90], "expect": "integer",  "range": [0, 99], "anchor": "top"},
     "kda":           {"label": "击杀/助攻/击倒", "roi": [748, 404, 180, 42], "expect": "kda",      "range": [0, 99]},
     "damage":        {"label": "伤害",         "roi": [748, 472, 180, 46],  "expect": "integer",  "range": [0, 99999]},
     "survival_time": {"label": "生存时间",     "roi": [748, 543, 180, 45],  "expect": "duration"},
@@ -16,6 +18,7 @@
   },
   "banner": {
     "roi": [780, 158, 360, 70],
+    "anchor": "top",
     "champion": "捍卫者",
     "_说明": "总结页顶部的大字：被淘汰是'全军覆没'，拿冠军是'捍卫者'（2026-10-18 样本 captures/samples/捍卫者结算界面.png：冠军也有总结页）。存总结页时读一次，是'捍卫者'就记第 1 名（来源'冠军横幅'，见 post_match.py）"
   },

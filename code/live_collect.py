@@ -1,7 +1,8 @@
 """实战采集（模型的主循环）：打游戏时在后台运行，按画面识别、记录每一局。流程图见 docs/模型流程.drawio，
 规则见 docs/对局全流程图.md。
 
-只截屏，不碰游戏。每截一张，先判断是哪个画面（见 screens.py：先比外观，几毫秒；像了才用识别引擎读关键字确认），
+只截屏，不碰游戏（唯一的例外：读 Apex 自己的视频设置文件，知道游戏画面是 16:9、16:10 还是 4:3，见 game_aspect.py）。
+每截一张，先判断是哪个画面（见 screens.py：先比外观，几毫秒；像了才用识别引擎读关键字确认），
 再交给对应的部分。识别引擎（OCR）用到时才加载，闲置 2 分钟后释放；对局中交火时一律不用引擎（原则 3）：
 - 大厅：读玩家名、段位和段内分数，连续两次一样就记下，并用它校准前后两次大厅之间各局的 RP（见 lobby.py、calibration.py）。
   回到大厅也算上一局结束
@@ -43,6 +44,7 @@ import dxcam
 import screenshots
 import storage
 from eliminated import read_eliminated
+from game_aspect import AspectWatcher
 from hud import Hud
 from in_match import InMatchWatcher
 from lobby import LobbyReader, LobbyWatcher
@@ -264,7 +266,7 @@ class Usage:
 
 
 def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.0, match_interval=None,
-            stop=None, deadline=None, log=print, status=None, keep_all=None):
+            stop=None, deadline=None, log=print, status=None, keep_all=None, game_aspect=None):
     """采集主循环：一直截屏、识别、记录，直到下面任何一种情况发生，然后安全收尾（没存完的局存下、释放截屏和识别模型）：
     - stop（threading.Event）被设置：托盘程序在游戏关闭、暂停或退出时用它喊停
     - 到达 deadline（time.monotonic() 的时刻）
@@ -274,6 +276,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     status：字典，记下的局数会实时写进 status["saved"]（托盘图标显示用）
     keep_all：保留全部截图。None = 按设置页的开关（screenshots.keep_all()），每局结束时再看一眼，
     改了从下一局开始生效；True / False = 整次记录都这样（测试时直接指定）
+    game_aspect：游戏画面比例。None = 按设置页（默认自动检测，读 Apex 的视频设置文件，见 game_aspect.py），
+    每隔几秒看一眼；"16:10" 等 = 整次记录都这样（测试时直接指定）
     返回这次一共记下了几局。"""
     set_low_priority()
     usage = Usage(log)
@@ -324,6 +328,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
                               keep_all=lambda: other.keep_all)
     lobby = LobbyWatcher(LobbyReader(engine), post, conn, log)
+    aspect = AspectWatcher(log, clock=lambda: time.monotonic(), fixed=game_aspect)
     log(f"屏幕: {camera.width}x{camera.height}")
     log(f"数据库: {Path(db_path).resolve()}")
     log(f"截图保存到: {run_dir.resolve()}（{'保留全部' if keep else '识别完就删，只留待确认的局要用的'}；"
@@ -358,6 +363,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
             if frame is not None:
                 frames += 1
                 now = datetime.now()
+                aspect.check(frame)  # 游戏画面比例（16:10、4:3 时界面摆法不一样，见 layout.py）
                 screen = detector.detect(frame)
                 on_summary = screen == "summary"
                 in_match.update(screen, frame, now)  # 先交对局中的数据：结算画面上要用
@@ -391,6 +397,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         summary.finish()
         other.leave()
         post.finish()
+        aspect.reset()
         camera.release()
         conn.close()
         left = len(list(run_dir.glob("*.png")))
@@ -405,7 +412,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         kinds = "保留全部" if keep else "待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
         log(f"截图：留下 {left} 张（{kinds}）" + (f"，识别完删掉 {tidied['deleted']} 张（{tidied['freed'] / 2 ** 20:.0f} MB）"
                                               if tidied["deleted"] or not keep else ""))
-        del engine, detector, camera, summary, other, in_match, hud, lobby  # 释放识别模型和截屏，交还内存
+        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved

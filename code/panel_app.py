@@ -24,6 +24,7 @@ from flask import (Flask, Response, abort, flash, g, jsonify, redirect, render_t
                    url_for)
 
 import app_settings
+import game_aspect
 import ranks
 import screenshots
 import storage
@@ -627,6 +628,7 @@ def settings():
     return render_template(
         "settings.html",
         resolution=f"{size[0]} × {size[1]}" if size else None,
+        aspect=aspect_view(size),
         data_dir=db_path().parent,
         db_file=db_path().name,
         db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
@@ -652,6 +654,27 @@ def settings():
                    "name_stats": [{**one, "last_text": time_text(one["last"])} for one in a["name_stats"]]}
                   for a in account_view()["accounts"]],
     )
+
+
+def aspect_view(size):
+    """设置页"游戏画面比例"：选了什么、自动检测出什么（见 game_aspect.py）。"""
+    found, why = game_aspect.from_video_config()
+    if found is None and size:
+        found = size[0] / size[1]  # 没读到游戏设置：和屏幕一样
+    return {"choice": game_aspect.choice(), "auto": game_aspect.AUTO, "options": list(game_aspect.ASPECTS),
+            "detected": game_aspect.name(found) if found else None, "why": why}
+
+
+@app.post("/settings/game-aspect")
+def game_aspect_setting():
+    """"游戏画面比例"：自动检测 / 16:9 / 16:10 / 4:3。记录程序每隔几秒看一眼设置，所以几秒内生效。"""
+    value = request.form.get("aspect")
+    if value != game_aspect.AUTO and value not in game_aspect.ASPECTS:
+        abort(400)
+    app_settings.set_value(game_aspect.SETTING_KEY, value)
+    picked = "自动检测" if value == game_aspect.AUTO else value
+    flash(f"游戏画面比例已改成\"{picked}\"：正在记录的话，几秒内就按新的比例识别。", "ok")
+    return redirect(url_for("settings"))
 
 
 @app.post("/settings/open-folder")

@@ -15,6 +15,7 @@ import numpy as np
 import rapidocr
 from rapidocr import RapidOCR
 
+from layout import cut
 from paths import CONFIG_DIR
 
 MODEL_DIR = Path(rapidocr.__file__).parent / "models"
@@ -90,13 +91,12 @@ def load_image(path):
     return img
 
 
-def crop(img, roi, cfg):
-    """按基准分辨率下的坐标裁出一块并放大。截图分辨率不同时，按比例换算坐标。"""
+def crop(img, roi, cfg, anchor=None):
+    """按基准分辨率下的坐标裁出一块并放大。截图分辨率、宽高比不同时怎么换算坐标见 layout.py；
+    anchor：这块界面贴哪条边（没给就用 cfg 里的 "anchor"）。"""
     base, upscale = cfg["base_resolution"], cfg["upscale"]
-    h, w = img.shape[:2]
-    sx, sy = w / base[0], h / base[1]
-    x, y, rw, rh = roi
-    piece = img[round(y * sy) : round((y + rh) * sy), round(x * sx) : round((x + rw) * sx)]
+    piece = cut(img, roi, base, cfg.get("anchor") if anchor is None else anchor)
+    _, _, rw, rh = roi
     # 统一放大到"基准尺寸 × upscale"，不同分辨率的截图得到同样大小的小块
     piece = cv2.resize(piece, (rw * upscale, rh * upscale), interpolation=cv2.INTER_CUBIC)
     if cfg.get("grayscale"):
@@ -105,7 +105,7 @@ def crop(img, roi, cfg):
     return piece
 
 
-def read_lines(engine, img, roi, cfg):
+def read_lines(engine, img, roi, cfg, anchor=None):
     """识别截图里的一小块，返回读到的每一行 [(文字, 置信度), ...]；没读到返回空列表。"""
-    result = engine(crop(img, roi, cfg))
+    result = engine(crop(img, roi, cfg, anchor))
     return list(zip(result.txts or (), result.scores or ()))

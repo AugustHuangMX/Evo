@@ -45,7 +45,8 @@ class PlayerNameReader:
     def read(self, frame, place):
         """返回 (名字, 置信度)；没读到、置信度不够或长度不像名字时返回 None。"""
         cfg = self.cfg
-        result = self.engine(crop(frame, cfg["places"][place]["roi"], cfg))
+        spot = cfg["places"][place]
+        result = self.engine(crop(frame, spot["roi"], cfg, spot.get("anchor")))
         if not result.txts:
             return None
         found = pick_name(result.boxes, result.txts, result.scores, cfg["min_score"])

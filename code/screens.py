@@ -27,9 +27,9 @@ from paths import CONFIG_DIR
 TEMPLATE_DIR = CONFIG_DIR / "templates"
 
 
-def gray_crop(img, box, base):
-    """按基准坐标裁一块，缩放成基准分辨率下的大小，转成灰度。"""
-    return cv2.cvtColor(crop(img, box, {"base_resolution": base, "upscale": 1}), cv2.COLOR_BGR2GRAY)
+def gray_crop(img, box, base, anchor=None):
+    """按基准坐标裁一块，缩放成基准分辨率下的大小，转成灰度。anchor：这块界面贴哪条边（见 layout.py）。"""
+    return cv2.cvtColor(crop(img, box, {"base_resolution": base, "upscale": 1}, anchor), cv2.COLOR_BGR2GRAY)
 
 
 def outline(gray):
@@ -77,7 +77,7 @@ class ScreenDetector:
         if templates is None:
             return None
         spec = self.cfg["screens"][name]
-        gray = gray_crop(frame, spec["roi"], self.cfg["base_resolution"])
+        gray = gray_crop(frame, spec["roi"], self.cfg["base_resolution"], spec.get("anchor"))
         region = outline(shrunk(gray, spec.get("shrink", 1)))
         # 纯色的区域（如黑屏）算不出相似度，当作不像
         return max(float(np.nan_to_num(cv2.matchTemplate(region, t, cv2.TM_CCOEFF_NORMED), nan=-1.0).max())
@@ -106,8 +106,8 @@ class ScreenDetector:
 
 def save_template(name, image_path, cfg):
     """按配置里的 template_box，从一张截图上截出参照图，存到 config/templates/<name>.png。"""
-    box = cfg["screens"][name]["template_box"]
-    gray = gray_crop(load_image(image_path), box, cfg["base_resolution"])
+    spec = cfg["screens"][name]
+    gray = gray_crop(load_image(image_path), spec["template_box"], cfg["base_resolution"], spec.get("anchor"))
     TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     path = TEMPLATE_DIR / f"{name}.png"
     cv2.imencode(".png", gray)[1].tofile(path)

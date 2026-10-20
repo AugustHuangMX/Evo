@@ -31,7 +31,7 @@ def normalize(text):
 
 def read_text(engine, img, spec, cfg):
     """识别一个小块，返回 (文字, 置信度)。小块里有几行时取置信度最高的一行。"""
-    lines = read_lines(engine, img, spec["roi"], cfg)
+    lines = read_lines(engine, img, spec["roi"], cfg, spec.get("anchor"))
     if not lines:
         return "", None
     text, score = max(lines, key=lambda x: x[1])

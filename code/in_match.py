@@ -34,7 +34,7 @@ class InMatchWatcher:
         self.hud, self.post, self.log = hud, post, log
         self.save, self.keep_all = save, keep_all
         self.last_frame = None  # 保留全部截图时：最近一张右上角有变化的自己的界面（整张）
-        self.name_roi = name_cfg["places"]["hud"]["roi"]
+        self.name_place = name_cfg["places"]["hud"]  # 头像旁边的名字（roi、anchor）
         self.max_names = name_cfg["max_hud_reads"]
         top = hud.cfg["top_right"]
         self.keep = top["keep"]
@@ -112,7 +112,7 @@ class InMatchWatcher:
         self._vote_own(own, now)
         self._vote_mates(frame)
         if self.post.player_name is None and len(self.own_names) < self.max_names:
-            self.own_names.append(self.hud.own_name_snip(frame, self.name_roi))
+            self.own_names.append(self.hud.own_name_snip(frame, self.name_place["roi"], self.name_place.get("anchor")))
         snip = self.hud.top_snip(frame)
         if self.hud.changed(snip, self.tops[-1] if self.tops else None):
             self.tops.append(snip)

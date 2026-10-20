@@ -49,8 +49,8 @@ class LobbyReader:
         self.engine = engine
         self.cfg = cfg or load_config(CONFIG_NAME)
 
-    def _lines(self, frame, roi, upscale):
-        result = self.engine(crop(frame, roi, {**self.cfg, "upscale": upscale}))
+    def _lines(self, frame, spec):
+        result = self.engine(crop(frame, spec["roi"], {**self.cfg, "upscale": spec["upscale"]}, spec.get("anchor")))
         return list(zip(result.txts or (), result.scores or ()))
 
     def read(self, frame):
@@ -60,7 +60,7 @@ class LobbyReader:
         out = {"name": None, "tier": None, "division": None, "progress": None, "score": None,
                "text_division": None, "emblem": None}
         panel = c["panel"]
-        for text, score in self._lines(frame, panel["roi"], panel["upscale"]):
+        for text, score in self._lines(frame, panel):
             if score < panel["min_score"]:
                 continue
             tier = parse_tier(text)
@@ -71,7 +71,7 @@ class LobbyReader:
             if m and out["progress"] is None:
                 out["progress"] = int(m[1])
         emblem = c["emblem"]
-        for text, score in self._lines(frame, emblem["roi"], emblem["upscale"]):
+        for text, score in self._lines(frame, emblem):
             if score >= emblem["min_score"] and roman(text):
                 out["emblem"] = roman(text)
                 break
@@ -80,7 +80,7 @@ class LobbyReader:
                 out["division"] = out["emblem"] or out["text_division"]
             out["score"] = ranks.score(out["tier"], out["division"], out["progress"])
         n = c["name"]
-        out["name"] = read_name(self.engine, Snip(frame, n["roi"], c["base_resolution"]), n["left"], n["min_score"])
+        out["name"] = read_name(self.engine, Snip(frame, n["roi"], c["base_resolution"], n.get("anchor")), n["left"], n["min_score"])
         return out
 
 

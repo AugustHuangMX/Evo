@@ -6,9 +6,11 @@
 - 倒地：左下角自己那一行变红（knocked）；成盒观战：顶部出现"观战"标签（spectating）。都只看颜色、外观，不用识别引擎
 - 队友：自己上方两行的小头像，用缩小的传奇参照图认（mate_legends）；名字先裁下来（snip），一局结束时再读
 - 右上角：先整块存下来（snip），一局结束时再读（read_top）：剩余小队数、击杀、助攻、老板分（参与分）、伤害、本局 RP
+  击杀 / 助攻 / 老板分那一行从左往右排，数字宽度一变（"1"比别的窄、两位数更宽）后面的位置就跟着变，
+  所以先找到每一项前面的图标（骷髅、握手、老板分），再读图标右边的数字（_kp_icons）
 
 检查截图：python code/hud.py 截图1.png [截图2.png ...]   （每张都读一遍，打印结果；会加载识别引擎）
-生成参照图：python code/hud.py --save-template spectate|damage_icon|kp_icon 截图.png   （按配置里的 template_box 截一块）
+生成参照图：python code/hud.py --save-template 名字 截图.png   （名字见 template_specs；按配置里的 template_box 截一块）
 """
 
 import argparse
@@ -19,6 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from layout import Mapping, cut
 from legends import LegendDetector
 from ocr import load_config, load_image
 from player_name import pick_name
@@ -28,7 +31,7 @@ from storage import name_key
 CONFIG_NAME = "hud.json"
 HUD_TEMPLATE_DIR = TEMPLATE_DIR / "hud"
 TOP_FIELDS = ("squads_left", "kills", "assists", "participation", "damage", "rp_delta")
-KP_ROW = ("kills", "assists", "participation")  # 右上角同一行：全是 0 时整行不显示
+KP_ROW = ("kills", "assists", "participation")  # 右上角同一行（从左往右）：全是 0 时整行不显示
 TOP_LABELS = {"squads_left": "剩余小队", "kills": "击杀", "assists": "助攻", "participation": "老板分",
               "damage": "伤害", "rp_delta": "RP"}
 
@@ -37,19 +40,19 @@ class Snip:
     """截图上的一小块，按原分辨率存着（不放大，省内存），以后再按基准坐标裁其中的更小块去识别。
     Stata 类比：先 preserve 一份子样本，用到时再 keep if 一部分。"""
 
-    def __init__(self, frame, box, base):
-        h, w = frame.shape[:2]
-        self.sx, self.sy = w / base[0], h / base[1]
+    def __init__(self, frame, box, base, anchor=None):
+        """anchor：这块界面贴哪条边（见 layout.py）。换算方式在这里定下来（包括当时游戏的宽高比），以后再裁也一样。"""
+        self.map = Mapping(frame.shape, base, anchor)
+        self.sx = self.map.sx
         self.box, self.base = box, base
-        x, y, bw, bh = box
-        self.x0, self.y0 = round(x * self.sx), round(y * self.sy)
-        self.img = frame[self.y0:round((y + bh) * self.sy), self.x0:round((x + bw) * self.sx)].copy()
+        self.x0, self.y0, x1, y1 = self.map.box(box)
+        self.img = frame[self.y0:y1, self.x0:x1].copy()
 
     def crop(self, roi, upscale=1, gray=True, pad=0):
         """按基准坐标裁出 roi（要在 box 里面），放大到"基准尺寸 × upscale"，转灰度（识别引擎要三通道），四周加 pad 像素的边。"""
-        x, y, w, h = roi
-        piece = self.img[round(y * self.sy) - self.y0:round((y + h) * self.sy) - self.y0,
-                         round(x * self.sx) - self.x0:round((x + w) * self.sx) - self.x0]
+        _, _, w, h = roi
+        x0, y0, x1, y1 = self.map.box(roi)
+        piece = self.img[y0 - self.y0:y1 - self.y0, x0 - self.x0:x1 - self.x0]
         piece = cv2.resize(piece, (round(w * upscale), round(h * upscale)),
                            interpolation=cv2.INTER_CUBIC if upscale * self.sx > 1 else cv2.INTER_AREA)
         if gray:
@@ -84,12 +87,9 @@ def best_match(region, template):
     return float(score), x, y
 
 
-def red_ratio(frame, box, base):
+def red_ratio(frame, box, base, anchor=None):
     """box 里"红色"像素的占比（倒地时左下角自己那一行变红）。"""
-    h, w = frame.shape[:2]
-    sx, sy = w / base[0], h / base[1]
-    x, y, bw, bh = box
-    px = frame[round(y * sy):round((y + bh) * sy), round(x * sx):round((x + bw) * sx)].reshape(-1, 3).astype(np.int32)
+    px = cut(frame, box, base, anchor).reshape(-1, 3).astype(np.int32)
     if not len(px):
         return 0.0
     b, g, r = px[:, 0], px[:, 1], px[:, 2]
@@ -114,9 +114,11 @@ class Hud:
         self.mate_templates = self.legends.scaled(mates["scale"])
         self.spectate_template = load_hud_template("spectate")
         self.icon_template = load_hud_template("damage_icon")
-        self.kp_template = load_hud_template("kp_icon")
+        icons = self.cfg["top_right"]["kp_row"]["icons"]
+        self.kp_templates = {name: load_hud_template(icons[name]["template"]) for name in KP_ROW}  # 每一项前面的图标
         self.missing = [n for n, t in (("spectate", self.spectate_template), ("damage_icon", self.icon_template),
-                                       ("kp_icon", self.kp_template)) if t is None]  # 没有参照图的（认不出观战、读不出伤害等）
+                                       *((icons[k]["template"], self.kp_templates[k]) for k in KP_ROW))
+                        if t is None]  # 没有参照图的（认不出观战、读不出伤害等）
 
     # ---------- 只看外观、不用识别引擎 ----------
 
@@ -127,13 +129,13 @@ class Hud:
     def knocked(self, frame):
         """自己倒地了没有（左下角自己那一行的边框和名字变红）。只在认得出自己传奇的截图上问。"""
         k = self.cfg["knocked"]
-        return red_ratio(frame, k["border"], self.base) >= k["border_red"] and \
-            red_ratio(frame, k["name"], self.base) >= k["name_red"]
+        return red_ratio(frame, k["border"], self.base, k.get("anchor")) >= k["border_red"] and \
+            red_ratio(frame, k["name"], self.base, k.get("anchor")) >= k["name_red"]
 
     def spectating(self, frame):
         """是不是在观战（成盒以后）：顶部有"观战"标签。"""
         s = self.cfg["spectate"]
-        score, _, _ = best_match(gray_crop(frame, s["roi"], self.base), self.spectate_template)
+        score, _, _ = best_match(gray_crop(frame, s["roi"], self.base, s.get("anchor")), self.spectate_template)
         return score >= s["min_similarity"]
 
     def spectated_legend(self, frame):
@@ -147,13 +149,15 @@ class Hud:
                 for slot in m["slots"]]
 
     def top_snip(self, frame):
-        return Snip(frame, self.cfg["top_right"]["box"], self.base)
+        top = self.cfg["top_right"]
+        return Snip(frame, top["box"], self.base, top.get("anchor"))
 
     def mate_name_snip(self, frame, slot):
-        return Snip(frame, self.cfg["teammates"]["slots"][slot]["name"], self.base)
+        mates = self.cfg["teammates"]
+        return Snip(frame, mates["slots"][slot]["name"], self.base, mates.get("anchor"))
 
-    def own_name_snip(self, frame, roi):
-        return Snip(frame, roi, self.base)
+    def own_name_snip(self, frame, roi, anchor=None):
+        return Snip(frame, roi, self.base, anchor)
 
     def changed(self, a, b):
         """两块右上角的内容是不是不一样（只存变了的，读的时候少读几张）。"""
@@ -185,28 +189,58 @@ class Hud:
 
     def read_top(self, snip):
         """读一块右上角。返回 {项: 值}（没显示或读不出为 None）、{项: 置信度}，和"显示着"的项（集合）。
-        显示着但读不出 ≠ 没显示：击杀、助攻、老板分那一行看最左边的骷髅图标在不在（或者读出了其中一个）；伤害看图标在不在。
-        （2026-10-18 实战：那一行显示着，数字有时只读出一部分、有时一个都没读出来——都不能当成 0）"""
+        显示着但读不出 ≠ 没显示：击杀、助攻、老板分那一行看骷髅或握手图标在不在；伤害看图标在不在。
+        （2026-10-18 实战：那一行显示着，数字有时只读出一部分、有时一个都没读出来——都不能当成 0）
+        老板分的图标不在、但这一行显示着：老板分留空（用户说过老板分不是每次都有，不知道没显示是不是 0）"""
         top = self.cfg["top_right"]
         values, scores = {}, {}
-        for name, spec in top["fields"].items():
+        for name, spec in top["fields"].items():  # 剩余小队数、RP（击杀那一行见下面）
             piece = snip.crop(spec["roi"], top["upscale"], pad=top["pad"])
             pattern = r"^([+-]?\d{1,3})(?:排位.*)?$" if name == "rp_delta" else r"^(\d{1,3})$"
             values[name], scores[name] = self._number(piece, pattern, spec["range"], top)
         values["damage"], scores["damage"], icon = self._damage(snip, top)
-        kp = top["kp_icon"]
-        kp_reads = [k for k in KP_ROW if values[k] is not None]
-        icon_seen = best_match(snip.gray(kp["area"]), self.kp_template)[0] >= kp["min_similarity"]
-        if not icon_seen and len(kp_reads) < 2:
-            # 图标不在、只读出一个数：多半是背后的画面（2026-10-18 实战：0/0/0 时这一行不显示，老板分那一格读出了"7"）
-            for k in KP_ROW:
-                values[k] = scores[k] = None
+        icons = self._kp_icons(snip, top["kp_row"])
+        row_shown = "kills" in icons or "assists" in icons
+        for name in KP_ROW:
+            values[name], scores[name] = self._kp_number(snip, top, icons, name) if row_shown else (None, None)
         shown = {k for k in values if values[k] is not None}
-        if icon_seen or len(kp_reads) >= 2:  # 图标在（参照图万一在别的分辨率下认不出：读出两个以上也算）
+        if row_shown:
             shown |= set(KP_ROW)
         if icon:
             shown.add("damage")
         return values, scores, shown
+
+    def _kp_icons(self, snip, row):
+        """击杀 / 助攻 / 老板分那一行每个图标的左右边（基准坐标），{项: (左, 右)}，没找到的不在里面。
+        三个图标从左到右排：后一个找到的位置不在前一个右边，算认错了。"""
+        gray = snip.gray(row["area"])
+        found, last_right = {}, None
+        for name in KP_ROW:
+            template = self.kp_templates[name]
+            score, x, _ = best_match(gray, template)
+            left = row["area"][0] + x
+            if score < row["min_similarity"] or (last_right is not None and left < last_right):
+                continue
+            found[name] = (left, left + template.shape[1])
+            last_right = found[name][1]
+        return found
+
+    def _kp_number(self, snip, top, icons, name):
+        """读图标右边的数字：最宽读 digit_width（两位数），也不越过下一个图标（前面还有斜线、底色的斜边，留 gap_before_next）。
+        这一项的图标没找到：(None, None)。"""
+        row = top["kp_row"]
+        if name not in icons:
+            return None, None
+        left = icons[name][1] + 1
+        right = left + row["digit_width"]
+        later = [icons[k][0] for k in KP_ROW[KP_ROW.index(name) + 1:] if k in icons]
+        if later:
+            right = min(right, later[0] - row["gap_before_next"])
+        y, h = row["digits"]
+        if right - left < 6:
+            return None, None
+        piece = snip.crop([left, y, right - left, h], top["upscale"], pad=top["pad"])
+        return self._number(piece, r"^(\d{1,3})$", row["range"], top)
 
     def _damage(self, snip, top):
         """伤害：先找到前面的图标，只读图标右边的数字。返回 (值, 置信度, 图标在不在)。
@@ -243,11 +277,20 @@ def read_name(engine, snip, left_range=None, min_score=0.9, length=(2, 32)):
     return found[0]
 
 
+def template_specs(cfg):
+    """每张参照图的名字 → (配置里带 template_box 的那一节, anchor)。"""
+    top = cfg["top_right"]
+    specs = {"spectate": (cfg["spectate"], cfg["spectate"].get("anchor")),
+             "damage_icon": (top["damage"], top.get("anchor"))}
+    for icon in top["kp_row"]["icons"].values():
+        specs[icon["template"]] = (icon, top.get("anchor"))
+    return specs
+
+
 def save_template(name, image_path, cfg):
     """按配置里的 template_box 从截图上截出参照图，存到 config/templates/hud/<name>.png。"""
-    box = {"spectate": cfg["spectate"], "damage_icon": cfg["top_right"]["damage"],
-           "kp_icon": cfg["top_right"]["kp_icon"]}[name]["template_box"]
-    gray = gray_crop(load_image(image_path), box, cfg["base_resolution"])
+    spec, anchor = template_specs(cfg)[name]
+    gray = gray_crop(load_image(image_path), spec["template_box"], cfg["base_resolution"], anchor)
     HUD_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     path = HUD_TEMPLATE_DIR / f"{name}.png"
     cv2.imencode(".png", gray)[1].tofile(path)
@@ -258,10 +301,10 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="读对局中截图的左下角和右上角；或者生成参照图")
     parser.add_argument("images", type=Path, nargs="+", help="截图")
-    parser.add_argument("--save-template", choices=("spectate", "damage_icon", "kp_icon"), help="从这张截图生成参照图")
+    cfg = load_config(CONFIG_NAME)
+    parser.add_argument("--save-template", choices=tuple(template_specs(cfg)), help="从这张截图生成参照图")
     args = parser.parse_args()
 
-    cfg = load_config(CONFIG_NAME)
     if args.save_template:
         print(f"已生成参照图：{save_template(args.save_template, args.images[0], cfg)}")
         return
@@ -281,7 +324,8 @@ def main():
         for i, key in enumerate(mates):
             name = hud.read_name(hud.mate_name_snip(img, i), cfg["teammates"]["name_left"])
             mate_text.append(f"{name or '名字没读到'}（{hud.legends.name(key) if key else '传奇认不出'}）")
-        own_name = hud.read_name(hud.own_name_snip(img, names["places"]["hud"]["roi"]))
+        place = names["places"]["hud"]
+        own_name = hud.read_name(hud.own_name_snip(img, place["roi"], place.get("anchor")))
         top = "，".join(f"{TOP_LABELS[k]} {'-' if values[k] is None else values[k]}" for k in TOP_FIELDS)
         print(f"{path.name}：自己 {own_name or '名字没读到'}（{hud.legends.name(own)}）"
               f"{'，倒地' if hud.knocked(img) else ''}；队友 {'、'.join(mate_text)}；右上角 {top}")

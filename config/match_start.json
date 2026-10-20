@@ -3,6 +3,8 @@
   "base_resolution": [1920, 1080],
   "upscale": 2,
   "grayscale": true,
+  "anchor": "top",
+  "_说明_anchor": "比 16:9 窄的画面（16:10、4:3）上下会多出一截，这块界面贴哪条边（见 layout.py）。2026-10-20 用 16:10、4:3 实战截图量的：左上角横幅贴上边",
   "min_score": 0.8,
   "fields": {
     "mode": {"label": "模式", "roi": [120, 80, 600, 95]},

@@ -33,7 +33,25 @@
           <div class="setting-desc">目前只支持中文游戏界面</div>
         </div>
       </div>
-      <div class="setting-desc rec-note">识别规则写在 <code>config/</code> 文件夹里，坐标按 1920 × 1080 校准，运行时按实际分辨率自动缩放。</div>
+      {# 游戏画面比例（game_aspect.py）：拉伸分辨率时截图还是显示器的比例，要另外知道游戏自己的比例。记录程序每隔几秒看一眼 #}
+      <form method="post" action="{{ url_for('game_aspect_setting') }}" class="setting">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div class="setting-text">
+          <label class="setting-name" for="aspect-select">游戏画面比例</label>
+          <div class="setting-desc">用 4:3、16:10 等拉伸分辨率时，Evo 要知道游戏实际的比例才认得出界面。"自动检测"会读 Apex 自己的视频设置文件（只读，不修改）</div>
+          <div class="setting-desc">自动检测结果：{% if aspect.detected %}<span class="num">{{ aspect.detected }}</span>（{{ aspect.why }}）{% else %}{{ aspect.why }}{% endif %}</div>
+        </div>
+        <div class="setting-actions inline">
+          <select id="aspect-select" name="aspect">
+            <option value="{{ aspect.auto }}" {{ 'selected' if aspect.choice == aspect.auto }}>自动检测（推荐）</option>
+            {% for one in aspect.options %}
+            <option value="{{ one }}" {{ 'selected' if aspect.choice == one }}>{{ one }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn">保存</button>
+        </div>
+      </form>
+      <div class="setting-desc rec-note">识别规则写在 <code>config/</code> 文件夹里，坐标按 1920 × 1080 校准，运行时按分辨率和游戏画面比例自动换算。</div>
     </section>
 
     {% if accounts %}
@@ -204,7 +222,7 @@
     <h2 id="h-about">关于 Evo</h2>
     <div class="setting-desc">版本 <span class="num">{{ version }}</span> · MIT 开源许可</div>
     <ul class="principles">
-      <li class="pr-1"><div class="setting-name">只看不动</div><div class="setting-desc">只读取屏幕画面，不接触游戏进程，不模拟任何操作</div></li>
+      <li class="pr-1"><div class="setting-name">只看不动</div><div class="setting-desc">只读取屏幕画面（另外只读 Apex 视频设置里的分辨率），不接触游戏进程，不模拟任何操作</div></li>
       <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不上传任何数据，不用注册登录；只有检查和下载更新会联网，都由你决定</div></li>
       <li class="pr-3"><div class="setting-name">轻量</div><div class="setting-desc">后台运行占用低，不影响游戏帧数</div></li>
       <li class="pr-4"><div class="setting-name">开源</div><div class="setting-desc">所有代码公开，任何人都可以检查</div></li>

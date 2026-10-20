@@ -47,7 +47,7 @@ class LegendDetector:
     def scores(self, frame, box=None, templates=None):
         """每个传奇的相似度（-1 到 1，越大越像），从高到低排好 [(编号, 相似度), ...]。
         box：在哪一块里找，默认是配置里的 search_box（自己的头像）；templates：用哪套参照图轮廓，默认原大小（队友用 scaled()）。"""
-        region = outline(gray_crop(frame, box or self.cfg["search_box"], self.cfg["base_resolution"]))
+        region = outline(gray_crop(frame, box or self.cfg["search_box"], self.cfg["base_resolution"], self.cfg.get("anchor")))
         result = []
         for key, template in (templates or self.templates).items():
             if template.shape[0] > region.shape[0] or template.shape[1] > region.shape[1]:
@@ -79,7 +79,7 @@ def save_template(key, image_path, cfg):
     """按配置里的 face_box，从一张截图上截出这个传奇的脸，存到 config/templates/legends/<编号>.png。"""
     if key not in cfg["legends"]:
         raise SystemExit(f"config/legends.json 里没有传奇编号 {key}，先在 legends 里加一行")
-    gray = gray_crop(load_image(image_path), cfg["face_box"], cfg["base_resolution"])
+    gray = gray_crop(load_image(image_path), cfg["face_box"], cfg["base_resolution"], cfg.get("anchor"))
     LEGEND_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     path = LEGEND_TEMPLATE_DIR / f"{key}.png"
     cv2.imencode(".png", gray)[1].tofile(path)

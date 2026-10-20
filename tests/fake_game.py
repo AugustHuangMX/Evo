@@ -27,6 +27,8 @@ _TEMP = Path(tempfile.mkdtemp(prefix="evo-test-"))
 atexit.register(shutil.rmtree, _TEMP, ignore_errors=True)
 os.environ["EVO_DATA_DIR"] = str(_TEMP)  # paths.py 一导入就决定数据文件夹，所以必须在导入项目代码之前设置
 os.environ.pop("EVO_CAPTURES_DIR", None)  # 截图也跟着临时文件夹走，绝不写进项目的 captures/
+# Apex 的视频设置文件也指到临时文件夹（默认没有这个文件 = 按截图的比例），免得测试结果随开发者当时的游戏分辨率变
+os.environ["EVO_VIDEOCONFIG"] = str(_TEMP / "videoconfig.txt")
 sys.path.insert(0, str(CODE))
 
 import cv2  # noqa: E402

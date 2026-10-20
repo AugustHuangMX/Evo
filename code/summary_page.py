@@ -60,7 +60,7 @@ def in_range(value, bounds):
 
 def read_field(engine, img, name, spec, cfg, save_crops):
     """识别一个数据项，返回结果字典。"""
-    piece = crop(img, spec["roi"], cfg)
+    piece = crop(img, spec["roi"], cfg, spec.get("anchor"))
     if save_crops:
         cv2.imencode(".png", piece)[1].tofile(CROPS_DIR / f"{name}.png")
 
@@ -116,7 +116,7 @@ def read_summary(engine, img, cfg, save_crops=False):
 def is_champion(engine, img, cfg):
     """总结页顶部的大字是不是"捍卫者"（拿冠军；被淘汰时是"全军覆没"）。"""
     banner = cfg["banner"]
-    result = engine(crop(img, banner["roi"], cfg))
+    result = engine(crop(img, banner["roi"], cfg, banner.get("anchor")))
     return any(banner["champion"] in text for text in result.txts or ())
 
 

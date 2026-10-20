@@ -3,6 +3,8 @@
   "base_resolution": [1920, 1080],
   "upscale": 1,
   "grayscale": true,
+  "anchor": "top",
+  "_说明_anchor": "比 16:9 窄的画面（16:10、4:3）上下会多出一截，这块界面贴哪条边（见 layout.py）。2026-10-20 用 16:10、4:3 实战截图量的：'排名第 X'虽然在屏幕中间，但贴上边（没有往下移）",
   "min_score": 0.9,
   "replace": {"O": "0", "o": "0", "l": "1", "I": "1"},
   "placement": {

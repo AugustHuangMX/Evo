@@ -20,7 +20,7 @@ CONFIG_NAME = "match_start.json"
 
 def read_text(engine, img, spec, cfg):
     """一个小块里置信度够高的各行，用空格连起来。"""
-    lines = read_lines(engine, img, spec["roi"], cfg)
+    lines = read_lines(engine, img, spec["roi"], cfg, spec.get("anchor"))
     return " ".join(t for t, s in lines if s >= cfg["min_score"]).strip()
 
 

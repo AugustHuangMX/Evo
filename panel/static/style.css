@@ -372,10 +372,11 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 0; }
 .setting + .setting { border-top: 1px solid var(--row-border); }
 .setting-text { min-width: 0; }
-.setting-name { font-weight: 500; }
+.setting-name { display: block; font-weight: 500; }  /* 有的是 label（点名字选中旁边的控件），也要单独占一行 */
 .setting-desc { color: var(--muted); font-size: 13px; }
 .setting-path { color: var(--muted); font-size: 12px; font-family: Consolas, monospace; margin-top: 2px; word-break: break-all; }
 .setting-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.setting-actions.inline { flex-wrap: nowrap; flex-shrink: 0; }  /* 下拉框和"保存"按钮并排，不换行（说明文字长时让文字那一栏变窄） */
 .setting-actions form, .danger-zone form { margin: 0; }
 /* 设置页"账号"一栏：每个玩家名一行，右边选属于哪个账号 */
 .accounts-intro { margin: -8px 0 4px; line-height: 1.7; }
@@ -386,6 +387,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .info-value { margin-top: 4px; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--inset); }
 .rec-note { margin-top: 14px; }
+.info-grid + .setting { margin-top: 14px; border-top: 1px solid var(--row-border); }
 .btn-danger { color: var(--bad); border-color: var(--danger-border); }
 .btn-danger:hover { border-color: var(--bad); }
 .btn[disabled] { opacity: 0.45; cursor: default; }
