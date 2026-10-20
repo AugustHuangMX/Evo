@@ -11,7 +11,8 @@
   "screens": {
     "summary": {"label": "总结页", "anchor": "center", "roi": [750, 378, 180, 32], "keywords": ["击杀", "助攻"], "template_box": [762, 385, 135, 24]},
     "xp": {"label": "经验值页", "anchor": "bottom", "roi": [48, 568, 200, 46], "keywords": ["排位点数总计"], "template_box": [60, 576, 170, 29]},
-    "match_start": {"label": "开局画面", "anchor": "top", "roi": [130, 85, 600, 90], "keywords": ["空降地点"], "upscale": 1, "template_box": [420, 92, 286, 71]},
+    "match_start": {"label": "开局画面", "anchor": "top", "roi": [120, 80, 320, 100], "keywords": ["排位赛"], "upscale": 1, "template_box": [140, 90, 214, 72],
+                    "_说明": "左上角横幅里的'排位赛'三个字。横幅后半句看段位（用户 2026-10-20 说明）：固定跳点制的局是'排位赛 - 空降地点'（实测钻石 II），跳伞制的局只有'排位赛'（实测白金 III），隐藏分高的白金也可能分进固定跳点局。以前认'空降地点'，跳伞制的局一局都认不出；现在认两种都有的'排位赛'。大厅左下角模式框、选传奇时左上角的小字'排位赛'位置和大小都不一样，不在这个区域里"},
     "lobby": {"label": "大厅", "anchor": 0.87, "roi": [160, 732, 250, 46], "keywords": ["排位点数"], "template_box": [298, 742, 80, 30]},
     "eliminated": {"label": "淘汰画面", "anchor": "top", "roi": [620, 460, 680, 180], "keywords": ["排名第"], "upscale": 1, "template_box": [778, 502, 272, 92],
                    "scales": [0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2], "shrink": 0.5,

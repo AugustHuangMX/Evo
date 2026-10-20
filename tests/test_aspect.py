@@ -7,9 +7,8 @@
 - 换算和自动检测不用截图：16:9 时和以前逐像素一样；16:10、4:3 时按 anchor 往下移；压扁过的截图横竖各自拉伸
 - 关键截图：告诉 Evo 游戏的比例后，每种画面都认得出、读得对；当作 16:9 时认不出（说明比例确实要紧）
 - 整局重放：假游戏把截图按顺序喂给记录程序，视频设置文件（假的，放在临时文件夹）写着 2560×1600 / 2560×1920 全屏，
-  记录程序自己检测出比例，存下的每一局和经验值页、大厅对得上
-  4:3 的第二局不查传奇和老板分：这两局开局横幅只有"排位赛"、没有"空降地点"，开局画面认不出（见 todo.md），
-  只能靠"上一局结束后过了 60 秒又看到自己的界面"认出新的一局；这 60 秒按真实时钟算，重放太快到不了（真打时隔了 90 秒）
+  记录程序自己检测出比例，存下的每一局（包括开局画面读到的地图）和经验值页、大厅对得上
+- 开局横幅：这几局是跳伞制（白金），横幅只有"排位赛"、没有"- 空降地点"，也要认得出；选传奇时左上角的小字"排位赛"不算
 
 运行：python tests/test_aspect.py
 """
@@ -30,6 +29,7 @@ import storage
 from eliminated import read_eliminated
 from hud import KP_ROW, Hud
 from lobby import LobbyReader
+from match_start import read_match_start
 from ocr import SMALL_CROP_PARAMS, create_engine, load_config
 from screens import ScreenDetector
 from summary_page import read_summary
@@ -50,6 +50,7 @@ KEY_16_10 = {
     "eliminated": {"0299": 16},
     "hud": ("0271", "loba", True, {"squads_left": 16, "kills": 1, "assists": 0, "participation": 0, "damage": 770,
                                    "rp_delta": -42}),
+    "start": {"0061": "match_start", "0065": "match_start", "0069": None, "0098": None},  # 后两张：选传奇、小队介绍
 }
 KEY_4_3 = {
     "screens": {"0041": "lobby", "0283": "eliminated", "0291": "summary", "0361": "xp", "0681": "eliminated",
@@ -62,17 +63,21 @@ KEY_4_3 = {
     "eliminated": {"0283": 19, "0681": 11},
     "hud": ("0676", "loba", True, {"squads_left": 11, "kills": 2, "assists": 1, "participation": 2, "damage": 735,
                                    "rp_delta": -3}),
+    "start": {"0133": "match_start", "0362": "match_start", "0141": None, "0370": None},  # 后两张：选传奇
 }
 # 整局重放后数据库里每一局应有的数（截图上看得到的；经验值页、大厅前后之差都对得上）
 ROWS_16_10 = [{"placement": 16, "squad_kills": 1, "kills": 1, "assists": 0, "knockdowns": 2, "participation": 0,
                "damage": 770, "survival_time": 173, "revives": 0, "respawns": 0, "rp_delta": -42, "rank_tier": "白金",
-               "rank_division": "III", "rank_progress": 120, "legend": "罗芭", "needs_review": 0}]
+               "rank_division": "III", "rank_progress": 120, "legend": "罗芭", "mode": "ranked", "map": "奥林匹斯",
+               "needs_review": 0}]
 ROWS_4_3 = [{"placement": 19, "squad_kills": 0, "kills": 0, "assists": 0, "knockdowns": 1, "participation": 0,
              "damage": 200, "survival_time": 109, "revives": 0, "respawns": 0, "rp_delta": -48, "rank_tier": "白金",
-             "rank_division": "III", "rank_progress": 72, "legend": "罗芭", "needs_review": 0},
-            {"placement": 11, "squad_kills": 5, "kills": 2, "assists": 1, "knockdowns": 3,
+             "rank_division": "III", "rank_progress": 72, "legend": "罗芭", "mode": "ranked", "map": "奥林匹斯",
+             "needs_review": 0},
+            {"placement": 11, "squad_kills": 5, "kills": 2, "assists": 1, "knockdowns": 3, "participation": 2,
              "damage": 735, "survival_time": 278, "revives": 1, "respawns": 0, "rp_delta": -3, "rank_tier": "白金",
-             "rank_division": "III", "rank_progress": 69, "needs_review": 0}]
+             "rank_division": "III", "rank_progress": 69, "legend": "罗芭", "mode": "ranked", "map": "奥林匹斯",
+             "needs_review": 0}]
 
 
 def old_box(box, w, h, base=(1920, 1080)):
@@ -205,6 +210,10 @@ def screenshot_checks(engine, folder, aspect, key):
     values, _, _ = hud.read_top(hud.top_snip(img))
     got = (hud.own_legend(img), hud.knocked(img), {k: values[k] for k in want})
     out[f"对局中 {prefix}：自己的传奇、倒地、右上角 {got}"] = got == (legend, knocked, want)
+    got = {p: detector.detect(frame_of(folder, p)) for p in key["start"]}
+    start = read_match_start(engine, frame_of(folder, next(iter(key["start"]))), load_config("match_start.json"))
+    text = f"开局横幅只有\"排位赛\"（跳伞制）：认得出、读出排位和地图，选传奇等画面不算（{got}，读到 {start['mode']}、{start['map']}）"
+    out[text] = got == key["start"] and (start["mode"], start["map"]) == ("ranked", "奥林匹斯")
     layout.set_game_aspect(None)
     return out
 
