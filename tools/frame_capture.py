@@ -76,8 +76,9 @@ def main():
             if frame is not None:
                 h, w = frame.shape[:2]
                 if (w, h) != size:
+                    note = "" if size else "。刚开始截到的一般是桌面；游戏切到全屏后，这里会再显示一行游戏的尺寸"
                     size, last = (w, h), None
-                    print(f"[{datetime.now():%H:%M:%S}] 截到的画面：{w}x{h}（{aspect(w, h)}）")
+                    print(f"[{datetime.now():%H:%M:%S}] 截到的画面：{w}x{h}（{aspect(w, h)}）{note}")
                 t = thumb(frame)
                 if last is not None and float(np.mean(np.abs(t - last))) < SAME:
                     skipped += 1
