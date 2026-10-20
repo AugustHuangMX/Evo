@@ -12,6 +12,7 @@ Evo：一个轻量、全本地、开源的 Apex Legends 战绩记录器，面向
 | 改模型（识别逻辑、`config/`） | [docs/模型流程.drawio](docs/模型流程.drawio)（实际怎么跑）、[docs/对局全流程图.md](docs/对局全流程图.md)（规则为什么这样定）、[docs/识别经验.md](docs/识别经验.md)（实测结论、游戏画面特征） |
 | 改页面 | [docs/面板.md](docs/面板.md) |
 | 打包、安装、发布、改托盘或窗口 | [docs/底座.md](docs/底座.md) |
+| 给新版本做宣传图（新功能配图） | [release/做图流程.md](release/做图流程.md)：每次都照它做（`python tools/feature_cards.py`），风格不要自己改 |
 
 - 做完一项：从 todo.md 删掉，在 progress.md 记一笔；不要把待办写进本文件
 - 改了模型：流程图、对局全流程图.md 要跟着改，三者（代码、流程图、记录）以最新讨论为准
