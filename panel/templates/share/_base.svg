@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}">
+{# 分享战绩的卡片（panel_app.py 的 share_svg）：SVG 里放一段网页（foreignObject），用和面板一样的写法排版。
+   要求：写成 XML（标签都要闭合，如 <img/>）；文字里不能有 & 和 <（模板变量会自动转义）；
+   不能引用别的文件：字体、图标用 embed() 嵌进来。颜色固定用黑夜主题（取自 style.css），不跟随面板的主题 #}
+<foreignObject x="0" y="0" width="{{ w }}" height="{{ h }}">
+<div xmlns="http://www.w3.org/1999/xhtml" class="card" style="width: {{ w }}px; height: {{ h }}px; --hl: {% block highlight %}#FF5A5A{% endblock %};">
+<style>
+@font-face { font-family: "Chakra Petch"; font-weight: 500; src: url({{ embed('fonts/ChakraPetch-500.woff2') }}) format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-weight: 600; src: url({{ embed('fonts/ChakraPetch-600.woff2') }}) format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-weight: 700; src: url({{ embed('fonts/ChakraPetch-700.woff2') }}) format("woff2"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+.card { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 16px; padding: 28px 36px 20px 42px;
+  background: #0D0F13; color: #ECEEF2; font: 14px/1.4 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
+/* 左边一条彩色竖条 + 左上角一点同色的光：单局卡片按名次上色（和面板上的名次徽章一样），别的卡片用 Evo 的红色 */
+.stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--hl); }
+.glow { position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  background: radial-gradient(90% 110% at 0% 0%, color-mix(in srgb, var(--hl) 16%, transparent), transparent 60%); }
+.card > .main, .card > .foot, .card > .head { position: relative; }
+.num { font-family: "Chakra Petch", "Microsoft YaHei UI", sans-serif; font-weight: 600; }
+.label { color: #9AA3B2; font-size: 13px; }
+.good { color: #7CE8B8; } .bad { color: #FF8A8A; } .none { color: #9AA3B2; }
+
+.head { display: flex; align-items: flex-start; gap: 20px; }
+.title { font-size: 26px; font-weight: 700; line-height: 1.2; }
+.player { margin-left: auto; padding: 4px 12px; border: 1px solid #262C38; border-radius: 999px; background: #151820;
+  font-size: 16px; white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.main { flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; min-height: 0; }
+
+.icon { display: inline-block; flex: none; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; }
+.tiles { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; }
+.tile { padding: 11px 14px 10px; border: 1px solid #262C38; border-radius: 8px; background: #151820; }
+.tile .num { display: block; margin-top: 2px; font-size: 26px; font-weight: 700; line-height: 1.15; white-space: nowrap; }
+
+/* 名次（和面板上的徽章同色） */
+.p1 { --pc: #FF5A5A; --pf: #2A0A0A; } .p2 { --pc: #B07CFF; --pf: #1E0B3A; } .p3 { --pc: #4C9AFF; --pf: #06172F; }
+.p4 { --pc: #E6E9EE; --pf: #0D0F13; } .p-none { --pc: #4A5160; --pf: #ECEEF2; }
+.badge { display: inline-block; min-width: 38px; padding: 2px 6px; border-radius: 4px; background: var(--pc); color: var(--pf);
+  text-align: center; font-weight: 700; font-size: 14px; line-height: 1.4; }
+
+/* 段位（和总览页的段位卡片一样） */
+.tier-rookie { --tier: #9AA3B2; } .tier-bronze { --tier: #C0834F; } .tier-silver { --tier: #A9B4C2; }
+.tier-gold { --tier: #E5B94A; } .tier-platinum { --tier: #3FBFC4; } .tier-diamond { --tier: #4C9AFF; }
+.tier-master { --tier: #B07CFF; } .tier-predator { --tier: #FF5A5A; } .tier-unknown { --tier: #9AA3B2; }
+.rank { display: flex; align-items: center; gap: 12px; }
+.emblem { position: relative; flex: none; }
+.emblem img { display: block; width: 100%; height: 100%; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--tier) 35%, transparent)); }
+.numeral { position: absolute; transform: translate(-50%, -50%); font-weight: 700; line-height: 1; color: #fff; letter-spacing: 0.04em;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--tier) 70%, transparent); }
+.rank-badge { flex: none; display: flex; align-items: center; justify-content: center; border: 2px solid var(--tier); border-radius: 8px;
+  color: var(--tier); background: color-mix(in srgb, var(--tier) 14%, transparent); font-weight: 700; }
+.rank-name { font-size: 17px; font-weight: 700; line-height: 1.25; }
+.rank-points { color: #9AA3B2; font-size: 13px; }
+.rank-points .num { color: #ECEEF2; font-size: 15px; }
+
+.foot { display: flex; align-items: center; gap: 16px; min-height: 36px; padding-top: 12px; border-top: 1px solid #262C38; }
+.brand { display: flex; align-items: center; gap: 8px; margin-left: auto; color: #9AA3B2; font-size: 13px; }
+.brand img { width: 20px; height: 20px; display: block; }
+.brand b { color: #ECEEF2; font-family: "Chakra Petch", sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 0.08em; }
+{% block style %}{% endblock %}
+</style>
+<div class="glow"></div>
+<div class="stripe"></div>
+{% block content %}{% endblock %}
+<div class="foot">
+  {% block foot %}{% endblock %}
+  <div class="brand"><img src="{{ embed_icon() }}" alt=""/><b>EVO</b><span>evotracker.cn</span></div>
+</div>
+</div>
+</foreignObject>
+</svg>

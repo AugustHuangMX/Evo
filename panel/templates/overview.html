@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_legend.html" import legend_icon %}
+{% from "_share.html" import share_button, share_dialog with context %}
 {% block title %}总览 · Evo{% endblock %}
 
 {% block content %}
@@ -20,6 +21,7 @@
 
 <div class="ov-top">
   <section class="card rank-card" aria-label="当前段位">
+    {% if share %}<div class="share-corner">{{ share_button('分享') }}</div>{% endif %}
     {% if account_view.all %}
     {# 选了"全部账号"：几个账号的段位混在一起没有意义 #}
     <div class="label">当前段位</div>
@@ -141,6 +143,7 @@
   {% endif %}
 </div>
 
+{% if share %}{{ share_dialog(share) }}{% endif %}
 {% endif %}
 {% endblock %}
 

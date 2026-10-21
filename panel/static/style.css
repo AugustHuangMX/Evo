@@ -190,6 +190,31 @@ a { color: inherit; text-decoration: none; }
 .choice-hint { color: var(--info-text); }
 .dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .dialog .btn:focus-visible, .dialog .btn-text:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+
+/* 分享战绩（_share.html）：对话框比别的宽，放得下卡片预览；窗口矮时预览缩小，按钮总在里面 */
+.share-open { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; vertical-align: middle; }
+.mate-foot .detail-toggle { vertical-align: middle; }
+.share-open:focus-visible { outline: 2px solid var(--info-text); outline-offset: 2px; }
+.share-corner { position: absolute; top: 14px; right: 14px; }
+.rank-card { position: relative; }
+.dialog.share-dialog { width: min(800px, calc(100vw - 32px)); }
+.share-body { display: flex; flex-direction: column; gap: 14px; padding: 24px; }
+.share-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.share-kinds[hidden] { display: none; }
+.share-kinds label { position: relative; padding: 6px 16px; color: var(--muted); cursor: pointer; }
+.share-kinds label + label { border-left: 1px solid var(--border); }
+.share-kinds label:has(input:checked) { background: var(--nav-on-bg); color: var(--nav-on-text); }
+.share-kinds label.disabled { opacity: 0.45; cursor: default; }
+.share-kinds label:has(input:focus-visible) { outline: 2px solid var(--p3-bg); outline-offset: -2px; }
+.share-preview { display: flex; justify-content: center; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--inset); }
+.share-preview img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 340px); border-radius: 4px; }
+.share-name { min-height: 0; }
+.check.share-name input { accent-color: var(--p3-bg); }
+.share-name input:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.share-review { margin: -6px 0 0; color: var(--warn-text); font-size: 13px; }
+.share-status { flex: 1; margin: 0; color: var(--good); font-size: 13px; }
+.share-status.share-error { color: var(--bad); }
+.share-body .dialog-desc { margin-top: -6px; font-size: 13px; }
 /* 只给读屏软件看的文字 */
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
@@ -475,7 +500,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .theme-fade * { transition: none !important; }
 
 /* 2. 鼠标悬停、按下 */
-.nav a, .seg a, .btn, .icon-btn, .win-btn, .banner-warn, .source-link {
+.nav a, .seg a, .seg label, .btn, .icon-btn, .win-btn, .banner-warn, .source-link {
   transition: color 0.15s, background-color 0.15s, border-color 0.15s;
 }
 .matches tr.row { transition: background-color 0.12s; }

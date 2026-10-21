@@ -10,10 +10,12 @@
 单独试：python code/app_window.py http://127.0.0.1:5000/   （先另外启动面板：python code/panel_app.py --no-browser）
 """
 
+import base64
 import ctypes
 import sys
 import threading
 from ctypes import wintypes
+from pathlib import Path
 
 import webview
 
@@ -104,6 +106,22 @@ class WindowApi:
         chosen = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=start or "")
         return chosen[0] if chosen else None
 
+    def save_image(self, filename, data_url):
+        """分享战绩的"保存图片…"（panel/templates/_share.html）：弹出 Windows 的"另存为"，默认放在"图片"文件夹，
+        把网页上画好的 PNG 存到选的位置。返回存好的路径；取消了返回 None。只接受 PNG。"""
+        data = _png_bytes(data_url)
+        pictures = Path.home() / "Pictures"
+        chosen = self._window.create_file_dialog(
+            webview.FileDialog.SAVE, directory=str(pictures) if pictures.is_dir() else "",
+            save_filename=Path(filename).name, file_types=("PNG 图片 (*.png)",))
+        if not chosen:
+            return None
+        path = Path(chosen[0] if isinstance(chosen, (list, tuple)) else chosen)
+        if path.suffix.lower() != ".png":
+            path = path.with_name(path.name + ".png")
+        path.write_bytes(data)
+        return str(path)
+
     def allow_foreground(self):
         """点"安装并重新启动""数据搬好后重新打开"时调用（base.html）：允许接下来新打开的 Evo 把窗口放到最前、拿到焦点。
         Windows 只让刚被点过的程序这样做，新 Evo 是后台打开的，没有这个许可窗口会被别的程序挡住。"""
@@ -122,6 +140,20 @@ class WindowApi:
             form.Activate()
 
         self._on_ui(go)
+
+
+PNG_PREFIX = "data:image/png;base64,"
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _png_bytes(data_url):
+    """网页传来的 data:image/png;base64,... → PNG 文件的内容。不是 PNG 就报错（这个口子只用来存分享图片）。"""
+    if not isinstance(data_url, str) or not data_url.startswith(PNG_PREFIX):
+        raise ValueError("不是 PNG 图片")
+    data = base64.b64decode(data_url[len(PNG_PREFIX):], validate=True)
+    if not data.startswith(PNG_SIGNATURE):
+        raise ValueError("不是 PNG 图片")
+    return data
 
 
 def _style_window(window):

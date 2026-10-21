@@ -23,6 +23,7 @@ import test_player_name
 import test_ranks
 import test_replay
 import test_screenshots
+import test_share
 import test_sounds
 import test_source_run
 import test_summary_page
@@ -41,7 +42,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "数据文件夹（放在哪里、搬家、指路文件、老玩家自动搬）": test_data_move,
          "传奇头像（图标、许可文件、战绩页和总览页）": test_legend_icons,
          "开机自动启动（启动项、任务管理器里关掉、换了位置、被拦住、面板）": test_autostart,
-         "提示音（声音文件、开关、什么时候响、记录程序、设置页）": test_sounds}
+         "提示音（声音文件、开关、什么时候响、记录程序、设置页）": test_sounds,
+         "分享战绩（三种卡片、不写队友名字、对话框、保存图片）": test_share}
 
 
 def main():

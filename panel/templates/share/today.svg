@@ -1,0 +1,50 @@
+{% extends "share/_base.svg" %}
+{% import "share/_macros.svg" as part %}
+{# 今日战绩卡片（panel_app.py 的 share_today_card）：今天（早上 5 点起）打的局，RP 一共涨了多少、现在的段位、每局的名次 #}
+{% block style %}
+.hero { display: flex; align-items: center; gap: 40px; }
+.hero-rp .num { display: block; margin-top: 2px; font-size: 44px; font-weight: 700; line-height: 1; }
+.hero .rank { padding-left: 40px; border-left: 1px solid #262C38; }
+.games { display: flex; align-items: center; gap: 12px; }
+.games > .label { flex: none; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.badges .more { align-self: center; margin-right: 4px; }
+{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <div class="title">今日战绩</div>
+    <div class="label">{{ card.date }}</div>
+  </div>
+  {% if card.player %}<div class="player num">{{ card.player }}</div>{% endif %}
+</div>
+<div class="main">
+  <div class="hero">
+    <div class="hero-rp">
+      <span class="label">今日 RP</span>
+      <span class="num {{ 'good' if card.rp.good else ('bad' if card.rp.good is false else 'none') }}">{{ card.rp.text }}</span>
+    </div>
+    {% if card.rank %}
+    <div class="rank">
+      {{ part.rank_emblem(card.rank, 60) }}
+      <div>
+        <div class="rank-name">{{ card.rank.name }}</div>
+        {% if card.rank.progress is not none %}<div class="rank-points"><span class="num">{{ card.rank.progress }}</span> 排位点数</div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  <div class="tiles">
+    {% for label, value in card.stats %}
+    <div class="tile"><span class="label">{{ label }}</span><span class="num">{{ value }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="games">
+    <span class="label">每局名次</span>
+    <div class="badges">
+      {% if card.earlier %}<span class="label more">前面还有 {{ card.earlier }} 局</span>{% endif %}
+      {% for g in card.games %}<span class="badge num {{ g.css }}">{{ g.text }}</span>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

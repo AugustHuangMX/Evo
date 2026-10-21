@@ -1,0 +1,143 @@
+{# 分享战绩（panel_app.py 的"分享战绩"）：对话框里预览卡片，"复制图片"直接粘贴到微信、QQ，或"保存图片…"存成 PNG。
+   卡片是服务器给的 SVG（panel/templates/share/），这里把它画成 2 倍大小的 PNG。图片只在本机生成，不上传。
+   share：{player（游戏名，没有为 None）, options（每种卡片一个：label、url、w、h、file、disabled（不能选的原因）、review（待确认的局数））}
+   战绩页只有"单局战绩"一种；总览页有"今日战绩"和"概况"，用上面的按钮切换 #}
+
+{% macro share_button(label) -%}
+<button type="button" class="btn-text share-open" data-share-open aria-haspopup="dialog">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 L12 15"></path><path d="M7.5 7.5 L12 3 L16.5 7.5"></path><path d="M5 12 L5 19 a2 2 0 0 0 2 2 h10 a2 2 0 0 0 2 -2 L19 12"></path></svg>
+  {{ label }}
+</button>
+{%- endmacro %}
+
+{% macro share_dialog(share) %}
+{% set first = (share.options|selectattr('disabled', 'none')|first) or share.options[0] %}
+<dialog class="dialog share-dialog" id="share-dialog" aria-labelledby="h-share">
+  <div class="share-body">
+    <div class="share-head">
+      {# 打开时焦点在标题上（和"检测到新的玩家名"弹窗一样），按 Tab 到选项和按钮 #}
+      <h2 id="h-share" tabindex="-1" autofocus>分享战绩</h2>
+      <div class="seg share-kinds" role="radiogroup" aria-label="分享哪一种"{% if share.options|length < 2 %} hidden{% endif %}>
+        {% for o in share.options %}
+        <label class="{{ 'disabled' if o.disabled }}"{% if o.disabled %} title="{{ o.disabled }}"{% endif %}>
+          <input type="radio" name="share-kind" class="sr-only" {{ 'checked' if o is sameas first }} {{ 'disabled' if o.disabled }}
+                 data-url="{{ o.url }}" data-w="{{ o.w }}" data-h="{{ o.h }}" data-file="{{ o.file }}" data-review="{{ o.review or 0 }}">
+          <span>{{ o.label }}{% if o.disabled %}<span class="sr-only">（{{ o.disabled }}）</span>{% endif %}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="share-preview">
+      <img data-share-img alt="要分享的图片" width="{{ first.w }}" height="{{ first.h }}">
+    </div>
+    {% if share.player %}
+    <label class="check share-name">
+      <input type="checkbox" data-share-name checked>
+      <span>在图上显示我的游戏名（<span class="num">{{ share.player }}</span>）</span>
+    </label>
+    {% endif %}
+    <p class="dialog-desc">队友只显示传奇和这局的数据，不写名字。图片在这台电脑上生成，不会上传。</p>
+    <p class="share-review" data-share-review hidden>其中有 <span class="num" data-share-review-count></span> 局待确认，确认后图上的数字更准。</p>
+    <div class="dialog-actions">
+      <p class="share-status" data-share-status role="status" aria-live="polite"></p>
+      <button type="button" class="btn-text" data-share-close>关闭</button>
+      <button type="button" class="btn" data-share-save>保存图片…</button>
+      <button type="button" class="btn btn-primary" data-share-copy>复制图片</button>
+    </div>
+  </div>
+</dialog>
+<script>
+  (function () {
+    var dialog = document.getElementById("share-dialog");
+    var img = dialog.querySelector("[data-share-img]"), nameBox = dialog.querySelector("[data-share-name]");
+    var status = dialog.querySelector("[data-share-status]"), review = dialog.querySelector("[data-share-review]");
+    var actions = dialog.querySelectorAll("[data-share-copy], [data-share-save]");
+
+    function option() { return dialog.querySelector("input[name=share-kind]:checked").dataset; }
+    function cardUrl() {
+      var url = option().url;
+      return url + (url.indexOf("?") < 0 ? "?" : "&") + "name=" + (nameBox && !nameBox.checked ? "0" : "1");
+    }
+    function say(text, error) {
+      status.textContent = text;
+      status.classList.toggle("share-error", !!error);
+    }
+    function preview() {
+      var o = option();
+      img.width = o.w;  // 先占好位置：换一种卡片时，图片出来之前对话框不跳
+      img.height = o.h;
+      img.src = cardUrl();
+      review.hidden = o.review === "0";
+      dialog.querySelector("[data-share-review-count]").textContent = o.review;
+      say("");
+    }
+    // 把卡片画成 2 倍大小的 PNG。SVG 要用 data: 网址载入：用 blob: 网址载入的话，浏览器不让把画好的图导出
+    function render() {
+      var o = option();
+      return fetch(cardUrl(), { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function (svg) {
+          return new Promise(function (resolve, reject) {
+            var pic = new Image();
+            pic.onload = function () { resolve(pic); };
+            pic.onerror = function () { reject(new Error("卡片画不出来")); };
+            pic.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+          });
+        })
+        .then(function (pic) {
+          var canvas = document.createElement("canvas");
+          canvas.width = o.w * 2;
+          canvas.height = o.h * 2;
+          canvas.getContext("2d").drawImage(pic, 0, 0, canvas.width, canvas.height);
+          return canvas;
+        });
+    }
+    function busy(on) { actions.forEach(function (btn) { btn.disabled = on; }); }
+
+    document.querySelectorAll("[data-share-open]").forEach(function (btn) {
+      btn.addEventListener("click", function () { preview(); dialog.showModal(); });
+    });
+    dialog.querySelector("[data-share-close]").addEventListener("click", function () { dialog.close(); });
+    dialog.querySelectorAll("input[name=share-kind]").forEach(function (radio) { radio.addEventListener("change", preview); });
+    if (nameBox) nameBox.addEventListener("change", preview);
+
+    // 复制图片：图片还在生成时就把"要写进剪贴板的东西"交出去（ClipboardItem 接受一个还没完成的 Promise），
+    // 免得生成得慢、超过了"刚点过按钮"的时限，浏览器不让写剪贴板
+    dialog.querySelector("[data-share-copy]").addEventListener("click", function () {
+      busy(true);
+      say("正在生成图片…");
+      var png = render().then(function (canvas) {
+        return new Promise(function (resolve) { canvas.toBlob(resolve, "image/png"); });
+      });
+      Promise.resolve()
+        .then(function () { return navigator.clipboard.write([new ClipboardItem({ "image/png": png })]); })
+        .then(function () { say("已复制。在微信、QQ 的聊天框里按 Ctrl+V 就能发出去。"); })
+        .catch(function () { say("没能复制到剪贴板，可以点“保存图片…”存下来再发。", true); })
+        .finally(function () { busy(false); });
+    });
+
+    // 保存图片：在 Evo 窗口里弹出 Windows 的"另存为"（app_window.py 的 save_image）；用浏览器打开的面板直接下载
+    dialog.querySelector("[data-share-save]").addEventListener("click", function () {
+      busy(true);
+      say("正在生成图片…");
+      var api = window.pywebview && window.pywebview.api, file = option().file;
+      render()
+        .then(function (canvas) {
+          var data = canvas.toDataURL("image/png");
+          if (api && api.save_image) {
+            return api.save_image(file, data).then(function (path) { say(path ? "已保存到 " + path : ""); });
+          }
+          var link = document.createElement("a");
+          link.href = data;
+          link.download = file;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          say("已下载 " + file);
+        })
+        .catch(function () { say("没能保存，请再试一次。", true); })
+        .finally(function () { busy(false); });
+    });
+  })();
+</script>
+{% endmacro %}

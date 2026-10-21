@@ -7,7 +7,9 @@
 """
 
 import argparse
+import base64
 import ctypes
+import functools
 import io
 import json
 import math
@@ -497,6 +499,139 @@ def day_start(now):
     return start if now >= start else start - timedelta(days=1)
 
 
+def today_matches(rows):
+    """今天（从早上 5 点算起）打的局。"""
+    since = f"{day_start(datetime.now()):%Y-%m-%d %H:%M:%S}"
+    return [r for r in rows if (r["ended_at"] or "") >= since]
+
+
+# ---------- 分享战绩（图片卡片）----------
+# 卡片是一张 SVG 图（模板在 panel/templates/share/），字体、传奇头像、段位图标都嵌在里面，不引用别的文件；
+# 页面上把它画成 2 倍大小的 PNG，复制或保存（panel/templates/_share.html）。图片只在本机生成，不上传。
+# 队友只显示传奇和这一局的数据，不写名字和 ID；自己的游戏名默认显示，分享前可以勾掉（网址里 name=0）
+# （2026-10-21 用户决定）
+
+SHARE_SIZE = {"match": (720, 405), "today": (720, 405), "overview": (720, 540)}  # 卡片大小（CSS 像素，PNG 是 2 倍）
+SHARE_TODAY_GAMES = 16  # 今日战绩卡片上最多列出几局的名次（更多的只写"前面还有 N 局"）
+WEEKDAYS = "一二三四五六日"
+
+
+@app.template_global()
+def embed(filename):
+    """static 里的文件 → data: 网址，嵌进分享卡片（SVG 当图片显示时不能引用别的文件）。只用于代码里写定的文件。"""
+    return _embedded(filename)
+
+
+@functools.lru_cache(maxsize=64)
+def _embedded(filename):
+    path = Path(app.static_folder) / filename
+    kind = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return f"data:{kind};base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+
+@app.template_global()
+def embed_icon():
+    return "data:image/png;base64," + base64.b64encode(icon_png()).decode()
+
+
+def share_time(ended_at):
+    """分享卡片上的时间：写日期，不写"今天""昨天"（图片发出去以后过几天再看就不对了）。不是今年的局加上年份。"""
+    if not ended_at:
+        return None
+    dt = datetime.strptime(ended_at, "%Y-%m-%d %H:%M:%S")
+    year = f"{dt.year}年" if dt.year != date.today().year else ""
+    return f"{year}{dt.month}月{dt.day}日 {dt:%H:%M}"
+
+
+def share_player(rows):
+    """今日、概况卡片上写的游戏名：分账号时是这个账号的名字，不分时是最近一局认出的名字。"""
+    current = account_view()["current"]
+    if current:
+        return current["name"]
+    return next((r["player_name"] for r in reversed(rows) if r["player_name"]), None)
+
+
+def share_match_card(row, mates, player):
+    """单局战绩卡片。player：要写在卡片上的游戏名（None = 不写）。"""
+    p, rp = row["placement"], row["rp_delta"]
+    return {
+        "player": player,
+        "place": dash(p, "#{}"),
+        "place_class": badge_class(p),
+        "place_text": "名次没读到" if p is None else ("冠军" if p == 1 else "名次"),
+        "legend": row["legend"] or "传奇未识别",
+        "legend_icon": LEGEND_ICONS.get(row["legend"]),
+        "meta": " · ".join(x for x in (MODES.get(row["mode"]), row["map"], share_time(row["ended_at"])) if x),
+        "stats": [("击杀", dash(row["kills"])), ("助攻", dash(row["assists"])), ("击倒", dash(row["knockdowns"])),
+                  ("伤害", dash(row["damage"], "{:,}")), ("生存", storage.mmss(row["survival_time"]).replace("-", "—"))],
+        "ranked": row["mode"] == "ranked",
+        "rp": None if rp is None else {"text": signed(rp), "good": rp >= 0},
+        "rank": rank_card([row]) if row["mode"] == "ranked" else None,  # 打完这一局的段位（经验值页读的）
+        # 队友：只有传奇和这一局的数据，不写名字和 ID
+        "mates": [{
+            "legend": m["legend"] or "传奇未识别",
+            "icon": LEGEND_ICONS.get(m["legend"]),
+            "kda": " / ".join(dash(m[k]) for k in ("kills", "assists", "knockdowns")),
+            "damage": dash(m["damage"], "{:,}"),
+        } for m in mates],
+    }
+
+
+def share_today_card(rows, lobby, player):
+    """今日战绩卡片：今天打了几局、每局的名次、加起来的击杀和伤害、RP 一共涨了多少、现在的段位。"""
+    today = today_matches(rows)
+    start = day_start(datetime.now())
+    places = [r["placement"] for r in today if r["placement"] is not None]
+    kills = [r["kills"] for r in today if r["kills"] is not None]
+    damages = [r["damage"] for r in today if r["damage"] is not None]
+    shown = today[-SHARE_TODAY_GAMES:]
+    return {
+        "player": player,
+        "date": f"{start.month}月{start.day}日 · 周{WEEKDAYS[start.weekday()]}",
+        "rp": rp_sum(today),
+        "rank": rank_card(rows, lobby),
+        "stats": [("局数", str(len(today))), ("最好名次", f"#{min(places)}" if places else "—"),
+                  ("总击杀", f"{sum(kills):,}" if kills else "—"), ("总伤害", f"{sum(damages):,}" if damages else "—"),
+                  ("场均伤害", f"{sum(damages) / len(damages):,.0f}" if damages else "—")],
+        "games": [{"text": dash(r["placement"], "#{}"), "css": badge_class(r["placement"])} for r in shown],
+        "earlier": len(today) - len(shown),
+    }
+
+
+def share_overview_card(rows, lobby, range_key, player):
+    """概况卡片：段位、RP 走势、统计数字、传奇表现，范围和总览页一样（近 30 局 / 全部）。
+    以后能按赛季看了，改成按赛季（见 todo.md）。"""
+    in_range = rows[-30:] if range_key == "30" else rows
+    days = [f"{int(r['ended_at'][5:7])}月{int(r['ended_at'][8:10])}日" for r in in_range if r["ended_at"]]
+    period = None  # 第一局到最后一局的日期，如"10月19日 – 10月21日"（同一天只写一个）
+    if days:
+        period = days[0] if days[0] == days[-1] else f"{days[0]} – {days[-1]}"
+    return {
+        "player": player,
+        "title": f"最近 {len(in_range)} 局" if len(in_range) < len(rows) else f"全部 {len(in_range)} 局",
+        "period": period,
+        "rank": rank_card(rows, lobby),
+        "chart": rp_chart(in_range, lobby),
+        "range_rp": rp_sum(in_range),
+        "stats": stat_cards(in_range),
+        "legends": legend_bars(in_range),
+    }
+
+
+def share_svg(kind, card):
+    w, h = SHARE_SIZE[kind]
+    svg = render_template(f"share/{kind}.svg", card=card, w=w, h=h)
+    return Response(svg, mimetype="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
+def share_options(kind, **args):
+    """分享对话框里的一种卡片（_share.html）：网址、大小、保存时默认的文件名。"""
+    w, h = SHARE_SIZE[kind]
+    stamp = f"{datetime.now():%Y%m%d_%H%M}"
+    name = {"match": "Evo单局战绩", "today": "Evo今日战绩", "overview": "Evo战绩概况"}[kind]
+    return {"kind": kind, "url": url_for(f"share_{kind}", **args), "w": w, "h": h, "file": f"{name}_{stamp}.png"}
+
+
 # ---------- 页面 ----------
 
 @app.route("/")
@@ -505,9 +640,18 @@ def overview():
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
     in_range = rows[-30:] if range_key == "30" else rows
-    since = f"{day_start(datetime.now()):%Y-%m-%d %H:%M:%S}"
-    today = [r for r in rows if (r["ended_at"] or "") >= since]
+    today = today_matches(rows)
     lobby = storage.lobby_readings(db(), names)  # 每次回大厅读到的段位（总分以它为准）
+    # 分享：今日战绩、概况（范围和这一页一样）。"全部账号"时不能分享（几个账号的段位混在一起）
+    # review：其中有几局待确认（对话框里提醒：确认后图上的数字更准）
+    share = None
+    if rows and not account_view()["all"]:
+        share = {"player": share_player(rows), "options": [
+            {**share_options("today"), "label": "今日战绩", "disabled": None if today else "今天还没有对局",
+             "review": sum(1 for r in today if r["needs_review"])},
+            {**share_options("overview", range=range_key), "label": f"{RANGES[range_key]}概况",
+             "review": sum(1 for r in in_range if r["needs_review"])},
+        ]}
 
     return render_template(
         "overview.html",
@@ -523,6 +667,7 @@ def overview():
         legends=legend_bars(in_range),
         review_count=storage.count_review(db(), names),
         total=len(rows),
+        share=share,
     )
 
 
@@ -540,10 +685,15 @@ def matches():
     if only_review and open_id is None and rows:
         open_id = rows[0]["id"]  # "只看待确认"时，自动展开第一局
     # 点开一局：先只展开两名队友；识别截图和修改表单要再点"详情与修改"（detail=1）。待确认的局直接全部展开
+    # 分享这一局：待确认的局不能分享（数据还没确认）
+    share = None
     for r in rows:
         if r["id"] == open_id:
             r["mates"] = [mate_view(m) for m in storage.teammates_of(db(), open_id)]
             r["show_detail"] = r["needs_review"] or request.args.get("detail") == "1"
+            if not r["needs_review"]:
+                share = {"player": None if r["player_name"] == "—" else r["player_name"],
+                         "options": [{**share_options("match", match_id=r["id"]), "label": "单局战绩"}]}
 
     return render_template(
         "matches.html",
@@ -562,6 +712,7 @@ def matches():
         open_id=open_id,
         review_count=storage.count_review(db(), names),
         editable=EDITABLE,
+        share=share,
     )
 
 
@@ -627,6 +778,42 @@ def evidence(match_id):
     if not path.is_file():
         abort(404)
     return send_file(path)
+
+
+# ---------- 分享战绩：卡片图片（SVG）。网址里 name=0 时不写游戏名 ----------
+
+def share_name_on():
+    return request.args.get("name") != "0"
+
+
+@app.route("/share/match/<int:match_id>.svg")
+def share_match(match_id):
+    row = storage.get_match(db(), match_id)
+    if row is None:
+        abort(404)
+    player = row["player_name"] if share_name_on() else None
+    return share_svg("match", share_match_card(row, storage.teammates_of(db(), match_id), player))
+
+
+@app.route("/share/today.svg")
+def share_today():
+    if account_view()["all"]:
+        abort(404)  # "全部账号"：几个账号的段位混在一起没有意义
+    names = account_view()["names"]
+    rows = storage.all_matches(db(), names)
+    player = share_player(rows) if share_name_on() else None
+    return share_svg("today", share_today_card(rows, storage.lobby_readings(db(), names), player))
+
+
+@app.route("/share/overview.svg")
+def share_overview():
+    if account_view()["all"]:
+        abort(404)
+    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    names = account_view()["names"]
+    rows = storage.all_matches(db(), names)
+    player = share_player(rows) if share_name_on() else None
+    return share_svg("overview", share_overview_card(rows, storage.lobby_readings(db(), names), range_key, player))
 
 
 # ---------- 设置页 ----------
@@ -1029,9 +1216,8 @@ def later_names():
 _icon_png = None
 
 
-@app.route("/app-icon.png")
-def app_icon():
-    """Evo 的图标（窗口标题栏、浏览器标签页用）。和托盘、exe 用的是同一个（见 icons.py）。"""
+def icon_png():
+    """Evo 的图标（64×64 PNG）。和托盘、exe 用的是同一个（见 icons.py）。"""
     global _icon_png
     if _icon_png is None:
         from icons import base_icon
@@ -1039,7 +1225,13 @@ def app_icon():
         buf = io.BytesIO()
         base_icon(64)[0].save(buf, "PNG")
         _icon_png = buf.getvalue()
-    return Response(_icon_png, mimetype="image/png")
+    return _icon_png
+
+
+@app.route("/app-icon.png")
+def app_icon():
+    """Evo 的图标（窗口标题栏、浏览器标签页用）。"""
+    return Response(icon_png(), mimetype="image/png")
 
 
 @app.route("/export.csv")

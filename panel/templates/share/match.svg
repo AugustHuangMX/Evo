@@ -1,0 +1,70 @@
+{% extends "share/_base.svg" %}
+{% import "share/_macros.svg" as part %}
+{# 单局战绩卡片（panel_app.py 的 share_match_card）：名次、传奇、这一局的数据、RP；队友只有传奇和数据，不写名字 #}
+{% block highlight %}{{ {'p1': '#FF5A5A', 'p2': '#B07CFF', 'p3': '#4C9AFF', 'p4': '#E6E9EE'}.get(card.place_class, '#4A5160') }}{% endblock %}
+{% block style %}
+.place { flex: none; min-width: 112px; color: var(--pc); }
+.place-num { font-size: 60px; font-weight: 700; line-height: 0.95; letter-spacing: -0.01em; }
+.place-text { margin-top: 6px; font-size: 15px; font-weight: 700; }
+.who { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-top: 2px; }
+.legend { display: flex; align-items: center; gap: 10px; font-size: 26px; font-weight: 700; line-height: 1.2; }
+.who .player { margin-left: 0; align-self: flex-start; font-size: 14px; padding: 2px 10px; }
+.rp { margin-left: auto; text-align: right; }
+.rp .num { display: block; font-size: 44px; font-weight: 700; line-height: 1; }
+.rp .label { margin-top: 6px; }
+.mates { padding: 2px 14px; border: 1px solid #262C38; border-radius: 8px; background: #151820; }
+.mate { display: grid; grid-template-columns: 52px minmax(0, 1fr) 190px 120px; align-items: center; gap: 8px; height: 36px; white-space: nowrap; }
+.mate + .mate { border-top: 1px solid #222733; }
+.mate-legend { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; }
+.mate-legend span { overflow: hidden; text-overflow: ellipsis; }
+.mate .stat { text-align: right; }
+.mate .stat .num { display: inline-block; min-width: 76px; margin-left: 8px; font-size: 15px; text-align: right; }
+.mate .stat + .stat .num { min-width: 48px; }
+.rank-name-inline { color: #ECEEF2; font-weight: 700; }
+{% endblock %}
+{% block content %}
+<div class="head">
+  <div class="place {{ card.place_class }}">
+    <div class="place-num num">{{ card.place }}</div>
+    <div class="place-text{{ ' label' if card.place_class != 'p1' }}">{{ card.place_text }}</div>
+  </div>
+  <div class="who">
+    {% if card.player %}<div class="player num">{{ card.player }}</div>{% endif %}
+    <div class="legend">{{ part.legend_icon(card.legend_icon, 30) }}<span>{{ card.legend }}</span></div>
+    <div class="label">{{ card.meta }}</div>
+  </div>
+  {% if card.ranked %}
+  <div class="rp">
+    <span class="num {{ 'none' if not card.rp else ('good' if card.rp.good else 'bad') }}">{{ card.rp.text if card.rp else '—' }}</span>
+    <div class="label">排位点数</div>
+  </div>
+  {% endif %}
+</div>
+<div class="main">
+  <div class="tiles">
+    {% for label, value in card.stats %}
+    <div class="tile"><span class="label">{{ label }}</span><span class="num">{{ value }}</span></div>
+    {% endfor %}
+  </div>
+  {% if card.mates %}
+  <div class="mates">
+    {% for m in card.mates %}
+    <div class="mate">
+      <span class="label">{{ '队友' if loop.first }}</span>
+      <span class="mate-legend">{{ part.legend_icon(m.icon, 20) }}<span>{{ m.legend }}</span></span>
+      <span class="stat label">击杀/助攻/击倒<span class="num">{{ m.kda }}</span></span>
+      <span class="stat label">伤害<span class="num">{{ m.damage }}</span></span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block foot %}
+{% if card.rank %}
+<div class="rank">
+  {{ part.rank_emblem(card.rank, 36) }}
+  <div class="rank-points">打完这局 <b class="rank-name-inline">{{ card.rank.name }}</b>{% if card.rank.progress is not none %} · <span class="num">{{ card.rank.progress }}</span> 排位点数{% endif %}</div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,96 @@
+{% extends "share/_base.svg" %}
+{% import "share/_macros.svg" as part %}
+{# 概况卡片（panel_app.py 的 share_overview_card）：段位、RP 走势、统计数字、传奇表现，范围和总览页一样 #}
+{% block style %}
+.top { display: flex; gap: 28px; height: 150px; }
+.top-rank { flex: none; width: 210px; display: flex; flex-direction: column; justify-content: space-between; }
+.top-rank .rank { flex-direction: column; align-items: flex-start; gap: 8px; }
+.top-rank .rank-name { font-size: 20px; }
+.range-rp .num { font-size: 22px; font-weight: 700; margin-left: 6px; }
+.chart { position: relative; flex: 1; min-width: 0; }
+.chart svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
+.chart-line { fill: none; stroke: #FF5A5A; stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.chart-area { fill: #FF5A5A; fill-opacity: 0.1; stroke: none; }
+.chart-target { stroke: #4C9AFF; stroke-width: 1.5; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
+.chart-mark { position: absolute; left: 0; transform: translateY(-115%); font-size: 11px; color: #4C9AFF; background: #0D0F13; padding-right: 4px; line-height: 1.3; }
+.chart-dot { position: absolute; right: -5px; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: #FF5A5A; }
+.chart-empty { display: flex; align-items: center; justify-content: center; height: 100%; border: 1px dashed #262C38; border-radius: 8px; color: #9AA3B2; font-size: 13px; }
+.tiles .tile { padding: 9px 12px 8px; }
+.tiles .num { font-size: 22px; }
+.tiles .accent { color: #FF5A5A; }
+.legend-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.legend-key { display: flex; gap: 12px; margin-left: auto; color: #9AA3B2; font-size: 12px; }
+.legend-key span { display: flex; align-items: center; gap: 5px; }
+.legend-key i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 28px; }
+.legend-line { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; white-space: nowrap; }
+.legend-line .label { margin-left: auto; font-size: 12px; }
+.legend-line .label .num { color: #ECEEF2; font-size: 13px; }
+.other { color: #9AA3B2; }
+.bar { display: flex; height: 8px; border-radius: 999px; background: #222733; overflow: hidden; }
+.seg-p1 { background: #FF5A5A; } .seg-p2 { background: #B07CFF; } .seg-p3 { background: #4C9AFF; } .seg-p4 { background: #E6E9EE; }
+{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <div class="title">{{ card.title }}</div>
+    {% if card.period %}<div class="label">{{ card.period }}</div>{% endif %}
+  </div>
+  {% if card.player %}<div class="player num">{{ card.player }}</div>{% endif %}
+</div>
+<div class="main">
+  <div class="top">
+    <div class="top-rank">
+      {% if card.rank %}
+      <div class="rank">
+        {{ part.rank_emblem(card.rank, 64) }}
+        <div>
+          <div class="rank-name">{{ card.rank.name }}</div>
+          {% if card.rank.progress is not none %}<div class="rank-points"><span class="num">{{ card.rank.progress }}</span> 排位点数</div>{% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="label">还没有段位数据</div>
+      {% endif %}
+      <div class="range-rp label">RP 合计<span class="num {{ 'good' if card.range_rp.good else ('bad' if card.range_rp.good is false else 'none') }}">{{ card.range_rp.text }}</span></div>
+    </div>
+    <div class="chart">
+      {% if card.chart %}
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ card.chart.w }} {{ card.chart.h }}" preserveAspectRatio="none">
+        {% for l in card.chart.lines %}<line class="chart-target" x1="0" x2="{{ card.chart.w }}" y1="{{ l.y }}" y2="{{ l.y }}"/>{% endfor %}
+        <polygon class="chart-area" points="{{ card.chart.area }}"/>
+        <polyline class="chart-line" points="{{ card.chart.line }}"/>
+      </svg>
+      {% for l in card.chart.lines %}<span class="chart-mark" style="top: {{ l.top }}%;">{{ l.name }}</span>{% endfor %}
+      <span class="chart-dot" style="top: {{ card.chart.end_top }}%;"></span>
+      {% else %}
+      <div class="chart-empty">至少要有 2 局带段位的数据才能画走势图</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="tiles">
+    {% for s in card.stats %}
+    <div class="tile"><span class="label">{{ s.label }}</span><span class="num{{ ' accent' if s.accent }}">{{ s.value }}</span></div>
+    {% endfor %}
+  </div>
+  {% if card.legends %}
+  <div>
+    <div class="legend-head">
+      <span class="label">传奇表现</span>
+      <div class="legend-key"><span><i class="seg-p1"></i>冠军</span><span><i class="seg-p2"></i>第 2–3</span><span><i class="seg-p3"></i>第 4–10</span><span><i class="seg-p4"></i>其余</span></div>
+    </div>
+    <div class="legend-grid">
+      {% for l in card.legends %}
+      <div>
+        <div class="legend-line{{ ' other' if l.other }}">
+          {{ part.legend_icon(l.icon, 18) }}<span>{{ l.name }}</span>
+          <span class="label"><span class="num">{{ l.games }}</span> 局{% if l.avg_damage %} · 均伤 <span class="num">{{ l.avg_damage }}</span>{% endif %}</span>
+        </div>
+        <div class="bar">{% for css, width in l.segments %}<span class="seg-{{ css }}" style="width: {{ width }}%;"></span>{% endfor %}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

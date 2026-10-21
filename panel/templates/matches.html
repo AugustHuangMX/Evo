@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_legend.html" import legend_icon %}
+{% from "_share.html" import share_button, share_dialog with context %}
 {% block title %}战绩 · Evo{% endblock %}
 
 {% block content %}
@@ -106,6 +107,7 @@
     {% if not r.needs_review %}
     <tr class="mate-foot">
       <td colspan="9" class="first last">
+        {% if share %}{{ share_button('分享这局') }}{% endif %}
         <a class="btn-text detail-toggle" href="{{ url_with(open=r.id, detail=None if r.show_detail else '1') }}"
            aria-expanded="{{ 'true' if r.show_detail else 'false' }}">
           {{ '收起详情' if r.show_detail else '详情与修改' }}
@@ -178,6 +180,7 @@
   </div>
 </div>
 
+{% if share %}{{ share_dialog(share) }}{% endif %}
 {% endblock %}
 
 {% block scripts %}

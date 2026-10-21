@@ -1,0 +1,18 @@
+{# 分享卡片共用的小零件（见 _base.svg）。图片都嵌成 data: 网址（embed），SVG 当图片显示时不能引用别的文件 #}
+
+{# 传奇头像：单色，颜色跟随文字（和面板上的 .legend-icon 一样）。没有图标时留出同样宽的空位 #}
+{% macro legend_icon(icon, size) -%}
+<span class="icon" style="width: {{ size }}px; height: {{ size }}px;{% if icon %} --icon: url({{ embed(icon) }});{% else %} background: none;{% endif %}"></span>
+{%- endmacro %}
+
+{# 段位图标：段数写在底部铭牌上（位置和大小按 ranks.json，和总览页的段位卡片一样）；没有图标的段位（菜鸟）用字母方块 #}
+{% macro rank_emblem(rank, size) -%}
+{% if rank.icon -%}
+<div class="emblem tier-{{ rank.tier_class }}" style="width: {{ size }}px; height: {{ size }}px;">
+  <img src="{{ embed(rank.icon) }}" alt=""/>
+  {% if rank.plate and rank.division %}<span class="numeral num" style="left: {{ rank.plate.x }}%; top: {{ rank.plate.y }}%; font-size: {{ '%.1f'|format(rank.plate.h * 0.7 * size / 100) }}px;">{{ rank.division }}</span>{% endif %}
+</div>
+{%- else -%}
+<div class="rank-badge num tier-{{ rank.tier_class }}" style="width: {{ size }}px; height: {{ size }}px; font-size: {{ (size * 0.36)|round|int }}px;">{{ rank.badge }}</div>
+{%- endif %}
+{%- endmacro %}
