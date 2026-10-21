@@ -47,6 +47,7 @@ TAG_W = 84  # 放大框右边的小标签（"自己""队友"）占的宽度
 # 演示数据：自己用的传奇多换几个，头像才显得多；队友名字是编的（不能用真实玩家的名字）
 MY_LEGENDS = ["恶灵", "恶灵", "寻血猎犬", "动力小子", "罗芭", "地平线", "希尔", "艾许", "万蒂奇"]
 MATE_LEGENDS = ["直布罗陀", "命脉", "探路者", "班加罗尔", "幻象", "瓦尔基里", "纽卡斯尔", "卡特莉丝", "密客", "沃特森"]
+MY_NAME = "EvoPlayer"  # 自己的游戏名（编的；分享卡片右上角会显示）
 MATE_NAMES = [("夜航灯塔", "1082736451"), ("SilverFox_77", "2093847561")]
 VIDEOCONFIG = ('"VideoConfig"\n{\n\t"setting.defaultres"\t\t"2560"\n\t"setting.defaultresheight"\t\t"1600"\n'
                '\t"setting.fullscreen"\t\t"1"\n}\n')  # 假的 Apex 视频设置：全屏 2560×1600，自动检测结果是 16:10
@@ -112,6 +113,7 @@ def make_demo_data():
                               "damage": 150 + k * 240 + rng.randint(0, 300), "survival_time": rng.randint(600, 1400),
                               "revives": rng.randint(0, 2), "respawns": rng.choice([0, 0, 1])})
             storage.save_teammates(conn, match_id, mates)
+        conn.execute("UPDATE matches SET player_name = ?", (MY_NAME,))
         conn.execute("UPDATE matches SET needs_review = 0, review_note = NULL")  # 宣传图里不要"待确认"提示条
         latest = conn.execute("SELECT MAX(match_id) FROM matches").fetchone()[0]
     return storage.DB_PATH, latest

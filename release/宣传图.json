@@ -21,10 +21,10 @@
     {
       "file": "分享战绩",
       "title": "分享战绩",
-      "page": "/matches?open={latest}&_shot=share",
+      "page": "/?_shot=share",
       "zoom_on": ".share-preview img",
       "pad": [8, 8],
-      "caption": "战绩页 › 分享这局",
+      "caption": "总览 › 分享",
       "window": 0.5
     }
   ]
