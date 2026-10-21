@@ -24,7 +24,7 @@
           <div class="setting-name" id="autostart-name">开机自动启动</div>
           <div class="setting-desc">
             {%- if autostart.blocked %}{{ autostart.blocked }}
-            {%- else %}开机后 Evo 在托盘里自动运行（不弹出窗口），打游戏时自动记录。安全软件问是否允许时，请选"允许"
+            {%- else %}开机后 Evo 将在托盘里自动运行。安全/杀毒软件问是否允许时，请选"允许"
             {%- endif %}
           </div>
           {% if autostart.off_in_windows %}
@@ -47,6 +47,39 @@
           </button>
         </form>
       </div>
+    </section>
+
+    {# 提示音（sounds.py，什么时候响见 live_collect.SoundCues）：开关 + 每一声的"试听"（不管开关；脚本提交，不刷新页面） #}
+    <section class="card settings-card" aria-labelledby="h-sounds">
+      <h2 id="h-sounds">提示音</h2>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="sounds-name">对局结束时的提示音</div>
+          <div class="setting-desc">每局最多响三声，每一声只响一次。音量在 Windows 的"音量合成器"里调 Evo</div>
+        </div>
+        <form method="post" action="{{ url_for('sounds_setting') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="on" value="{{ '0' if sounds_on else '1' }}">
+          <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if sounds_on else 'false' }}"
+                  aria-labelledby="sounds-name">
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if sounds_on else '已关闭' }}</span>
+          </button>
+        </form>
+      </div>
+      {% for one in sound_list %}
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="sound-{{ one.key }}">{{ one.label }}</div>
+          <div class="setting-desc">{{ one.when }}</div>
+        </div>
+        <form method="post" action="{{ url_for('sound_preview') }}" data-sound-preview>
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="name" value="{{ one.key }}">
+          <button type="submit" class="btn" aria-describedby="sound-{{ one.key }}">试听</button>
+        </form>
+      </div>
+      {% endfor %}
     </section>
 
     <section class="card settings-card" aria-labelledby="h-rec">
@@ -323,7 +356,24 @@
   themeSelect.addEventListener("change", function () { evoSetTheme(themeSelect.value); });
   document.addEventListener("evo-theme", syncThemeSelect);  // 右上角按钮切换后，下拉框跟着变
 
-  // 开关（开机自动启动、保留全部截图、自动检查）：点下去先把圆点滑过去，再提交保存（页面会重新打开）
+  // 试听：不刷新页面，按钮写"播放中…"一会儿；放不出来（电脑没有声音设备等）写"放不出来"
+  document.querySelectorAll("form[data-sound-preview]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var btn = form.querySelector("button");
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = "播放中…";
+      fetch(form.action, { method: "POST", body: new FormData(form), headers: { "X-Evo-Fetch": "1" } })
+        .then(function (r) { return r.json(); })
+        .then(function (s) { if (!s.ok) btn.textContent = "放不出来"; })
+        .catch(function () { btn.textContent = "放不出来"; })
+        .finally(function () {
+          setTimeout(function () { btn.disabled = false; btn.textContent = "试听"; }, 1200);
+        });
+    });
+  });
+  // 开关（开机自动启动、提示音、保留全部截图、自动检查）：点下去先把圆点滑过去，再提交保存（页面会重新打开）
   document.querySelectorAll(".switch").forEach(function (sw) {
     sw.addEventListener("click", function () {
       var on = sw.getAttribute("aria-checked") !== "true";

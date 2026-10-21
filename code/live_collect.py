@@ -18,6 +18,7 @@
   - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上 RP、段位
 - 各来源读到的数都记进 readings 表，每一项最后用哪个来源的数见 post_match.py（总结页、经验值页读得清楚时以它们为准，
   没有时用对局中的）
+- 提示音（见 SoundCues、sounds.py；设置页能关）：小队打完了响一声提醒去总结页，总结页读完了响一声，进经验值页响一声
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
@@ -42,6 +43,7 @@ import cv2
 import dxcam
 
 import screenshots
+import sounds
 import storage
 from eliminated import read_eliminated
 from game_aspect import AspectWatcher
@@ -80,12 +82,14 @@ def save_png(path, frame):
 
 class SummaryWatcher:
     """总结页：名次、击杀/助攻/击倒、伤害都读到了，并且连续两次相同（名次会晚 1–2 秒滑进来，数字也可能有动画），
-    就保存截图、把这一局写进数据库。还没读全就离开了、等太久、或者停止记录时，用读得最全的一次存下，标记"待确认"
+    就保存截图、把这一局写进数据库（冠军的总结页没有名次：其他数字连续两次相同、顶部是"捍卫者"就算读全）。还没读全就离开了、等太久、或者停止记录时，用读得最全的一次存下，标记"待确认"
     （缺的项之后能用别的来源补上就取消，见 post_match.settle）。在总结页和别的画面之间来回切换，同一局不重复存。"""
 
-    def __init__(self, engine, cfg, conn, post, run_dir, log, timeout, names=None):
+    def __init__(self, engine, cfg, conn, post, run_dir, log, timeout, names=None, on_read=None):
+        """on_read(时间)：关键项读全、连续两次相同时调用（总结页读完了的提示音）；没读全就离开、等太久都不调用。"""
         self.engine, self.cfg, self.conn, self.post = engine, cfg, conn, post
         self.run_dir, self.log, self.timeout, self.names = run_dir, log, timeout, names
+        self.on_read = on_read
         self.saved = 0  # 这次记录存下了几局
         self.name_reads = 0  # 读了几次中间卡片上的名字（统计用）
         self.visit = None  # 这一次停在总结页的情况：开始时间、上一次的读数、读得最全的一次
@@ -121,9 +125,15 @@ class SummaryWatcher:
                 and core == {k: v for k, v in visit["last"].items() if k not in LATE_FIELDS}:
             visit["core_stable"] = True
 
-        if complete and values == visit["last"]:  # 关键项都读到了，且连续两次相同
+        # 冠军的总结页顶部是"捍卫者"、没有"第 X 名"，名次永远读不到：其他数字稳定了就算读完（第 1 名由冠军横幅补上，
+        # 和以前离开时才存一样，只是存得早，"总结页读完了"的提示音也能响）
+        champion = (not complete and visit["core_stable"] and values["placement"] is None and "banner" in self.cfg
+                    and is_champion(self.engine, frame, self.cfg))
+        if (complete and values == visit["last"]) or champion:  # 关键项都读到了，且连续两次相同
             self._record(results, problems, frame, now)
             self.done = True
+            if self.on_read is not None:
+                self.on_read(now)
         elif time.monotonic() - visit["start"] > self.timeout:
             self._record_best(f"在总结页等了 {self.timeout:g} 秒，数字仍没读全或不稳定，请核对")
             self.done = True
@@ -172,6 +182,50 @@ class SummaryWatcher:
         如果只是名次还没滑进来、其他数字已经连续两次一致，就只标"名次没读到"（经验值页、淘汰画面可以补上），不加 note。"""
         _, results, problems, frame, when = self.visit["best"]
         self._record(results, problems, frame, when, None if self.visit["core_stable"] else note)
+
+
+class SoundCues:
+    """提示音（2026-10-21 用户决定，声音和开关见 sounds.py）：每一局每一声最多响一次，下一局开局、回到大厅时重新算。
+    - 对局结束：进入淘汰画面、冠军横幅、右下角"返回大厅"按钮（小队打完了）时，提醒去总结页。
+      这一局已经到过总结页或经验值页就不响（已经在那里了，比如从总结页切回"实况"又看到"返回大厅"）；
+      自己先成盒、队友还活着时没有这几个画面，不响；提前回大厅、成盒后直接进了下一局也不响
+    - 总结页读完了：SummaryWatcher 读全、存下这一局时（summary_read）；停留太短没读全、等太久都不响
+    - 经验值页：进入时（数字有动画，离开时才读，没有"读完了"的那一刻）"""
+
+    MATCH_END = ("eliminated", "champion", "squad_out")
+
+    def __init__(self, log, play=None):
+        self.log = log
+        self.play = play or sounds.play
+        self.current = None  # 上一帧是哪个画面（只在进入画面时判断）
+        self.played = set()  # 这一局已经响过的
+        self.on_pages = False  # 这一局已经到过总结页或经验值页
+
+    def update(self, screen, now):
+        """每截一帧调用一次。screen：这一帧是哪个画面（总结页也算），都不是则为 None。"""
+        if screen == self.current:
+            return
+        self.current = screen
+        if screen in ("match_start", "lobby"):
+            self.played.clear()
+            self.on_pages = False
+        elif screen in self.MATCH_END and not self.on_pages:
+            self._cue("match_end", now)
+        elif screen in ("summary", "xp"):
+            self.on_pages = True
+            if screen == "xp":
+                self._cue("xp", now)
+
+    def summary_read(self, now):
+        self.on_pages = True
+        self._cue("summary", now)
+
+    def _cue(self, name, now):
+        if name in self.played:
+            return
+        self.played.add(name)  # 关着时也算响过：这一局中途打开开关，不补响
+        if self.play(name):
+            self.log(f"[{now:%H:%M:%S}] 提示音：{sounds.SOUNDS[name]}")
 
 
 class ScreenWatcher:
@@ -322,7 +376,9 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     detector = ScreenDetector(engine, screens)
     hud = Hud(engine)
     match_interval = hud.cfg["match_interval"] if match_interval is None else match_interval
-    summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout, PlayerNameReader(engine, name_cfg))
+    cues = SoundCues(log)
+    summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout, PlayerNameReader(engine, name_cfg),
+                             on_read=cues.summary_read)
     other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"),
                           load_config("eliminated.json"), post, run_dir, log, keep_all=keep)
     in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
@@ -366,6 +422,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 aspect.check(frame)  # 游戏画面比例（16:10、4:3 时界面摆法不一样，见 layout.py）
                 screen = detector.detect(frame)
                 on_summary = screen == "summary"
+                cues.update(screen, now)  # 提示音：小队打完了、进经验值页（总结页读完了由 summary 告诉它）
                 in_match.update(screen, frame, now)  # 先交对局中的数据：结算画面上要用
                 summary.update(on_summary, frame, now)
                 other.update(None if on_summary else screen, frame, now)
@@ -412,7 +469,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         kinds = "保留全部" if keep else "待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
         log(f"截图：留下 {left} 张（{kinds}）" + (f"，识别完删掉 {tidied['deleted']} 张（{tidied['freed'] / 2 ** 20:.0f} MB）"
                                               if tidied["deleted"] or not keep else ""))
-        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect  # 释放识别模型和截屏，交还内存
+        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved

@@ -5,6 +5,7 @@
 - 运行时的数据库和截图写到一个临时文件夹，不碰正式数据，测试结束自动删掉
 - 时钟是假的：程序里"等 0.3 秒"不真的等，只把假时钟往前拨。所以测试跑得快，
   "在总结页等了几秒"这类判断每次结果都一样
+- 提示音不真的出声，只记在 SOUNDS_PLAYED 里
 
 测试文件要最先 import 这个文件（它要在项目代码导入之前设置好临时数据文件夹）。
 """
@@ -35,7 +36,12 @@ import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
 import live_collect  # noqa: E402
+import sounds  # noqa: E402
 import storage  # noqa: E402
+
+# 提示音：测试时不真的出声，只记下响了哪一声（按顺序；记录程序的日志里也有"提示音：…"）
+SOUNDS_PLAYED = []
+sounds._output = SOUNDS_PLAYED.append
 
 # 输出统一用 UTF-8：输出被转存到文件或交给别的程序时，Windows 默认用 GBK，打印 ✅ ❌ 会出错
 sys.stdout.reconfigure(encoding="utf-8")

@@ -29,6 +29,7 @@ import data_move
 import game_aspect
 import ranks
 import screenshots
+import sounds
 import storage
 import update_check
 import updater
@@ -670,6 +671,8 @@ def settings():
         move=move_view(),
         autostart={**autostart.status(), "blocked": autostart.unavailable(),
                    "failed": session.pop("autostart_failed", None)},
+        sounds_on=sounds.enabled(),
+        sound_list=[{"key": key, "label": label, "when": SOUND_WHEN[key]} for key, label in sounds.SOUNDS.items()],
         data_dir=db_path().parent,
         db_file=db_path().name,
         db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
@@ -778,6 +781,35 @@ def autostart_setting():
     else:
         flash("开机时不会自动启动 Evo。需要时可以在\"设置\"里打开。", "ok")
     return back_to_page()
+
+
+SOUND_WHEN = {  # 设置页"提示音"一栏：每一声什么时候响（规则见 live_collect.SoundCues）
+    "match_end": "小队打完了（淘汰画面、冠军、右下角出现\"返回大厅\"），提醒你去总结页",
+    "summary": "Evo 读到了名次、击杀和伤害，可以离开了",
+    "xp": "进入经验值页时。等最上面的数字不再跳动再离开",
+}
+
+
+@app.post("/settings/sounds")
+def sounds_setting():
+    """"提示音"开关（默认开）。记录程序每次要响时看一眼，所以马上生效。"""
+    on = request.form.get("on") == "1"
+    app_settings.set_value(sounds.SETTING_KEY, on)
+    flash("已开启提示音：对局结束、总结页读完了、进入经验值页时各响一声。" if on
+          else "已关闭提示音。", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/settings/sound-preview")
+def sound_preview():
+    """设置页的"试听"：不管开关，响一声。页面用脚本提交（不刷新页面），回答放出来没有；没有脚本时回到设置页。"""
+    name = request.form.get("name")
+    if name not in sounds.SOUNDS:
+        abort(400)
+    ok = sounds.preview(name)
+    if request.headers.get("X-Evo-Fetch") == "1":
+        return jsonify({"ok": ok})
+    return redirect(url_for("settings"))
 
 
 @app.post("/settings/open-folder")

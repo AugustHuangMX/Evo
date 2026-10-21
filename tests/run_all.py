@@ -1,6 +1,6 @@
 """运行全部测试：python tests/run_all.py（约 5 分钟）
 
-什么时候跑：改了识别（layout.py、game_aspect.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）
+什么时候跑：改了识别（layout.py、game_aspect.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）
 或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；
@@ -23,6 +23,7 @@ import test_player_name
 import test_ranks
 import test_replay
 import test_screenshots
+import test_sounds
 import test_source_run
 import test_summary_page
 import test_teammates
@@ -39,7 +40,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "游戏画面比例（16:10、4:3：换算、自动检测、设置页、整局重放）": test_aspect,
          "数据文件夹（放在哪里、搬家、指路文件、老玩家自动搬）": test_data_move,
          "传奇头像（图标、许可文件、战绩页和总览页）": test_legend_icons,
-         "开机自动启动（启动项、任务管理器里关掉、换了位置、被拦住、面板）": test_autostart}
+         "开机自动启动（启动项、任务管理器里关掉、换了位置、被拦住、面板）": test_autostart,
+         "提示音（声音文件、开关、什么时候响、记录程序、设置页）": test_sounds}
 
 
 def main():
