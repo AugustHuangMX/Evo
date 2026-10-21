@@ -20,6 +20,8 @@ site/
 settings.json
 # 安装版的数据文件夹在哪里（install.py 写，用源码运行 evo_app.py 时读，见 source_run.py；每台电脑不一样）
 installed_data_location.txt
+# 新版本宣传图（tools/feature_cards.py 随时能重新生成，见 release/做图流程.md）
+release/*截图/
 
 # ===== Python 自动生成的文件 =====
 __pycache__/

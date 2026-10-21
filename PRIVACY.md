@@ -1,6 +1,6 @@
 # Evo 隐私政策
 
-生效日期：2026 年 10 月 19 日　·　适用于 Evo 0.1.0 及以后的版本
+生效日期：2026 年 10 月 22 日　·　适用于 Evo 0.1.0 及以后的版本
 
 Evo 是一个开源的 Apex Legends 战绩记录工具，由个人开发者制作和维护，与 EA、Respawn 没有任何关系。
 
@@ -24,6 +24,8 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 | 数据库备份 | `data\evo.db.bak-…` | 只在你点"清空所有战绩"时自动生成，防止误删 |
 
 数据库里只存**你自己和你的队友**的数据：0.2.0 之后的版本会从总结页读出两名队友的游戏名、卡片下面的 ID 和他们这一局的数据，0.3.1 起还会从对局中左下角认出两名队友的游戏名和传奇，用来在战绩页显示你和谁一起打、各打得怎么样（0.2.0 及以前的版本不存队友）。对局中的画面只在内存里看，不存成截图。Evo 不会把对手的名字、ID 写进数据库，除了你自己的段位，也不存任何人的段位。
+
+数据文件夹以外，Evo 只在你打开"开机自动启动"时（0.3.6 起）往 Windows 注册表的启动项里写一条：`HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` 里的 `Evo Tracker`，内容是 Evo.exe 的位置。关掉开关就删掉这一条。
 
 ## 二、截图里可能有什么
 
@@ -62,6 +64,7 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 另外：
 
 - **Evo 窗口**里的页面是 Evo 在你电脑上自己运行的本地网页（地址是 `127.0.0.1`），只有你这台电脑能打开，同一网络里的其他设备访问不到。页面不加载任何网上的内容。
+- **分享战绩（0.3.6 起）**：分享用的图片在你电脑上生成，Evo 不上传。图上有这一局（或今天、最近几十局）的数据，默认还有你的游戏名（分享前可以取消勾选）；队友只显示用的传奇和这一局的数据，不写名字和 ID。复制或保存的图片发给谁、发到哪里由你决定，发出去以后适用那个平台（如微信、QQ）自己的隐私政策。
 - 窗口用的是 Windows 自带的 **Microsoft Edge WebView2** 组件。它是微软的软件，是否向微软发送诊断数据，由你 Windows 的"诊断和反馈"设置决定；Evo 不会更改这个设置。
 - 你在 Evo 里点"源代码"、"去下载"这类链接时，会用你的默认浏览器打开对应网站，之后适用那些网站自己的隐私政策。
 
@@ -113,7 +116,7 @@ Evo 不收集任何人的个人信息，也包括未成年人。如果你未满 
 
 ## Privacy Policy (English)
 
-Effective date: October 19, 2026 · Applies to Evo 0.1.0 and later
+Effective date: October 22, 2026 · Applies to Evo 0.1.0 and later
 
 Evo is an open-source match tracker for Apex Legends, made and maintained by an individual developer. It is not affiliated with EA or Respawn.
 
@@ -124,6 +127,8 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 - **Screenshots** show the whole screen at that moment, so they may contain other players' in-game names and anything else on screen (for example a Discord or Steam overlay). They stay on your computer.
 - **Update check and in-app update (network features added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once every 8 hours while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json` (latest version number, release date, release notes, and the address and SHA-256 checksum of the new package). From version 0.3.3, when you click "立即更新" (Update now), Evo downloads the new package from `https://dl.evotracker.cn` (the same file as on the website), verifies its SHA-256 and keeps it in the `_update` folder inside Evo's program folder; it installs it (closes for a few seconds, replaces its program files and reopens) only after you click "安装并重新启动" (Install and restart). Your match data is not affected. The requests contain only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates without you asking.
 - **Installing WebView2 (from version 0.3.4; the only other network feature).** The Evo window needs Microsoft Edge WebView2 (built into Windows 11, usually installed with Edge on Windows 10). If it is missing, Evo asks whether to install it. Only if you click "是" (Yes) does Evo run Microsoft's WebView2 installer (shipped with Evo, signed by Microsoft), which downloads and installs WebView2 from Microsoft's servers under the [Microsoft Privacy Statement](https://privacy.microsoft.com/); Microsoft's servers can see your IP address. Evo itself sends nothing. If you click "否" (No), Evo opens its panel in your default browser instead, without any network connection, and asks again the next time it starts.
+- **Start with Windows (from 0.3.6).** Only if you turn it on, Evo adds one entry named `Evo Tracker` (the path of Evo.exe) under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`; turning it off removes the entry.
+- **Sharing (from 0.3.6).** Share images are created on your computer; Evo uploads nothing. They show your stats and, by default, your in-game name (you can untick it before sharing); teammates appear only as the legend they played and their stats for that match, without names or IDs. Where you send a copied or saved image is up to you.
 - **The Evo window** shows a local page served on `127.0.0.1` only, and loads nothing from the internet. It uses Microsoft Edge WebView2, whose diagnostic data is governed by your Windows privacy settings.
 - **Website.** `evotracker.cn` and `dl.evotracker.cn` are served by Cloudflare. The website uses no cookies, no analytics and no scripts. Cloudflare processes access data such as IP addresses to deliver the site and protect it from attacks ([Cloudflare Privacy Policy](https://www.cloudflare.com/privacypolicy/)). The developer only looks at aggregated statistics.
 - **Feedback files.** If you choose to send your log file or screenshots to the developer, they are used only to investigate your issue, are not shared, and are deleted once the issue is resolved (at most 90 days). Screenshots are added to Evo's test set only with your explicit consent, with unrelated content (including other players' names and IDs) blacked out; you can withdraw consent at any time.

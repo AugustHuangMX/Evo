@@ -2,34 +2,30 @@
   "_说明": "这一版的新功能宣传图，python tools/feature_cards.py 读它，输出到 release/<版本号>截图/。发新版本前改成这一版的内容；每一项怎么写见 release/做图流程.md",
   "cards": [
     {
-      "file": "传奇头像",
-      "title": "传奇头像",
-      "page": "/matches?open={latest}",
-      "zoom_on": ["tr.row.open .legend-label", "tr.mate-row .legend-label"],
-      "pad": 12,
-      "caption": "战绩页",
-      "tags": [
-        {"on": "tr.row.open .legend-label", "text": "自己"},
-        {"on": "tr.mate-row .legend-label", "text": "队友"}
-      ]
-    },
-    {
-      "file": "画面比例",
-      "title": "支持 16:10 和 4:3",
+      "file": "开机自动启动",
+      "title": "开机自动启动",
       "page": "/settings",
-      "zoom_on": "form:has(#aspect-select)",
-      "pad": [12, 0],
-      "caption": "设置 › 识别",
-      "window": 0.5,
-      "aspect_boxes": [["16:9", false], ["16:10", true], ["4:3", true]]
+      "zoom_on": ".setting:has(#autostart-name)",
+      "pad": [12, 4],
+      "caption": "设置 › 常规"
     },
     {
-      "file": "数据位置",
-      "title": "更改数据位置",
-      "page": "/settings?_shot=move#h-data",
-      "zoom_on": "#data-move",
-      "pad": [12, 4],
-      "caption": "设置 › 数据与隐私"
+      "file": "提示音",
+      "title": "对局提示音",
+      "page": "/settings#h-sounds",
+      "zoom_on": "section:has(#h-sounds) .setting",
+      "pad": [12, 6],
+      "caption": "设置 › 提示音",
+      "window": 0.5
+    },
+    {
+      "file": "分享战绩",
+      "title": "分享战绩",
+      "page": "/matches?open={latest}&_shot=share",
+      "zoom_on": ".share-preview img",
+      "pad": [8, 8],
+      "caption": "战绩页 › 分享这局",
+      "window": 0.5
     }
   ]
 }

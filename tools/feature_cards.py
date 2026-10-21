@@ -136,6 +136,9 @@ def serve_panel(db):
     def render_template(name, **kw):
         if name == "settings.html":
             kw.update(data_dir=SHOWN_DATA_DIR, captures_dir=SHOWN_DATA_DIR + r"\captures", resolution="2560 × 1440")
+            # 开机自启：用源码运行时开关是灰的，而且会读到这台电脑真实的启动项。演示成"已开启"，不看真实的
+            kw["autostart"] = {**kw["autostart"], "on": True, "blocked": None, "failed": None,
+                               "off_in_windows": False, "other": None}
         return original_render(name, **kw)
 
     @panel_app.app.after_request
@@ -144,6 +147,8 @@ def serve_panel(db):
             # 跳到 #某个标题 时，别让标题藏在自绘标题栏下面（Evo 窗口里滚动的是 body）
             extra = "<style>body{scroll-padding-top:36px}</style>"
             html = resp.get_data(as_text=True).replace("</head>", extra + "</head>", 1)
+            if request.args.get("_shot") == "share":  # 打开分享对话框（要在下面量位置的脚本之前，量的时候对话框已经打开）
+                html = html.replace("</body>", "<script>document.querySelector('[data-share-open]').click()</script></body>", 1)
             if MEASURE["groups"] is not None:
                 # 量位置时关掉动画（打开页面时整页往上浮 10 像素，没播完就量会偏），关掉后就是播完时的样子，和截图一样
                 html = html.replace("</head>", "<style>*,*::before,*::after{animation:none!important;"
