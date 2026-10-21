@@ -24,6 +24,7 @@ from flask import (Flask, Response, abort, flash, g, jsonify, redirect, render_t
                    url_for)
 
 import app_settings
+import autostart
 import data_move
 import game_aspect
 import ranks
@@ -145,6 +146,7 @@ def security_checks():
 @app.context_processor
 def template_globals():
     offer = update_check.available()
+    ask_update = app_settings.get("update_auto") is None
     return {
         # 在 Evo 自己的窗口里打开（app_window.py 会在 User-Agent 里带上 EvoApp）：显示自定义标题栏
         "in_app": "EvoApp/" in request.headers.get("User-Agent", ""),
@@ -154,7 +156,9 @@ def template_globals():
         "nav": NAV,
         "switch": page_switch(),
         # 检查更新：还没问过要不要自动检查 → 页面顶部问一次；已知有新版本 → 顶部提示条（一键更新的各个阶段见 updater.state）
-        "ask_update": app_settings.get("update_auto") is None,
+        "ask_update": ask_update,
+        # 开机自启：回答了上面那个以后再问（一次只问一件事）
+        "ask_autostart": not ask_update and ask_autostart(),
         "update_offer": offer,
         "update_job": updater.state(offer),
         "update_result": updater.take_result(),  # 刚一键更新过：顶部说一次"已更新到 x.y.z"或"没装上"
@@ -166,6 +170,12 @@ def template_globals():
         "name_question": name_question(),
         "account_view": account_view(),
     }
+
+
+def ask_autostart():
+    """第一次打开时要不要问"开机自动启动"：能设置（打包好的 Evo）、没问过、现在没开着。"""
+    return (autostart.unavailable() is None and not app_settings.get(autostart.ASKED_KEY)
+            and not autostart.status()["on"])
 
 
 def account_view():
@@ -658,6 +668,8 @@ def settings():
         resolution=f"{size[0]} × {size[1]}" if size else None,
         aspect=aspect_view(size),
         move=move_view(),
+        autostart={**autostart.status(), "blocked": autostart.unavailable(),
+                   "failed": session.pop("autostart_failed", None)},
         data_dir=db_path().parent,
         db_file=db_path().name,
         db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
@@ -744,6 +756,28 @@ def game_aspect_setting():
     picked = "自动检测" if value == game_aspect.AUTO else value
     flash(f"游戏画面比例已改成\"{picked}\"：正在记录的话，几秒内就按新的比例识别。", "ok")
     return redirect(url_for("settings"))
+
+
+@app.post("/settings/autostart")
+def autostart_setting():
+    """"开机自动启动"：设置页的开关，和第一次打开时页面顶部的提问（next 回到原来的页面）。
+    没开成 / 没关成：从设置页的开关点的，写在开关下面（inline）；从顶部提问点的，写在页面顶部。"""
+    if autostart.unavailable():
+        abort(400)
+    on = request.form.get("on") == "1"
+    app_settings.set_value(autostart.ASKED_KEY, True)
+    ok = autostart.enable() if on else autostart.disable()
+    if not ok:
+        problem = autostart.FAILED_ON if on else autostart.FAILED_OFF
+        if request.form.get("inline") == "1":
+            session["autostart_failed"] = problem
+        else:
+            flash(problem, "error")
+    elif on:
+        flash("已开启开机自动启动：开机后 Evo 会在托盘里运行（不弹出窗口），打游戏时自动记录。", "ok")
+    else:
+        flash("开机时不会自动启动 Evo。需要时可以在\"设置\"里打开。", "ok")
+    return back_to_page()
 
 
 @app.post("/settings/open-folder")

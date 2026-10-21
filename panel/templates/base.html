@@ -154,6 +154,29 @@
   </div>
 </section>
 {% endif %}
+{% if ask_autostart %}
+{# 第一次打开时问一次：要不要开机自动启动（默认关；回答了"自动检查新版本"以后才问，一次只问一件事；见 autostart.py） #}
+<section class="card ask-card" aria-labelledby="h-ask-autostart">
+  <div class="ask-text">
+    <h2 id="h-ask-autostart">要不要开机自动启动 Evo？</h2>
+    <p class="setting-desc">开启后，开机时 Evo 会在托盘里自动运行（不弹出窗口），打游戏时自动记录，不会因为忘了打开 Evo 而漏记。火绒、360 等安全软件问是否允许时，请选"允许"。以后可以在"设置"里随时更改。</p>
+  </div>
+  <div class="ask-actions">
+    <form method="post" action="{{ url_for('autostart_setting') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="on" value="1">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <button type="submit" class="btn btn-primary">开机自动启动</button>
+    </form>
+    <form method="post" action="{{ url_for('autostart_setting') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="on" value="0">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <button type="submit" class="btn">不用了</button>
+    </form>
+  </div>
+</section>
+{% endif %}
 {% for category, message in get_flashed_messages(with_categories=true) %}
 <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
 {% endfor %}

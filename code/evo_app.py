@@ -3,7 +3,7 @@
 - 每 5 秒看一次 Apex 有没有在运行（只看进程名）。在运行、而且没有暂停，就启动一个记录子程序；
   游戏关掉或暂停时让它安全停下。子程序退出后，识别模型占的内存全部还给系统，托盘本身只占几十 MB，
   不玩游戏时几乎不占 CPU。识别模块万一崩溃也只影响子程序，托盘还在，下次检测到游戏会重新开始
-- 打开 Evo 就弹出窗口（加 --background 则只待在托盘里，留给开机自启用）。Evo 已经在运行时再双击，
+- 打开 Evo 就弹出窗口（加 --background 则只待在托盘里：开机自启时这样打开，见 autostart.py）。Evo 已经在运行时再双击，
   就把窗口弹出来。关掉窗口 Evo 仍在托盘里继续记录，第一次关时会弹通知提示一下
 - 右键托盘图标：打开 Evo / 暂停记录 / 退出；单击图标也能打开窗口。面板显示在 Evo 自己的窗口里
   （Windows 自带的 WebView2，见 app_window.py），窗口也在单独的进程里，关掉就把内存还给系统
@@ -48,6 +48,7 @@ import pystray  # noqa: E402
 from PIL import Image, ImageDraw, ImageOps  # noqa: E402
 
 import app_settings  # noqa: E402
+import autostart  # noqa: E402
 import data_move  # noqa: E402
 import storage  # noqa: E402
 import webview2  # noqa: E402
@@ -122,15 +123,16 @@ def listen_for_show(callback):
 
 
 UPDATE_FIRST_DELAY = 15  # 秒：启动后等一会儿再检查新版本，不和打开窗口抢
+UPDATE_FIRST_DELAY_BACKGROUND = 120  # 开机自启（--background）时：刚开机网络可能还没连上，等久一点
 UPDATE_EVERY = 8 * 3600  # 之后每 8 小时检查一次
 
 
-def start_update_checker(log, notify, stop):
-    """用户同意了自动检查新版本（设置 update_auto）才联网：启动 15 秒后查一次，之后每 8 小时一次。
+def start_update_checker(log, notify, stop, first_delay=UPDATE_FIRST_DELAY):
+    """用户同意了自动检查新版本（设置 update_auto）才联网：启动 15 秒（开机自启时 2 分钟）后查一次，之后每 8 小时一次。
     发现新版本时用托盘通知提醒，同一个版本只提醒一次；窗口顶部的提示条由面板根据检查结果显示。"""
 
     def loop():
-        if stop.wait(UPDATE_FIRST_DELAY):
+        if stop.wait(first_delay):
             return
         while True:
             if app_settings.get("update_auto") is True:
@@ -507,7 +509,7 @@ def main():
                         help="把哪些进程当作游戏（测试用，默认 Apex 的进程名）")
     parser.add_argument("--check-seconds", type=float, default=5, help="多久看一次游戏有没有在运行（默认 5）")
     parser.add_argument("--background", action="store_true",
-                        help="启动时不弹窗口，只待在托盘里（以后开机自启时用）")
+                        help="启动时不弹窗口，只待在托盘里（开机自启时用）")
     parser.add_argument("--no-window", action="store_true", help="启动时只启动面板服务，不弹窗口（测试用）")
     parser.add_argument("--check-image", type=Path, nargs="+", metavar="截图",
                         help="自检：识别这些截图，把结果写进日志后退出")
@@ -551,10 +553,11 @@ def main():
     threading.excepthook = lambda a: logger.error(f"后台线程 {a.thread.name if a.thread else ''} 出错",
                                                   exc_info=(a.exc_type, a.exc_value, a.exc_traceback))
     log(f"Evo {storage.APP_VERSION} 启动{'（源码运行）' if not FROZEN else ''}。数据文件夹：{DATA_DIR}；"
-        f"把这些进程当作游戏：{'、'.join(args.game)}")
+        f"把这些进程当作游戏：{'、'.join(args.game)}" + ("；只进托盘、不弹窗口（--background）" if args.background else ""))
     if INSTALLED_DATA is not None:
         backup_before_source_run(log)
     data_move.after_start(log)  # 刚搬过数据文件夹：删掉旧位置里搬走的东西，窗口顶部说一次
+    autostart.after_start(log)  # 开机自启：程序换了位置就跟着改；状态写进日志
     import updater
 
     if FROZEN:
@@ -617,7 +620,8 @@ def main():
             ic.visible = True
             recorder.start()
             listen_for_show(lambda: panel.open())  # 再次双击 Evo 时弹出窗口
-            start_update_checker(log, icon.notify, stop_update_checker)  # 用户同意了才联网检查新版本
+            start_update_checker(log, icon.notify, stop_update_checker,  # 用户同意了才联网检查新版本
+                                 UPDATE_FIRST_DELAY_BACKGROUND if args.background else UPDATE_FIRST_DELAY)
             data_move.watch_auto_move(log, stop_update_checker)  # 数据还在 C 盘旧的默认位置：Apex 没开时自动搬到程序旁边
             if not args.background:
                 panel.open(window=not args.no_window)  # 一打开 Evo 就弹出窗口，而不是只在托盘里

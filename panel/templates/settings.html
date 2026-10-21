@@ -5,8 +5,8 @@
 <div class="settings-layout">
   <div class="settings-main">
 
-    <section class="card settings-card" aria-labelledby="h-look">
-      <h2 id="h-look">外观</h2>
+    <section class="card settings-card" aria-labelledby="h-general">
+      <h2 id="h-general">常规</h2>
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name">主题</div>
@@ -17,6 +17,35 @@
           <option value="dark">黑夜</option>
           <option value="light">白天</option>
         </select>
+      </div>
+      {# 开机自动启动（autostart.py）：开关显示 Windows 里实际的状态（任务管理器里关掉了也显示关）；没开成写在开关下面 #}
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="autostart-name">开机自动启动</div>
+          <div class="setting-desc">
+            {%- if autostart.blocked %}{{ autostart.blocked }}
+            {%- else %}开机后 Evo 在托盘里自动运行（不弹出窗口），打游戏时自动记录。安全软件问是否允许时，请选"允许"
+            {%- endif %}
+          </div>
+          {% if autostart.off_in_windows %}
+          <div class="setting-desc">在 Windows 的"启动应用"里被关掉了，打开这里的开关会重新开启</div>
+          {% elif autostart.other and not autostart.blocked %}
+          <div class="setting-desc">开机时打开的是另一个位置的 Evo：<span class="move-path">{{ autostart.other }}</span>。打开这里的开关会改成现在这个</div>
+          {% endif %}
+          {% if autostart.failed %}<div class="setting-desc update-error" id="autostart-error" role="alert">{{ autostart.failed }}</div>{% endif %}
+        </div>
+        <form method="post" action="{{ url_for('autostart_setting') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="on" value="{{ '0' if autostart.on else '1' }}">
+          <input type="hidden" name="inline" value="1">
+          <input type="hidden" name="next" value="{{ url_for('settings') }}">
+          <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if autostart.on else 'false' }}"
+                  aria-labelledby="autostart-name" {% if autostart.failed %}aria-describedby="autostart-error"{% endif %}
+                  {{ 'disabled' if autostart.blocked }}>
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if autostart.on else '已关闭' }}</span>
+          </button>
+        </form>
       </div>
     </section>
 
@@ -264,7 +293,7 @@
       </div>
     </section>
 
-    <p class="setting-desc coming">开机自动启动、每局结束后的通知、性能模式等功能还在开发中，做好后会出现在这里。</p>
+    <p class="setting-desc coming">每局结束后的通知、性能模式等功能还在开发中，做好后会出现在这里。</p>
   </div>
 
   <aside class="card about-card" aria-labelledby="h-about">
@@ -294,7 +323,7 @@
   themeSelect.addEventListener("change", function () { evoSetTheme(themeSelect.value); });
   document.addEventListener("evo-theme", syncThemeSelect);  // 右上角按钮切换后，下拉框跟着变
 
-  // 开关（保留全部截图、自动检查）：点下去先把圆点滑过去，再提交保存（页面会重新打开）
+  // 开关（开机自动启动、保留全部截图、自动检查）：点下去先把圆点滑过去，再提交保存（页面会重新打开）
   document.querySelectorAll(".switch").forEach(function (sw) {
     sw.addEventListener("click", function () {
       var on = sw.getAttribute("aria-checked") !== "true";
