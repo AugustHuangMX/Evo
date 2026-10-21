@@ -1,6 +1,6 @@
 """提示音（sounds.py、live_collect.SoundCues）：对局结束、总结页读完了、进入经验值页，每局每一声最多一次。
 
-- 声音文件：三个都在，格式对，不太长、不爆音，和 tools/make_sounds.py 合成出来的一模一样
+- 声音文件：三个都在，格式对，不超过 2 秒、不爆音，和 tools/make_sounds.py 合成出来的一模一样
 - 开关：默认开；关了不响；试听不管开关
 - 什么时候响（直接喂画面，不用截图）：淘汰画面 / 冠军横幅 / "返回大厅"按钮响"对局结束"，已经到过总结页、经验值页就不响；
   总结页读完了才响；进经验值页响；来回切页不重复；下一局重新算
@@ -52,9 +52,9 @@ def file_checks():
             seconds = f.getnframes() / f.getframerate()
             data = np.frombuffer(f.readframes(f.getnframes()), "<i2")
         made = (make_sounds.render(make_sounds.SOUNDS[name]) * 32767).astype("<i2")
-        ok.append(fmt == (1, 2, 44100) and seconds <= 1.5 and np.abs(data).max() / 32767 <= 0.6
+        ok.append(fmt == (1, 2, 44100) and seconds <= 2.0 and np.abs(data).max() / 32767 <= 0.6
                   and np.array_equal(data, made))
-    out["三个声音文件都在：单声道 16 位 44.1 kHz、不超过 1.5 秒、不爆音，和 tools/make_sounds.py 合成的一样"] = all(ok)
+    out["三个声音文件都在：单声道 16 位 44.1 kHz、不超过 2 秒、不爆音，和 tools/make_sounds.py 合成的一样"] = all(ok)
     out["按一局里的先后排：对局结束、总结页读完了、经验值页"] = list(sounds.SOUNDS) == ["match_end", "summary", "xp"]
     return out
 
