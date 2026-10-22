@@ -88,7 +88,7 @@
 {% if update_result %}
 {# 刚一键更新过（updater.after_start）：只显示这一次 #}
 {% if update_result.ok %}
-<div class="flash flash-ok" role="status">已更新到 Evo <span class="num">{{ update_result.version }}</span>{% if update_result.from %}（原来是 <span class="num">{{ update_result.from }}</span>）{% endif %}，战绩数据都在。</div>
+<div class="flash flash-ok" role="status">已更新到 Evo <span class="num">{{ update_result.version }}</span>，祝你上分永不红buff。</div>
 {% else %}
 <div class="flash flash-error" role="alert">Evo <span class="num">{{ update_result.version }}</span> 没装上：{{ update_result.error }}。可以在"设置"页重试，或者去官网下载新版本。</div>
 {% endif %}
