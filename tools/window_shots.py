@@ -63,7 +63,8 @@ def main():
     import feature_cards as fc
     os.environ["EVO_VIDEOCONFIG"] = str(tmp / "videoconfig.txt")
     (tmp / "videoconfig.txt").write_text(fc.VIDEOCONFIG, encoding="utf-8")
-    (data / "settings.json").write_text('{"update_auto": true}', encoding="utf-8")  # 免得截到"要不要自动检查"的提问
+    (data / "settings.json").write_text('{"update_auto": true, "telemetry_consent": false}',
+                                         encoding="utf-8")  # 免得截到顶部的提问（自动检查、匿名统计）
 
     import panel_app
 

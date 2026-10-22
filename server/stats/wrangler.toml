@@ -1,0 +1,21 @@
+# Evo 匿名统计的接收程序（Cloudflare Worker），说明见 worker.js。部署：cd server/stats && wrangler deploy
+name = "evo-stats"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+workers_dev = false  # 只用自己的域名（国内连不上 workers.dev）
+preview_urls = false
+
+routes = [
+  { pattern = "stats.evotracker.cn", custom_domain = true },
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "evo-stats"
+database_id = "909dfd16-857d-45fa-96cd-bc828da97e29"  # 2026-10-22 建的，在亚太地区（APAC）
+
+[triggers]
+crons = ["17 19 * * *"]  # 每天一次删掉 2 年以前的数据（UTC 19:17，北京时间凌晨 3:17）
+
+[observability]
+enabled = false  # 不记请求日志（里面会有 IP 地址）

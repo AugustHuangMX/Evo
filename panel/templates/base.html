@@ -132,7 +132,7 @@
 {{ upd.banner(update_offer, update_job) }}
 {% endif %}
 {% if ask_update %}
-{# 第一次打开时问一次：要不要自动检查新版本（这是 Evo 唯一会联网的功能） #}
+{# 第一次打开时问一次：要不要自动检查新版本 #}
 <section class="card ask-card" aria-labelledby="h-ask-update">
   <div class="ask-text">
     <h2 id="h-ask-update">要不要自动检查新版本？</h2>
@@ -173,6 +173,30 @@
       <input type="hidden" name="on" value="0">
       <input type="hidden" name="next" value="{{ request.full_path }}">
       <button type="submit" class="btn">不用了</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% if ask_telemetry %}
+{# 第一次打开时问一次：要不要发送匿名统计（默认不发；前两个提问都回答了才问，一次只问一件事；见 telemetry.py）。
+   两个按钮一样的样式，不引导用户点"同意" #}
+<section class="card ask-card" aria-labelledby="h-ask-stats">
+  <div class="ask-text">
+    <h2 id="h-ask-stats">愿意发送匿名的对局数据，帮助改进 Evo 吗？</h2>
+    <p class="setting-desc">同意后，Evo 会把你以后每一局的传奇、队友用的传奇、名次、击杀、伤害、RP、段位和识别情况，连同一个随机编号发给开发者，用来统计有多少人在用、改进识别。不发送游戏名、ID、截图和日志。具体发送什么可以在<a class="text-link" href="{{ url_for('settings') }}#stats">设置页</a>里看到原样；以后随时可以关闭，或删除已发送的数据。</p>
+  </div>
+  <div class="ask-actions">
+    <form method="post" action="{{ url_for('telemetry_setting') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="on" value="1">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <button type="submit" class="btn">同意</button>
+    </form>
+    <form method="post" action="{{ url_for('telemetry_setting') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="on" value="0">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <button type="submit" class="btn">不了</button>
     </form>
   </div>
 </section>

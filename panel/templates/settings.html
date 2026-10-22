@@ -278,6 +278,55 @@
       </div>
     </section>
 
+    {# 匿名统计（telemetry.py）：默认关；打开后每 8 小时发送一次同意以后的对局。"查看会发送的内容"是原样（以最近一局为例）；
+       发过数据（有匿名编号）才显示"关闭并删除已发送的数据"（要联网，确认后按钮写"正在删除…"） #}
+    <section class="card settings-card" id="stats" aria-labelledby="h-stats">
+      <h2 id="h-stats">匿名统计</h2>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="stats-name">发送匿名的对局数据，帮助改进 Evo</div>
+          <div class="setting-desc">打开后，Evo 开着时每 8 小时把打开以后的对局（传奇、队友的传奇、名次、击杀、伤害、RP、段位和识别情况）连同一个随机编号发给开发者，用来统计有多少人在用、改进识别。不发送游戏名、ID、截图和日志</div>
+          <div class="setting-desc stats-status">
+            {%- if stats.consent %}{% if stats.since %}从 <span class="num">{{ stats.since[:16] }}</span> 起的对局 · {% endif %}已发送 <span class="num">{{ stats.sent }}</span> 局 ·
+              {% if not stats.last %}还没有发送过
+              {%- elif stats.last.ok %}上次发送：<span class="num">{{ stats.last.at }}</span>
+              {%- else %}上次没发出去（<span class="num">{{ stats.last.at }}</span>，{{ stats.last.error }}），下次再发{% endif %}
+            {%- else %}已关闭：不发送任何数据
+            {%- endif %}
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('telemetry_setting') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="on" value="{{ '0' if stats.consent else '1' }}">
+          <input type="hidden" name="next" value="{{ url_for('settings') }}">
+          <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if stats.consent else 'false' }}"
+                  aria-labelledby="stats-name">
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if stats.consent else '已关闭' }}</span>
+          </button>
+        </form>
+      </div>
+      <details class="stats-preview">
+        <summary>查看会发送的内容</summary>
+        <p class="setting-desc">下面是一次发送的原样，每局的那一份以你最近一局为例。<code>null</code> 表示没读出来；<code>mates</code> 是两名队友的传奇，<code>edited</code> 是你在战绩页改过哪几项（不发改成了什么），<code>k</code> 是由随机编号算出来的对局编号。每天第一次发送时带上 <code>ping</code>（用来算有多少人在用）。</p>
+        <pre class="stats-json" tabindex="0" aria-label="会发送的内容">{{ stats_preview }}</pre>
+      </details>
+      {% if stats.id %}
+      <div class="setting danger-zone">
+        <div class="setting-text">
+          <div class="setting-name">关闭并删除已发送的数据</div>
+          <div class="setting-desc">让服务器删掉这个编号发过的所有数据，并关闭匿名统计。以后再打开会用一个新编号</div>
+          <div class="setting-path">随机编号 {{ stats.id }}</div>
+        </div>
+        <form method="post" action="{{ url_for('telemetry_delete') }}" data-busy="正在删除…"
+              onsubmit="return confirm('确定删除已经发送给开发者的所有数据吗？\n删除后无法恢复，匿名统计也会关闭。')">
+          <input type="hidden" name="token" value="{{ token }}">
+          <button type="submit" class="btn btn-danger">删除</button>
+        </form>
+      </div>
+      {% endif %}
+    </section>
+
     {% import "_update.html" as upd with context %}
     <section class="card settings-card" aria-labelledby="h-update">
       <h2 id="h-update">更新</h2>
@@ -334,7 +383,7 @@
     <div class="setting-desc">版本 <span class="num">{{ version }}</span> · MIT 开源许可</div>
     <ul class="principles">
       <li class="pr-1"><div class="setting-name">只看不动</div><div class="setting-desc">只读取屏幕画面（另外只读 Apex 视频设置里的分辨率），不接触游戏进程，不模拟任何操作</div></li>
-      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">不上传任何数据，不用注册登录；只有检查和下载更新会联网，都由你决定</div></li>
+      <li class="pr-2"><div class="setting-name">全本地</div><div class="setting-desc">战绩只存在你的电脑上，不用注册登录；只有更新和你同意的匿名统计会联网，都由你决定</div></li>
       <li class="pr-3"><div class="setting-name">轻量</div><div class="setting-desc">后台运行占用低，不影响游戏帧数</div></li>
       <li class="pr-4"><div class="setting-name">开源</div><div class="setting-desc">所有代码公开，任何人都可以检查</div></li>
     </ul>

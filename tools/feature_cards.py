@@ -306,7 +306,8 @@ def main():
     os.environ["EVO_DATA_DIR"] = str(data)  # 在 import 程序代码之前设好：演示数据、设置都在临时文件夹里
     os.environ["EVO_VIDEOCONFIG"] = str(tmp / "videoconfig.txt")
     (tmp / "videoconfig.txt").write_text(VIDEOCONFIG, encoding="utf-8")
-    (data / "settings.json").write_text('{"update_auto": true}', encoding="utf-8")  # 免得截到"要不要自动检查"的提问
+    (data / "settings.json").write_text('{"update_auto": true, "telemetry_consent": false}',
+                                         encoding="utf-8")  # 免得截到顶部的提问（自动检查、匿名统计）
 
     import storage
     VERSION = spec.get("version") or storage.APP_VERSION

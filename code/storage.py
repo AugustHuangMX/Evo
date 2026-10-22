@@ -18,7 +18,7 @@ from pathlib import Path
 from paths import DB_PATH
 
 APP_VERSION = "0.3.6"
-SCHEMA_VERSION = 6  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+SCHEMA_VERSION = 7  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -48,6 +48,7 @@ COLUMNS = {
     "review_note": "TEXT",  # 为什么待确认
     "evidence_path": "TEXT",  # 总结页截图的路径
     "app_version": "TEXT",
+    "edited": "TEXT",  # 用户在战绩页改过哪几项（列名，逗号分隔，如 placement,damage；只记改了哪项，不记原来的值）
 }
 
 # 账号对照表：一个名字一行，同一个账号的几个名字（改过名）account_id 相同。
@@ -114,6 +115,7 @@ MIGRATIONS = {
     6: [("加列", "matches", "participation", "INTEGER"),  # 2026-10-18 0.3.0：老板分
         ("加列", "teammates", "legend", "TEXT"),  # 队友的传奇
         LOBBY_TABLE],  # 大厅读数
+    7: [("加列", "matches", "edited", "TEXT")],  # 2026-10-22 0.3.7：用户改过哪几项（匿名统计里的"识别情况"用）
 }
 
 

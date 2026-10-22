@@ -1,5 +1,5 @@
-"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；会联网的只有"检查更新"（update_check.py，可以关掉）
-和你点了才下载的一键更新（updater.py）。
+"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；会联网的只有"检查更新"（update_check.py，可以关掉）、
+你点了才下载的一键更新（updater.py），和你同意了才发送的匿名统计（telemetry.py）。
 
 运行：python code/panel_app.py                    读正式数据库 data/evo.db
 演示：python code/panel_app.py --db data/demo.db   读伪数据（先运行 python tools/demo_data.py 生成）
@@ -33,6 +33,7 @@ import ranks
 import screenshots
 import sounds
 import storage
+import telemetry
 import update_check
 import updater
 import paths
@@ -150,6 +151,7 @@ def security_checks():
 def template_globals():
     offer = update_check.available()
     ask_update = app_settings.get("update_auto") is None
+    ask_start = not ask_update and ask_autostart()
     return {
         # 在 Evo 自己的窗口里打开（app_window.py 会在 User-Agent 里带上 EvoApp）：显示自定义标题栏
         "in_app": "EvoApp/" in request.headers.get("User-Agent", ""),
@@ -161,7 +163,9 @@ def template_globals():
         # 检查更新：还没问过要不要自动检查 → 页面顶部问一次；已知有新版本 → 顶部提示条（一键更新的各个阶段见 updater.state）
         "ask_update": ask_update,
         # 开机自启：回答了上面那个以后再问（一次只问一件事）
-        "ask_autostart": not ask_update and ask_autostart(),
+        "ask_autostart": ask_start,
+        # 匿名统计：前两个都回答了以后再问（默认不发；见 telemetry.py）
+        "ask_telemetry": not ask_update and not ask_start and telemetry.consent() is None,
         "update_offer": offer,
         "update_job": updater.state(offer),
         "update_result": updater.take_result(),  # 刚一键更新过：顶部说一次"已更新到 x.y.z"或"没装上"
@@ -751,8 +755,13 @@ def update(match_id):
         flash("没有保存：" + "；".join(errors), "error")
         return back_to_list(open=match_id)
 
+    row = storage.get_match(db(), match_id)
+    if row is not None:  # 记下改过哪几项（只记改了哪项，不记原来的值；匿名统计的"识别情况"用，见 telemetry.py）
+        edited = {f for f in (row["edited"] or "").split(",") if f} | {k for k in EDITABLE if fields[k] != row[k]}
+        if edited:
+            fields["edited"] = ",".join(sorted(edited))
     fields["needs_review"] = 0  # 人工确认过了，不再标记待确认（review_note 保留，记录当初为什么待确认）
-    deleted = screenshots.discard(db(), storage.get_match(db(), match_id))  # 确认过了，截图不再需要（原则 2）
+    deleted = screenshots.discard(db(), row)  # 确认过了，截图不再需要（原则 2）
     if deleted:
         fields["evidence_path"] = None
     storage.update_match(db(), match_id, fields)
@@ -878,6 +887,8 @@ def settings():
         feedback_url=FEEDBACK_URL,
         feedback_group=FEEDBACK_GROUP,
         update_auto=app_settings.get("update_auto") is True,
+        stats=telemetry.status(),
+        stats_preview=telemetry.preview(db()),
         last_check=app_settings.get("update_last_check"),
         newest=update_check.known_newer(),
         job=updater.state(update_check.known_newer()),
@@ -1056,7 +1067,35 @@ def clear_data():
     return redirect(url_for("settings"))
 
 
-# ---------- 检查更新（update_check.py；Evo 唯一会联网的功能） ----------
+@app.post("/settings/telemetry")
+def telemetry_setting():
+    """匿名统计：第一次打开时页面顶部的提问，和设置页的开关（next 回到原来的页面）。打开时马上在后台发一次。"""
+    on = request.form.get("on") == "1"
+    was = telemetry.consent()
+    telemetry.set_consent(on)
+    if on:
+        threading.Thread(target=telemetry.send, name="telemetry-now", daemon=True).start()
+        flash("已开启匿名统计：Evo 开着时每 8 小时发送一次同意以后的对局。谢谢你帮助改进 Evo！", "ok")
+    elif was is None:
+        flash("好的，不发送。以后可以在\"设置\"里打开。", "ok")
+    else:
+        flash("已关闭匿名统计，不会再发送任何数据。已经发送的可以在设置页删除。", "ok")
+    return back_to_page()
+
+
+@app.post("/settings/telemetry/delete")
+def telemetry_delete():
+    """"关闭并删除已发送的数据"：请服务器删掉这个匿名编号发过的所有数据（要联网，最多等十几秒）。"""
+    try:
+        telemetry.delete_sent()
+    except telemetry.SendError as e:
+        flash(f"没删成：{e}。稍后再试一次。", "error")
+    else:
+        flash("已删除发送过的数据，并关闭了匿名统计。", "ok")
+    return redirect(url_for("settings") + "#stats")
+
+
+# ---------- 检查更新（update_check.py） ----------
 
 def back_to_page():
     """页面顶部的提问、提示条上的按钮点完后，回到原来的页面。只允许跳回本面板的几个页面。"""
