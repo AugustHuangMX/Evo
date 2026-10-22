@@ -414,6 +414,9 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 table.stats-table { width: 100%; border-collapse: collapse; }
 .mates-table { min-width: 560px; }
 .mates-table thead th + th { width: 130px; }  /* 只有 5 列：数字列定宽靠在一起，名字那列占剩下的 */
+.combos-table { min-width: 560px; }
+.combos-table thead th + th { width: 130px; }
+.combo { display: inline-flex; flex-wrap: wrap; gap: 4px 18px; }  /* 一个组合的三个传奇排成一行，窄了就换行 */
 .legends-table { min-width: 860px; }
 .stats-table th, .stats-table td { padding: 11px 12px; text-align: left; white-space: nowrap; }
 .stats-table th:first-child, .stats-table td:first-child { padding-left: 0; }

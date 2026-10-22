@@ -585,6 +585,39 @@ def teammate_table(rows, mates):
     return listed
 
 
+MIN_COMBO_GAMES = 2  # 传奇组合：出现过这么多局才列出
+
+
+def combo_table(rows, mates):
+    """传奇组合（2026-10-22 用户要求）：全队用的传奇（自己 + 队友，不管谁用的哪个）每种一行，按局数从多到少，
+    出现过 MIN_COMBO_GAMES 局以上才列。只算全队传奇都认出的局（队友的传奇 0.3.0 起才在对局中认）；
+    同一局里有两个一样的传奇（认错了，游戏里不会这样）也不算。选取率 = 这个组合的局数 ÷ 全队传奇都认出的局数。
+    返回 (列表, 全队传奇都认出的局)。"""
+    mate_legends = {}
+    for m in mates:
+        mate_legends.setdefault(m["match_id"], []).append(m["legend"])
+    known, groups = [], {}
+    for r in rows:
+        squad = [r["legend"], *mate_legends.get(r["match_id"], [])]
+        if len(squad) < 2 or not all(squad) or len(set(squad)) < len(squad):
+            continue
+        known.append(r)
+        groups.setdefault(tuple(sorted(squad)), []).append(r)
+    table = []
+    for combo, rs in groups.items():
+        if len(rs) < MIN_COMBO_GAMES:
+            continue
+        places = [r["placement"] for r in rs if r["placement"] is not None]
+        table.append({
+            "legends": [{"name": name, "icon": LEGEND_ICONS.get(name)} for name in combo],
+            "pick_rate": f"{len(rs) / len(known):.0%}",
+            "order": (-len(rs), sum(places) / len(places) if places else math.inf),  # 局数多的在前，一样多时场均名次好的在前
+            **group_numbers(rs),
+        })
+    table.sort(key=lambda c: c["order"])
+    return table, known
+
+
 def legend_table(rows):
     """传奇表现（详细版）：用过的每个传奇一行，按局数从多到少；名次分布的横条按这个传奇自己的局数算比例。
     返回 (列表, 没认出传奇的局数)。"""
@@ -824,8 +857,10 @@ def stats():
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
     in_range = rows[-30:] if range_key == "30" else rows
-    mates = teammate_table(in_range, storage.all_teammates(db(), names))
+    all_mates = storage.all_teammates(db(), names)
+    mates = teammate_table(in_range, all_mates)
     legends, no_legend = legend_table(in_range)
+    combos, combo_known = combo_table(in_range, all_mates)
     return render_template(
         "stats.html",
         range_key=range_key,
@@ -836,6 +871,9 @@ def stats():
         min_mate_games=MIN_MATE_GAMES,
         legends=legends,
         no_legend=no_legend,
+        combos=combos,
+        combo_all=group_numbers(combo_known) if combo_known else None,  # 参照：全队传奇都认出的局
+        min_combo_games=MIN_COMBO_GAMES,
         buckets=PLACE_BUCKETS,
         review_count=storage.count_review(db(), names),
     )

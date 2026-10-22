@@ -133,5 +133,44 @@
   {% endif %}
 </section>
 
+{# 传奇组合：全队用的传奇（不管谁用的哪个），只算全队传奇都认出的局 #}
+<section class="card stats-card" aria-labelledby="h-combos">
+  <div class="card-head"><h2 id="h-combos">传奇组合 · {{ ranges[range_key] }}</h2></div>
+  {% if combos %}
+  <div class="table-wrap">
+    <table class="stats-table combos-table">
+      <thead>
+        <tr>
+          <th scope="col">组合</th>
+          <th scope="col" class="right">局数</th>
+          <th scope="col" class="right" title="这个组合的局数 ÷ 全队传奇都认出的局数">选取率</th>
+          <th scope="col" class="right">场均名次</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="ref-row">
+          <th scope="row">所有组合<span class="stats-sub">参照</span></th>
+          <td class="right num">{{ combo_all.games }}</td>
+          <td class="right num">100%</td>
+          <td class="right num">{{ combo_all.avg_place }}</td>
+        </tr>
+        {% for c in combos %}
+        <tr>
+          <th scope="row"><span class="combo">{% for l in c.legends %}<span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span>{% endfor %}</span></th>
+          <td class="right num">{{ c.games }}</td>
+          <td class="right num">{{ c.pick_rate }}</td>
+          <td class="right num">{{ c.avg_place }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif combo_all %}
+  <div class="stats-empty">这个范围里还没有出现过 {{ min_combo_games }} 局以上的组合</div>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有认出全队传奇的对局</div>
+  {% endif %}
+</section>
+
 {% endif %}
 {% endblock %}

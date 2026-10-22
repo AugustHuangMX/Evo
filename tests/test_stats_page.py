@@ -1,4 +1,4 @@
-"""数据页：常一起玩的队友、传奇表现（panel_app.py 的"数据页的统计"、panel/templates/stats.html）。
+"""数据页：常一起玩的队友、传奇表现、传奇组合（panel_app.py 的"数据页的统计"、panel/templates/stats.html）。
 不用截图，不开浏览器（用 Flask 自带的测试客户端）。
 
 - 导航里有"数据"，在"战绩"和"设置"之间；没有对局时显示空白提示
@@ -87,8 +87,52 @@ def cells(page, name, table="mates-table"):
     return None
 
 
+def combo_checks():
+    """传奇组合：另建一个数据库。全队传奇都认出的局 8 局：
+    {恶灵, 命脉, 直布罗陀} 5 局（自己用恶灵 3 局、用命脉 2 局，算同一个组合；名次 1、5、9、3、没读到 → 4.5）、
+    {罗芭, 寻血猎犬, 沃特森} 2 局（名次 2、4）、{希尔, 密客, 幻象} 1 局（不列）。
+    不算的：队友传奇没认出、没有队友、同一局两个恶灵（认错了）、自己的传奇没认出。"""
+    path = FOLDER / "combos.db"
+    path.unlink(missing_ok=True)
+    conn = storage.connect(path)
+    games = [("恶灵", ["命脉", "直布罗陀"], 1), ("恶灵", ["直布罗陀", "命脉"], 5), ("恶灵", ["命脉", "直布罗陀"], 9),
+             ("命脉", ["恶灵", "直布罗陀"], 3), ("命脉", ["直布罗陀", "恶灵"], None),
+             ("罗芭", ["寻血猎犬", "沃特森"], 2), ("罗芭", ["沃特森", "寻血猎犬"], 4),
+             ("希尔", ["密客", "幻象"], 6),
+             ("恶灵", ["命脉", None], 1), ("恶灵", [], 1), ("恶灵", ["恶灵", "命脉"], 1), (None, ["命脉", "直布罗陀"], 1)]
+    for i, (mine, mates, place) in enumerate(games):
+        match_id = storage.insert_match(conn, {"ended_at": f"2026-10-20 {10 + i}:00:00", "legend": mine, "placement": place})
+        if mates:
+            storage.save_teammates(conn, match_id, [{"slot": slot, "name": f"队友{slot}", "legend": legend}
+                                                    for slot, legend in zip(("left", "right"), mates)])
+    conn.close()
+    single = FOLDER / "combo_single.db"
+    single.unlink(missing_ok=True)
+    conn = storage.connect(single)
+    storage.save_teammates(conn, storage.insert_match(conn, {"ended_at": "2026-10-20 10:00:00", "legend": "恶灵"}),
+                           [{"slot": "left", "legend": "命脉"}, {"slot": "right", "legend": "直布罗陀"}])
+    conn.close()
+
+    pages = {}
+    for name, db in (("combos", path), ("single", single)):
+        panel_app.app.config["DB"] = db
+        pages[name] = panel_app.app.test_client().get("/stats?range=all").get_data(as_text=True)
+    rows = table_rows(pages["combos"], "combos-table")
+    big = " ".join(sorted(["恶灵", "命脉", "直布罗陀"]))
+    small = " ".join(sorted(["罗芭", "寻血猎犬", "沃特森"]))
+    return {
+        "传奇组合：不管谁用的哪个算同一个组合，按局数从多到少；只出现过 1 局的不列":
+            [r[0] for r in rows[1:]] == [big, small],
+        "选取率 = 局数 ÷ 全队传奇都认出的局数（没认全、没有队友、两个一样的、自己没认出的都不算）":
+            rows[1:] and rows[1][1:3] == ["5", f"{5 / 8:.0%}"] and rows[2][1:3] == ["2", f"{2 / 8:.0%}"],
+        "组合的场均名次不算没读到名次的局（1、5、9、3 → 4.5）": len(rows) > 1 and rows[1][3] == "4.5",
+        "参照行：所有组合 8 局、100%": rows[:1] and rows[0][:3] == ["所有组合 参照", "8", "100%"],
+        "只有 1 局的组合：写明，不出空表": "还没有出现过 2 局以上的组合" in pages["single"] and "combos-table" not in pages["single"],
+    }
+
+
 def main():
-    print("数据页：常一起玩的队友、传奇表现")
+    print("数据页：常一起玩的队友、传奇表现、传奇组合")
     path = new_db("stats")
     panel_app.app.config.update(DB=path, TESTING=True)
     conn = storage.connect(path)
@@ -126,6 +170,7 @@ def main():
     conn.close()
     panel_app.app.config["DB"] = lonely_path
     lonely = panel_app.app.test_client().get("/stats").get_data(as_text=True)
+    combos = combo_checks()
     panel_app.app.config["DB"] = path
 
     checks = {
@@ -156,6 +201,8 @@ def main():
         "名次分布的横条有文字说明（读屏软件、悬停）": re.search(r'aria-label="冠军 1 局，第 2–3 名 \d+ 局', everything) is not None,
         "只看大号时没有小号的队友": "小黑" not in everything,
         "\"全部账号\"时算上小号的局（小白 5 局）": (cells(all_accounts, "小白") or [None, None])[1] == "5 局",
+        "传奇组合：没有认出全队传奇的局时写明": "还没有认出全队传奇的对局" in lonely,
+        **combos,
     }
     return report(checks)
 
