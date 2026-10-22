@@ -48,8 +48,8 @@
 ## 四、新功能
 
 - [ ] **匿名统计剩下的**（Evo 这边 2026-10-22 已完成，见 progress.md；规则见 `docs/底座.md`"匿名统计"）：
-  - [ ] 上线接收服务器（要用户点头）：`cd server/stats`，`wrangler d1 execute evo-stats --remote --file schema.sql` 建表（D1 数据库已经建好，是空的），`wrangler deploy`（会自动加 `stats.evotracker.cn` 的 DNS 记录）；然后从国内测连通（Globalping 深圳、广州、南京）、用 `EVO_STATS_URL` 不设的源码版发一次试试，`python tools/stats_report.py` 看得到，再用设置页的删除按钮删掉
-  - [ ] 发 0.3.7 时：`release/更新内容.txt` 加一条（如"新增：匿名统计（默认不发，第一次打开时问你；设置页能看到发送内容的原样，随时可以关掉、删除已发送的数据）"，原文先给用户确认）；改过的 `site/privacy.html`、`site/index.html` 随发布一起上传（服务器要在发布之前上线）
+  - [ ] 发 0.3.7 时：`release/更新内容.txt` 加一条（如"新增：匿名统计（默认不发，第一次打开时问你；设置页能看到发送内容的原样，随时可以关掉、删除已发送的数据）"，原文先给用户确认）；改过的 `site/privacy.html`、`site/index.html` 随发布一起上传
+  - [ ] 发布以后：过几天用 `python tools/stats_report.py` 看有没有数据进来、日志里"匿名统计：没发出去"多不多（国内家用宽带到 Cloudflare 的情况只测过机房网络）
   - [ ] 数据分析面板（用户说之后做）：先问给谁看——只给自己（放 Cloudflare 上，要登录）/ 官网公开汇总（如本赛季各传奇选用率）/ Evo 里和全体对比（Evo 要多下载一个汇总文件，隐私政策要改）
   - [ ] 防刷：匿名编号是 Evo 自己生成的，谁都能伪造数据。量大了或有人乱发，再加 Cloudflare 的限速规则（免费版能加 1 条）
 

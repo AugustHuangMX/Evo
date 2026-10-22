@@ -6,14 +6,13 @@
 // - POST /v1/delete：{"id": 匿名编号}：删掉这个编号发过的所有数据（Evo 设置页的"关闭并删除已发送的数据"）
 // 只收认识的项，格式不对的那一局不存（整份格式不对就回 400）。不存 IP 地址、不写日志、不放 Cookie；
 // 不回 CORS 头，网页里的脚本没法往这里发。
-// 每天定时（wrangler.toml 的 crons）删掉 KEEP_DAYS 天以前的数据（隐私政策写的是 2 年）。
+// 数据不自动删（2026-10-22 用户决定：留着做长期统计，比如看各赛季的变化）。
 //
 // 部署：cd server/stats && wrangler deploy（第一次：wrangler d1 create evo-stats --location apac，
 // 把 database_id 填进 wrangler.toml，再 wrangler d1 execute evo-stats --remote --file schema.sql）
 // 看统计：python tools/stats_report.py
 
 const MAX_BODY = 256 * 1024;
-const KEEP_DAYS = 730;
 const MAX_MATCHES = 100;
 const ID = /^[0-9a-f]{32}$/;
 const KEY = /^[0-9a-f]{20}$/;
@@ -140,20 +139,7 @@ async function remove(body, env) {
   return reply({ ok: true, deleted: results.reduce((n, r) => n + (r.meta?.changes ?? 0), 0) });
 }
 
-// 每天一次：删掉 2 年以前的数据。日期是用户电脑上的，没有日期的局按服务器收到的时间算
-async function cleanUp(env) {
-  const cutoff = new Date(Date.now() - KEEP_DAYS * 86400 * 1000).toISOString().slice(0, 10);
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM pings WHERE day < ?").bind(cutoff),
-    env.DB.prepare("DELETE FROM matches WHERE COALESCE(day, substr(received_at, 1, 10)) < ?").bind(cutoff),
-  ]);
-}
-
 export default {
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(cleanUp(env));
-  },
-
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (request.method === "GET" && pathname === "/") {
