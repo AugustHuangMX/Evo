@@ -156,11 +156,11 @@ def start_update_checker(log, notify, stop, first_delay=UPDATE_FIRST_DELAY):
 
 STATS_FIRST_DELAY = 60  # 秒：启动后等一会儿再发匿名统计，排在检查新版本后面
 STATS_FIRST_DELAY_BACKGROUND = 180  # 开机自启时：等网络连上
-STATS_EVERY = 8 * 3600  # 之后每 8 小时发一次
+STATS_EVERY = 3600  # 之后每小时一次（没有要发的就不联网；2026-10-22 用户决定，原来是 8 小时）
 
 
 def start_telemetry(log, stop, first_delay=STATS_FIRST_DELAY):
-    """用户同意了匿名统计（telemetry.py）才联网：启动 1 分钟（开机自启时 3 分钟）后发一次，之后每 8 小时一次。
+    """用户同意了匿名统计（telemetry.py）才联网：启动 1 分钟（开机自启时 3 分钟）后发一次，之后每小时一次。
     没同意时什么都不做；没有要发的也不联网。发了什么、没发出去都写进日志。"""
 
     def loop():

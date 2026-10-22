@@ -1075,7 +1075,7 @@ def telemetry_setting():
     telemetry.set_consent(on)
     if on:
         threading.Thread(target=telemetry.send, name="telemetry-now", daemon=True).start()
-        flash("已开启匿名统计：Evo 开着时每 8 小时发送一次同意以后的对局。谢谢你帮助改进 Evo！", "ok")
+        flash("已开启匿名统计：Evo 开着时每小时发送一次同意以后的新对局。谢谢你帮助改进 Evo！", "ok")
     elif was is None:
         flash("好的，不发送。以后可以在\"设置\"里打开。", "ok")
     else:

@@ -278,14 +278,14 @@
       </div>
     </section>
 
-    {# 匿名统计（telemetry.py）：默认关；打开后每 8 小时发送一次同意以后的对局。"查看会发送的内容"是原样（以最近一局为例）；
+    {# 匿名统计（telemetry.py）：默认关；打开后每小时发送一次同意以后的对局。"查看会发送的内容"是原样（以最近一局为例）；
        发过数据（有匿名编号）才显示"关闭并删除已发送的数据"（要联网，确认后按钮写"正在删除…"） #}
     <section class="card settings-card" id="stats" aria-labelledby="h-stats">
       <h2 id="h-stats">匿名统计</h2>
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="stats-name">发送匿名的对局数据，帮助改进 Evo</div>
-          <div class="setting-desc">打开后，Evo 开着时每 8 小时把打开以后的对局（传奇、队友的传奇、名次、击杀、伤害、RP、段位和识别情况）连同一个随机编号发给开发者，用来统计有多少人在用、改进识别。不发送游戏名、ID、截图和日志</div>
+          <div class="setting-desc">打开后，Evo 开着时每小时把打开以后的新对局（传奇、队友的传奇、名次、击杀、伤害、RP、段位和识别情况）连同一个随机编号发给开发者，用来统计有多少人在用、改进识别。不发送游戏名、ID、截图和日志</div>
           <div class="setting-desc stats-status">
             {%- if stats.consent %}{% if stats.since %}从 <span class="num">{{ stats.since[:16] }}</span> 起的对局 · {% endif %}已发送 <span class="num">{{ stats.sent }}</span> 局 ·
               {% if not stats.last %}还没有发送过
