@@ -196,7 +196,7 @@ def load_icons():
     else:
         recording = base.copy()
         d = ImageDraw.Draw(recording)
-        d.ellipse((38, 38, 63, 63), fill=(255, 255, 255, 255))  # 白边，在红色盾牌上也看得清
+        d.ellipse((38, 38, 63, 63), fill=(255, 255, 255, 255))  # 白边：和图标的深色底分开
         d.ellipse((42, 42, 59, 59), fill=(230, 40, 40, 255))
 
     gray = ImageOps.grayscale(base.convert("RGB")).convert("RGBA")

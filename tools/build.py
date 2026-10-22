@@ -1,6 +1,6 @@
 """打包成 Windows 程序：python tools/build.py  →  dist/Evo/Evo.exe
 
-1. 生成程序图标 build/icon/evo.ico（用 assets/icon/ 里的图标，裁掉四周透明空白；没有就用面板左上角的盾牌）
+1. 生成程序图标 build/icon/evo.ico（用 assets/icon/ 里的图标，裁掉四周透明空白；没有就用 icons.py 里画的盾牌）
 2. 准备微软的 WebView2 安装程序（webview2.py 用它，电脑上没有 WebView2 时问用户要不要装）：
    build/webview2 里没有就从微软下载，每次都核对是微软签名的
 3. 用 PyInstaller 按 evo.spec 打包（文件夹模式：一个很小的 Evo.exe + _internal 文件夹）
