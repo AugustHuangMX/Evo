@@ -541,7 +541,7 @@ MATE_NAME_GAMES = 5  # 队友显示的名字：看最近这么多局里用得最
 
 
 def teammate_table(rows, mates):
-    """常一起玩的队友：每人一行，按一起打的局数从多到少。名次、RP 是自己这几局的。返回 (列表, 没列出的人数)。
+    """常一起玩的队友：每人一行，按一起打的局数从多到少。名次、RP 是自己这几局的。
     rows：要统计的局；mates：队友表的行，按对局时间从早到晚（多了不要紧，不在 rows 里的局不算）。
     认人：有 ID 按 ID（改了名也认得出）；没有 ID 的行（没有总结页的局）按名字找用过这个名字的 ID，找不到就按名字算一个人。
     显示的名字：最近 MATE_NAME_GAMES 局里用得最多的（一样多时用最近的）——改名几局后就换成新名字，识别偶尔读错一个字也不影响。"""
@@ -576,7 +576,7 @@ def teammate_table(rows, mates):
             **group_numbers(together),
         })
     listed.sort(key=lambda p: (p["games"], p["order"]), reverse=True)
-    return listed, len(people) - len(listed)
+    return listed
 
 
 def legend_table(rows):
@@ -817,7 +817,7 @@ def stats():
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
     in_range = rows[-30:] if range_key == "30" else rows
-    mates, mates_hidden = teammate_table(in_range, storage.all_teammates(db(), names))
+    mates = teammate_table(in_range, storage.all_teammates(db(), names))
     legends, no_legend = legend_table(in_range)
     return render_template(
         "stats.html",
@@ -826,7 +826,6 @@ def stats():
         total=len(rows),
         everyone=group_numbers(in_range),  # 参照：这个范围里的所有对局
         mates=mates,
-        mates_hidden=mates_hidden,
         min_mate_games=MIN_MATE_GAMES,
         legends=legends,
         no_legend=no_legend,

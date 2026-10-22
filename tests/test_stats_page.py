@@ -3,7 +3,7 @@
 
 - 导航里有"数据"，在"战绩"和"设置"之间；没有对局时显示空白提示
 - 队友按 ID 认人：改了名也算同一个人，显示用得最多的名字；没有 ID 的行（没有总结页的局）按名字对上 ID；
-  同一局读出两次只算一次；只一起打过 1 局的不列，写明几人没列
+  同一局读出两次只算一次；只一起打过 1 局的不列；表下只有一句"*将鼠标停在队友名字上可以看到ID"（2026-10-22 用户定的）
 - 队友的名次、冠军、场均 RP 是自己这几局的；RP 只算排位局，读不到的写"—"不写 0
 - 传奇表现列出每个传奇（不是前 3 个 + 其他），按局数从多到少；没认出传奇的局写明几局
 - 第一行"所有对局"（参照）和总览页的统计数字一样
@@ -137,7 +137,10 @@ def main():
                                                   and cells(everything, "阿亮") is None and cells(everything, "阿 亮") is None,
         "鼠标停在名字上能看到 ID": 'title="ID 111"' in everything,
         "没有 ID 的行按名字对上 ID；同一局读出两次只算一次（小白 4 局）": bai is not None and bai[1] == "4 局",
-        "只一起打过 1 局的不列，写明几人": cells(everything, "路人") is None and "只一起打过 1 局的 1 人没有列出" in everything,
+        "只一起打过 1 局的不列": cells(everything, "路人") is None,
+        "队友表下只有一句提示（悬停看 ID），没有别的说明": re.findall(r'<p class="stats-note">(.*?)</p>', everything, re.S)
+                                                 == ["*将鼠标停在队友名字上可以看到ID"],
+        "没有可列的队友时不显示这句提示": "stats-note" not in lonely,
         "队友的冠军是自己的名次（阿亮那 12 局有 1 次冠军）": liang is not None and liang[2] == "1 次 8%",
         "队友的场均 RP 只算排位局（小白 4 局里只有 1 局排位 −20）": bai is not None and bai[4] == "−20",
         "队友的场均名次不算没读到名次的局（小白：1、3、8 → 4.0）": bai is not None and bai[3] == "4.0",

@@ -67,13 +67,10 @@
       </tbody>
     </table>
   </div>
+  <p class="stats-note">*将鼠标停在队友名字上可以看到ID</p>
   {% else %}
   <div class="stats-empty">这个范围里还没有一起打过 {{ min_mate_games }} 局以上的队友</div>
   {% endif %}
-  <p class="stats-note">
-    名次、RP 都是你自己的。按游戏 ID 认人，队友改了名也算同一个人，显示最近用的名字；鼠标停在名字上能看到 ID。
-    {%- if mates_hidden %}只一起打过 1 局的 {{ mates_hidden }} 人没有列出。{% endif %}
-  </p>
 </section>
 
 <section class="card stats-card" aria-labelledby="h-legends">
