@@ -399,6 +399,31 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .legend-key span { display: flex; align-items: center; gap: 6px; }
 .legend-key i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
+/* ---------- 数据页 ----------
+   表格比战绩页的松一些、没有悬停（行不能点）；第一行"所有对局"是参照，字色淡一级 */
+.stats-card { padding: 24px; }
+table.stats-table { width: 100%; border-collapse: collapse; }
+.mates-table { min-width: 560px; }
+.mates-table thead th + th { width: 130px; }  /* 只有 5 列：数字列定宽靠在一起，名字那列占剩下的 */
+.legends-table { min-width: 860px; }
+.stats-table th, .stats-table td { padding: 11px 12px; text-align: left; white-space: nowrap; }
+.stats-table th:first-child, .stats-table td:first-child { padding-left: 0; }
+.stats-table th:last-child, .stats-table td:last-child { padding-right: 0; }
+.stats-table thead th { padding-top: 0; font-weight: 500; font-size: 12px; color: var(--muted); }
+.stats-table tbody tr { border-top: 1px solid var(--row-border); }
+.stats-table tbody th { font-weight: 500; }
+.stats-table .right { text-align: right; }
+.stats-table .ref-row, .stats-table .ref-row th { color: var(--muted); font-weight: 400; }
+.stats-name { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.stats-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.stats-sub.indent { margin-left: 24px; }  /* 和传奇名字对齐：图标 18 + 间距 6 */
+.stats-rate { display: inline-block; min-width: 40px; margin-left: 8px; color: var(--muted); font-weight: 500; }
+.stats-table .dist-col { width: 30%; min-width: 140px; }
+.stats-table .dist-col .bar { min-width: 140px; }
+.stats-note { margin: 16px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.stats-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; border: 1px dashed var(--dashed); border-radius: 6px; }
+.legend-key .label { font-size: 12px; }
+
 /* ---------- 设置页 ---------- */
 .settings-layout { display: grid; grid-template-columns: 1fr minmax(280px, 350px); gap: 20px; align-items: start; }
 .settings-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
@@ -500,7 +525,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
    动画都在 0.3 秒左右，不让你等。
    Windows 设置里关了"动画效果"时，全部不播放（最下面）。 */
 
-/* 1. 切换总览 / 战绩 / 设置：选中标签的底色从上一页的标签滑过来，下面的内容从下往上淡入。
+/* 1. 切换总览 / 战绩 / 数据 / 设置：选中标签的底色从上一页的标签滑过来，下面的内容从下往上淡入。
       是不是"从另一页切过来"由服务器判断（panel_app.py 的 page_switch），同一页里的操作不播放。
       没用浏览器自带的跨页面过渡（View Transitions）：实测它让每次切换先多等约 0.3 秒，反而显得慢 */
 .page-enter { animation: evo-rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
@@ -537,6 +562,7 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .legend-item:nth-child(2) .bar { animation-delay: 220ms; }
 .legend-item:nth-child(3) .bar { animation-delay: 290ms; }
 .legend-item:nth-child(4) .bar { animation-delay: 360ms; }
+.legends-table tbody tr:nth-child(n+3) .bar { animation-delay: 220ms; }  /* 数据页：第一个传奇先长出来，其余跟上 */
 [data-count] { font-variant-numeric: tabular-nums; }  /* 数字滚动时宽度不乱跳 */
 
 @keyframes evo-fade-in { from { opacity: 0; } }

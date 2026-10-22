@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% from "_legend.html" import legend_icon %}
+{% block title %}数据 · Evo{% endblock %}
+
+{% block content %}
+
+{% if review_count %}
+<a class="banner-warn" href="{{ url_for('matches', review='1') }}">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 L22 20 L2 20 Z"></path><path d="M12 10 L12 14"></path><path d="M12 17 L12 17.5"></path></svg>
+  <span class="grow">有 {{ review_count }} 局识别结果不确定，需要你确认</span>
+  <span class="strong">去确认 →</span>
+</a>
+{% endif %}
+
+{% if not total %}
+<div class="card empty-card">
+  Evo 当前还没有任何对局记录。
+</div>
+{% else %}
+
+<div class="filters">
+  <div class="filter">
+    <span class="label">统计范围</span>
+    <div class="seg" role="group" aria-label="统计范围">
+      {% for key, label in ranges.items() %}
+      <a href="{{ url_for('stats', range=key) if key != '30' else url_for('stats') }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# 每张表第一行是"所有对局"（参照）：和某个队友、某个传奇的数字对着看，才知道是好是坏 #}
+<section class="card stats-card" aria-labelledby="h-mates">
+  <div class="card-head"><h2 id="h-mates">常一起玩的队友 · {{ ranges[range_key] }}</h2></div>
+  {% if mates %}
+  <div class="table-wrap">
+    <table class="stats-table mates-table">
+      <thead>
+        <tr>
+          <th scope="col">队友</th>
+          <th scope="col" class="right">一起打</th>
+          <th scope="col" class="right">冠军</th>
+          <th scope="col" class="right">场均名次</th>
+          <th scope="col" class="right">场均 RP</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="ref-row">
+          <th scope="row">所有对局<span class="stats-sub">参照</span></th>
+          <td class="right"><span class="num">{{ everyone.games }}</span> 局</td>
+          <td class="right"><span class="num">{{ everyone.wins }}</span> 次<span class="stats-rate num">{{ everyone.win_rate }}</span></td>
+          <td class="right num">{{ everyone.avg_place }}</td>
+          <td class="right num rp-{{ everyone.rp_class }}">{{ everyone.avg_rp }}</td>
+        </tr>
+        {% for m in mates %}
+        <tr>
+          <th scope="row">
+            <span class="stats-name"{% if m.player_id %} title="ID {{ m.player_id }}"{% endif %}>{{ m.name }}</span>
+            <span class="stats-sub">上次一起：{{ m.last }}</span>
+          </th>
+          <td class="right"><span class="num">{{ m.games }}</span> 局</td>
+          <td class="right"><span class="num">{{ m.wins }}</span> 次<span class="stats-rate num">{{ m.win_rate }}</span></td>
+          <td class="right num">{{ m.avg_place }}</td>
+          <td class="right num rp-{{ m.rp_class }}">{{ m.avg_rp }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有一起打过 {{ min_mate_games }} 局以上的队友</div>
+  {% endif %}
+  <p class="stats-note">
+    名次、RP 都是你自己的。按游戏 ID 认人，队友改了名也算同一个人，显示最近用的名字；鼠标停在名字上能看到 ID。
+    {%- if mates_hidden %}只一起打过 1 局的 {{ mates_hidden }} 人没有列出。{% endif %}
+  </p>
+</section>
+
+<section class="card stats-card" aria-labelledby="h-legends">
+  <div class="card-head"><h2 id="h-legends">传奇表现 · {{ ranges[range_key] }}</h2></div>
+  {% if legends %}
+  <div class="table-wrap">
+    <table class="stats-table legends-table">
+      <thead>
+        <tr>
+          <th scope="col">传奇</th>
+          <th scope="col" class="right">局数</th>
+          <th scope="col" class="dist-col">名次分布</th>
+          <th scope="col" class="right">胜率</th>
+          <th scope="col" class="right">前五率</th>
+          <th scope="col" class="right">场均名次</th>
+          <th scope="col" class="right">场均击杀</th>
+          <th scope="col" class="right">场均伤害</th>
+          <th scope="col" class="right">场均 RP</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="ref-row">
+          <th scope="row"><span class="legend-label">{{ legend_icon(None) }}所有对局</span><span class="stats-sub indent">参照</span></th>
+          <td class="right num">{{ everyone.games }}</td>
+          <td></td>
+          <td class="right num">{{ everyone.win_rate }}</td>
+          <td class="right num">{{ everyone.top5 }}</td>
+          <td class="right num">{{ everyone.avg_place }}</td>
+          <td class="right num">{{ everyone.avg_kills }}</td>
+          <td class="right num">{{ everyone.avg_damage }}</td>
+          <td class="right num rp-{{ everyone.rp_class }}">{{ everyone.avg_rp }}</td>
+        </tr>
+        {% for l in legends %}
+        <tr>
+          <th scope="row"><span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span></th>
+          <td class="right num">{{ l.games }}</td>
+          <td class="dist-col">
+            <div class="bar stacked" role="img" aria-label="{{ l.spread }}" title="{{ l.spread }}">
+              {% for css, width in l.segments %}<span class="seg-{{ css }}" style="width: {{ width }}%"></span>{% endfor %}
+            </div>
+          </td>
+          <td class="right num">{{ l.win_rate }}</td>
+          <td class="right num">{{ l.top5 }}</td>
+          <td class="right num">{{ l.avg_place }}</td>
+          <td class="right num">{{ l.avg_kills }}</td>
+          <td class="right num">{{ l.avg_damage }}</td>
+          <td class="right num rp-{{ l.rp_class }}">{{ l.avg_rp }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="legend-key">
+    <span class="label">名次分布：</span>
+    {% for css, label, _ in buckets %}<span><i class="seg-{{ css }}"></i>{{ label }}</span>{% endfor %}
+    {% if no_legend %}<span class="push-right">另有 {{ no_legend }} 局没认出传奇，没有算进来</span>{% endif %}
+  </div>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有认出传奇的对局</div>
+  {% endif %}
+</section>
+
+{% endif %}
+{% endblock %}

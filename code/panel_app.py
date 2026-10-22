@@ -48,7 +48,7 @@ for _type, _ext in (("text/css", ".css"), ("text/javascript", ".js"), ("font/wof
 
 PER_PAGE = 20
 # 顶部导航：(页面, 显示名)。顺序也决定切换页面时，选中标签的底色从哪边滑过来
-NAV = (("overview", "总览"), ("matches", "战绩"), ("settings", "设置"))
+NAV = (("overview", "总览"), ("matches", "战绩"), ("stats", "数据"), ("settings", "设置"))
 MODES ={"ranked": "排位", "pubs": "匹配", "other": "其他"}
 # 修正表单里可以改的字段：(显示名, 最小值, 最大值)
 EDITABLE = {
@@ -434,12 +434,14 @@ def rp_chart(rows, lobby=()):
     }
 
 
-def stat_cards(rows):
+def group_numbers(rows):
+    """一组对局的场均数字（总览页的统计数字、数据页的表格共用）。读不到的项不算进去；一局都没有时写"—"。"""
     placements = [r["placement"] for r in rows if r["placement"] is not None]
     # 击杀来自经验值页的局（没有总结页，也没读到对局中右上角），击杀是"计分次数"（可能比实际少），不算进场均击杀
     kills = [r["kills"] for r in rows if r["kills"] is not None
              and not any(n in (r["review_note"] or "") for n in COUNTED_KILLS_NOTES)]
     damages = [r["damage"] for r in rows if r["damage"] is not None]
+    rps = [r["rp_delta"] for r in rows if r["rp_delta"] is not None]  # 只有排位局有
 
     def avg(values, fmt):
         return fmt.format(sum(values) / len(values)) if values else "—"
@@ -447,13 +449,29 @@ def stat_cards(rows):
     def rate(hit):
         return f"{sum(1 for p in placements if hit(p)) / len(placements):.0%}" if placements else "—"
 
+    avg_rp = round(sum(rps) / len(rps)) if rps else None
+    return {
+        "games": len(rows),
+        "wins": sum(1 for p in placements if p == 1),
+        "avg_place": avg(placements, "{:.1f}"),
+        "avg_kills": avg(kills, "{:.1f}"),
+        "avg_damage": avg(damages, "{:,.0f}"),
+        "top5": rate(lambda p: p <= 5),
+        "win_rate": rate(lambda p: p == 1),
+        "avg_rp": "—" if avg_rp is None else signed(avg_rp),
+        "rp_class": "none" if avg_rp is None else ("good" if avg_rp >= 0 else "bad"),
+    }
+
+
+def stat_cards(rows):
+    n = group_numbers(rows)
     return [
-        {"label": "场均名次", "value": avg(placements, "{:.1f}")},
-        {"label": "场均击杀", "value": avg(kills, "{:.1f}")},
-        {"label": "场均伤害", "value": avg(damages, "{:,.0f}")},
-        {"label": "前五率", "value": rate(lambda p: p <= 5)},
-        {"label": "胜率", "value": rate(lambda p: p == 1), "accent": True},
-        {"label": "统计局数", "value": str(len(rows))},
+        {"label": "场均名次", "value": n["avg_place"]},
+        {"label": "场均击杀", "value": n["avg_kills"]},
+        {"label": "场均伤害", "value": n["avg_damage"]},
+        {"label": "前五率", "value": n["top5"]},
+        {"label": "胜率", "value": n["win_rate"], "accent": True},
+        {"label": "统计局数", "value": str(n["games"])},
     ]
 
 
@@ -479,23 +497,30 @@ def legend_bars(rows, top=3):
 
     bars = []
     for name, rs in items:
-        places = [r["placement"] for r in rs]
-        buckets = [
-            ("p1", sum(1 for p in places if p == 1)),
-            ("p2", sum(1 for p in places if p is not None and 2 <= p <= 3)),
-            ("p3", sum(1 for p in places if p is not None and 4 <= p <= 10)),
-            ("p4", sum(1 for p in places if p is None or p > 10)),
-        ]
         damages = [r["damage"] for r in rs if r["damage"] is not None]
         bars.append({
             "name": name,
             "icon": LEGEND_ICONS.get(name),
             "games": len(rs),
             "avg_damage": f"{sum(damages) / len(damages):,.0f}" if damages else None,
-            "segments": [(css, n / widest * 100) for css, n in buckets if n],
+            "segments": [(css, n / widest * 100) for css, n, _ in placement_buckets(rs) if n],
             "other": name == "其他",
         })
     return bars
+
+
+# 名次分段：横条的颜色、图例上写的、读出来的（"冠军 2 局，第 2–3 名 5 局……"）
+PLACE_BUCKETS = (("p1", "冠军", "冠军"), ("p2", "第 2–3", "第 2–3 名"), ("p3", "第 4–10", "第 4–10 名"), ("p4", "其余", "其余"))
+
+
+def placement_buckets(rows):
+    """按名次分段数局数：[(颜色, 局数, 读出来的说明)]，顺序同 PLACE_BUCKETS。没读到名次的算"其余"。"""
+    places = [r["placement"] for r in rows]
+    counts = (sum(1 for p in places if p == 1),
+              sum(1 for p in places if p is not None and 2 <= p <= 3),
+              sum(1 for p in places if p is not None and 4 <= p <= 10),
+              sum(1 for p in places if p is None or p > 10))
+    return [(css, n, spoken) for (css, _, spoken), n in zip(PLACE_BUCKETS, counts)]
 
 
 def day_start(now):
@@ -507,6 +532,71 @@ def today_matches(rows):
     """今天（从早上 5 点算起）打的局。"""
     since = f"{day_start(datetime.now()):%Y-%m-%d %H:%M:%S}"
     return [r for r in rows if (r["ended_at"] or "") >= since]
+
+
+# ---------- 数据页的统计 ----------
+
+MIN_MATE_GAMES = 2  # 常一起玩的队友：一起打过这么多局才列出（排位单排时只遇到一次的路人不列）
+MATE_NAME_GAMES = 5  # 队友显示的名字：看最近这么多局里用得最多的
+
+
+def teammate_table(rows, mates):
+    """常一起玩的队友：每人一行，按一起打的局数从多到少。名次、RP 是自己这几局的。返回 (列表, 没列出的人数)。
+    rows：要统计的局；mates：队友表的行，按对局时间从早到晚（多了不要紧，不在 rows 里的局不算）。
+    认人：有 ID 按 ID（改了名也认得出）；没有 ID 的行（没有总结页的局）按名字找用过这个名字的 ID，找不到就按名字算一个人。
+    显示的名字：最近 MATE_NAME_GAMES 局里用得最多的（一样多时用最近的）——改名几局后就换成新名字，识别偶尔读错一个字也不影响。"""
+    games = {r["match_id"]: r for r in rows}
+    id_of_name = {storage.name_key(m["name"]): m["player_id"] for m in mates if m["player_id"] and m["name"]}
+    people = {}
+    for m in mates:
+        if m["match_id"] not in games:
+            continue
+        key = m["player_id"] or (m["name"] and (id_of_name.get(storage.name_key(m["name"])) or "名字 " + storage.name_key(m["name"])))
+        if not key:
+            continue
+        person = people.setdefault(key, {"games": {}, "names": [], "player_id": None})
+        person["games"][m["match_id"]] = games[m["match_id"]]  # 同一局读出两次（两张卡片读成同一个人）只算一次
+        if m["name"]:
+            person["names"].append(m["name"])
+        person["player_id"] = m["player_id"] or person["player_id"]
+
+    listed = []
+    for person in people.values():
+        if len(person["games"]) < MIN_MATE_GAMES:
+            continue
+        together = sorted(person["games"].values(), key=lambda r: (r["ended_at"] or "", r["match_id"]))
+        names = {}  # 名字 → (次数, 最后一次的先后)
+        for order, name in enumerate(person["names"][-MATE_NAME_GAMES:]):
+            names[name] = (names.get(name, (0, 0))[0] + 1, order)
+        listed.append({
+            "name": max(names, key=names.get) if names else "（没读到名字）",
+            "player_id": person["player_id"],
+            "last": time_text(together[-1]["ended_at"]),
+            "order": together[-1]["ended_at"] or "",
+            **group_numbers(together),
+        })
+    listed.sort(key=lambda p: (p["games"], p["order"]), reverse=True)
+    return listed, len(people) - len(listed)
+
+
+def legend_table(rows):
+    """传奇表现（详细版）：用过的每个传奇一行，按局数从多到少；名次分布的横条按这个传奇自己的局数算比例。
+    返回 (列表, 没认出传奇的局数)。"""
+    groups = {}
+    for r in rows:
+        if r["legend"]:
+            groups.setdefault(r["legend"], []).append(r)
+    table = []
+    for name, rs in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        buckets = placement_buckets(rs)
+        table.append({
+            "name": name,
+            "icon": LEGEND_ICONS.get(name),
+            "segments": [(css, n / len(rs) * 100) for css, n, _ in buckets if n],
+            "spread": "，".join(f"{label} {n} 局" for _, n, label in buckets if n),  # 横条的文字说明（读屏软件、悬停）
+            **group_numbers(rs),
+        })
+    return table, sum(1 for r in rows if not r["legend"])
 
 
 # ---------- 分享战绩（图片卡片）----------
@@ -717,6 +807,31 @@ def matches():
         review_count=storage.count_review(db(), names),
         editable=EDITABLE,
         share=share,
+    )
+
+
+@app.route("/stats")
+def stats():
+    """数据页：常一起玩的队友、传奇表现（详细版）。范围按钮和总览页一样（近 30 局 / 全部）。"""
+    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    names = account_view()["names"]
+    rows = storage.all_matches(db(), names)
+    in_range = rows[-30:] if range_key == "30" else rows
+    mates, mates_hidden = teammate_table(in_range, storage.all_teammates(db(), names))
+    legends, no_legend = legend_table(in_range)
+    return render_template(
+        "stats.html",
+        range_key=range_key,
+        ranges=RANGES,
+        total=len(rows),
+        everyone=group_numbers(in_range),  # 参照：这个范围里的所有对局
+        mates=mates,
+        mates_hidden=mates_hidden,
+        min_mate_games=MIN_MATE_GAMES,
+        legends=legends,
+        no_legend=no_legend,
+        buckets=PLACE_BUCKETS,
+        review_count=storage.count_review(db(), names),
     )
 
 

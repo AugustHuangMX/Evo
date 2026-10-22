@@ -219,6 +219,13 @@ def all_matches(conn, names=None):
     return conn.execute(f"SELECT * FROM matches{where} ORDER BY ended_at, match_id", params).fetchall()
 
 
+def all_teammates(conn, names=None):
+    """所有对局的队友（names：只要这几个玩家名的局），按对局时间从早到晚（数据页"常一起玩的队友"用）。"""
+    where, params = _where(names=names)
+    return conn.execute(f"SELECT teammates.* FROM teammates JOIN matches USING (match_id){where} "
+                        "ORDER BY ended_at, match_id", params).fetchall()
+
+
 def count_review(conn, names=None):
     where, params = _where(only_review=True, names=names)
     return conn.execute(f"SELECT COUNT(*) FROM matches{where}", params).fetchone()[0]
