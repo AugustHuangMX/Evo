@@ -5,7 +5,8 @@
 
 - assets/icon/evo.svg：矢量原稿
 - assets/icon/evo.png：1024 像素，程序里的图标都从它来（托盘、exe、窗口、面板、分享图片，见 code/icons.py）
-- 官网（site/ 在本机才有）：favicon.ico（16、32、48）、img/favicon-32.png、img/evo.png（首页大图，256）
+- 官网（site/ 在本机才有）：favicon.ico（16、32、48）、img/favicon-e-32.png、img/evo-e.png（页头和首页大图，256）。
+  官网图片缓存一天，换了图标要换文件名（网页里 4 个 .html 跟着改），打开官网才马上看到新的
 
 改了下面的形状或颜色，再运行一次就行；之后 python tools/build.py 重新打包，exe 的图标才会变。
 """
@@ -71,8 +72,8 @@ def main():
     if not SITE.is_dir():
         print("没有 site/ 文件夹，跳过官网的图标")
         return
-    save(SITE / "img" / "evo.png", png(render(256)))
-    save(SITE / "img" / "favicon-32.png", png(render(32)))
+    save(SITE / "img" / "evo-e.png", png(render(256)))
+    save(SITE / "img" / "favicon-e-32.png", png(render(32)))
     sizes = (16, 32, 48)
     buf = io.BytesIO()
     render(48).save(buf, "ICO", sizes=[(s, s) for s in sizes], append_images=[render(s) for s in sizes[:-1]])
