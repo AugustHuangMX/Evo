@@ -15,6 +15,7 @@ import test_autostart
 import test_aspect
 import test_data_move
 import test_eliminated
+import test_follow
 import test_in_match
 import test_legend_icons
 import test_legends
@@ -47,6 +48,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "提示音（声音文件、开关、什么时候响、记录程序、设置页）": test_sounds,
          "分享战绩（三种卡片、不写队友名字、对话框、保存图片）": test_share,
          "数据页（常一起玩的队友、传奇表现）": test_stats_page,
+         "总览页\"关注我\"（B 站、小黑盒）": test_follow,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板、删除）": test_telemetry}
 
 

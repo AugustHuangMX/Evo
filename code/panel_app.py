@@ -106,6 +106,12 @@ LEGEND_ICONS = load_legend_icons()
 SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
 FEEDBACK_URL = "https://qm.qq.com/q/6L2kTbmCWc"  # "意见反馈"：加 QQ 群（和 README、隐私政策里的是同一个群）
 FEEDBACK_GROUP = "1128519951"
+# 总览页"关注我"（2026-10-22 用户要求）：开发者的 B 站、小黑盒主页（不带分享追踪参数的正式地址）。
+# 和"意见反馈"一样交给系统浏览器打开，Evo 自己不联网；图标在 panel/static/brands/（单色，颜色跟随文字）
+FOLLOW_LINKS = (
+    {"name": "哔哩哔哩", "url": "https://space.bilibili.com/26649278", "icon": "brands/bilibili.svg"},
+    {"name": "小黑盒", "url": "https://www.xiaoheihe.cn/app/user/profile/765d6910c805", "icon": "brands/xiaoheihe.svg"},
+)
 
 # ---- 多账号 ----
 SIMILAR_NAME = 0.6  # 新名字和某个账号的名字这么像，弹窗里提示"名字很像"（可能是识别误差，也可能是改名）
@@ -762,6 +768,7 @@ def overview():
         review_count=storage.count_review(db(), names),
         total=len(rows),
         share=share,
+        follow=FOLLOW_LINKS,
     )
 
 

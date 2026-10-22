@@ -399,6 +399,15 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .legend-key span { display: flex; align-items: center; gap: 6px; }
 .legend-key i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 
+/* 总览页最下面"关注我"：一条窄卡片，左边标题、右边两个按钮；图标单色、颜色跟随文字（做法同传奇小头像） */
+.follow-card { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; padding: 16px 24px; }
+.follow-card h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.follow-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.follow-links .btn { min-height: 40px; }
+.follow-icon { flex: none; width: 18px; height: 18px; background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+@media (forced-colors: active) { .follow-icon { forced-color-adjust: none; background: CanvasText; } }
+
 /* ---------- 数据页 ----------
    表格比战绩页的松一些、没有悬停（行不能点）；第一行"所有对局"是参照，字色淡一级 */
 .stats-card { padding: 24px; }

@@ -87,7 +87,7 @@
 - [ ] **正式的安装程序**：现在是解压即用（`install.py` 只在开发电脑上用），给别人用可以考虑正式的安装程序（开始菜单快捷方式、卸载）
 - [ ] **代码签名**：没有签名的 exe 从网上下载后会被 SmartScreen 拦截、可能被杀毒软件误报
   - 2026-10-17 用户决定：用 **SignPath 基金会**的免费开源签名（签名后发布者显示为 SignPath Foundation，不露真名）。不买商业证书：调研过 TrustAsia（亚洲诚信），约 ¥4,550/年；它自己的根证书不在微软的信任名单里（查过微软官方名单），实际是代理别家（很可能是 DigiCert）；个人能不能买官网没写；而且 2024 年起 OV、EV 证书都一样，SmartScreen 一开始照样提示、要慢慢攒信誉。微软的签名服务（Azure Artifact Signing）个人只限美国、加拿大，用不了。备选：微软应用商店（MSIX 格式，免费、完全不弹提示，但要改打包方式）
-  - 传奇头像和画面参照图（`config/templates/`，从游戏画面截的 EA 素材）**照现状申请**（用户决定）。已知 SignPath 条款写"项目不能包含任何非开源组件"，违反可吊销证书：有被拒或以后证书被吊销的风险。2026-10-20 加的面板传奇小头像（`panel/static/legends/`）也算：19 个版权属于 EA，2 个是 CC BY-NC-SA 3.0（"非商业"不算开源许可），见 `assets/legends/LICENSE.txt`
+  - 传奇头像和画面参照图（`config/templates/`，从游戏画面截的 EA 素材）**照现状申请**（用户决定）。已知 SignPath 条款写"项目不能包含任何非开源组件"，违反可吊销证书：有被拒或以后证书被吊销的风险。2026-10-20 加的面板传奇小头像（`panel/static/legends/`）也算：19 个版权属于 EA，2 个是 CC BY-NC-SA 3.0（"非商业"不算开源许可），见 `assets/legends/LICENSE.txt`；2026-10-22 加的总览页"关注我"的 B 站、小黑盒图标（`panel/static/brands/`，两家公司的商标）也算
   - 申请前要做：仓库公开；用 GitHub Actions 自动打包（签名的文件必须由仓库里的源码自动构建；测试截图不在仓库，测试要能跳过）；GitHub 和 SignPath 账号都开两步验证；官网首页和下载处用"Code signing policy"（代码签名政策）这个说法写明签名政策、团队角色（作者 / 审核 / 批准）和隐私说明，并加一行"Free code signing provided by SignPath.io, certificate by SignPath Foundation."；每次签名要手动批准
 - [ ] **名字**：发布前再确认一次 PyPI 上 `evo-tracker` 没被占用
 - [ ] **EA 素材的版权**：传奇头像和画面参照图（`config/templates/`）是从游戏画面截的 EA 美术素材，开发阶段先不考虑；公开发布前再看（代码签名那条也和它有关）。同一类的还有：总览页的段位徽章（`assets/ranks/`），面板传奇小头像里 19 个 wiki 上标着"版权属于 EA"的（2026-10-20 用户决定先照常用，许可逐个写在 `assets/legends/LICENSE.txt`；另 9 个是公有领域或 CC 许可）

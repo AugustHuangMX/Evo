@@ -145,6 +145,19 @@
 
 {% if share %}{{ share_dialog(share) }}{% endif %}
 {% endif %}
+
+{# 关注我：开发者的 B 站、小黑盒主页。target="_blank" 交给系统浏览器打开（和设置页"意见反馈"一样），Evo 自己不联网。
+   没有对局时也显示。图标只是装饰，名字就在旁边 #}
+<section class="card follow-card" aria-labelledby="h-follow">
+  <h2 id="h-follow">关注我</h2>
+  <div class="follow-links">
+    {% for f in follow %}
+    <a class="btn" href="{{ f.url }}" target="_blank" rel="noopener noreferrer">
+      <span class="follow-icon" style="--icon: url('{{ url_for('static', filename=f.icon) }}')" aria-hidden="true"></span>{{ f.name }} ↗
+    </a>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
