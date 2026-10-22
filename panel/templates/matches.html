@@ -166,7 +166,7 @@
     </tr>
     {% endif %}
   {% else %}
-    <tr><td colspan="9" class="empty">{{ '没有符合条件的对局' if (mode or legend or only_review) else '还没有记录任何对局' }}</td></tr>
+    <tr><td colspan="9" class="empty">{{ '没有符合条件的对局' if (mode or legend or only_review) else 'Evo 当前还没有任何对局记录。' }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
