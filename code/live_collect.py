@@ -42,6 +42,7 @@ from time import perf_counter, process_time  # 单独导入：测试会把本文
 import cv2
 import dxcam
 
+import game_lang
 import screenshots
 import sounds
 import storage
@@ -56,7 +57,7 @@ from paths import CAPTURES_DIR
 from player_name import PlayerNameReader
 from post_match import SOURCE_CHAMPION, SOURCE_SUMMARY, PostMatch
 from process_info import memory_mb, set_low_priority
-from screens import ScreenDetector
+from screens import GameScreens
 from summary_page import KEY_FIELDS, is_champion, read_summary, show, summary_readings, summary_to_match
 from teammates import describe, read_teammates
 from xp_page import read_xp
@@ -335,8 +336,6 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     返回这次一共记下了几局。"""
     set_low_priority()
     usage = Usage(log)
-    cfg = load_config("summary.json")
-    screens = load_config("screens.json")
     run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     conn = storage.connect(db_path)
@@ -373,19 +372,34 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     camera = dxcam.create(output_color="BGR", processor_backend="numpy")
     # clock 用 lambda 包一层：测试时会把本文件的 time 换成假时钟
     engine = LazyEngine(SMALL_CROP_PARAMS, MODEL_IDLE_SECONDS, clock=lambda: time.monotonic(), log=log)
-    detector = ScreenDetector(engine, screens)
-    hud = Hud(engine)
+    detector = GameScreens(engine, log=lambda message: log(f"[{datetime.now():%H:%M:%S}] {message}"))
+    lang = detector.lang  # 各部分现在用哪种游戏语言的规则（见 game_lang.py）
+    hud = Hud(engine, lang=lang)
     match_interval = hud.cfg["match_interval"] if match_interval is None else match_interval
     cues = SoundCues(log)
-    summary = SummaryWatcher(engine, cfg, conn, post, run_dir, log, summary_timeout, PlayerNameReader(engine, name_cfg),
-                             on_read=cues.summary_read)
-    other = ScreenWatcher(engine, screens, load_config("xp.json"), load_config("match_start.json"),
-                          load_config("eliminated.json"), post, run_dir, log, keep_all=keep)
+    summary = SummaryWatcher(engine, load_config("summary.json", lang), conn, post, run_dir, log, summary_timeout,
+                             PlayerNameReader(engine, name_cfg), on_read=cues.summary_read)
+    other = ScreenWatcher(engine, detector.cfg, load_config("xp.json", lang), load_config("match_start.json", lang),
+                          load_config("eliminated.json", lang), post, run_dir, log, keep_all=keep)
     in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
                               keep_all=lambda: other.keep_all)
-    lobby = LobbyWatcher(LobbyReader(engine), post, conn, log)
+    lobby = LobbyWatcher(LobbyReader(engine, load_config("lobby.json", lang)), post, conn, log)
     aspect = AspectWatcher(log, clock=lambda: time.monotonic(), fixed=game_aspect)
+
+    def use_language(lang):
+        """认定了游戏语言（或认出画面的语言变了，见 screens.GameScreens）：各部分换成这种语言的识别规则。"""
+        names = load_config("player_name.json", lang)
+        summary.cfg, summary.names.cfg = load_config("summary.json", lang), names
+        other.screens = detector.cfg
+        other.xp_cfg, other.start_cfg, other.elim_cfg = (load_config(n, lang) for n in
+                                                         ("xp.json", "match_start.json", "eliminated.json"))
+        hud.use_language(lang)
+        in_match.name_place = names["places"]["hud"]
+        lobby.reader.cfg = load_config("lobby.json", lang)
+
     log(f"屏幕: {camera.width}x{camera.height}")
+    if len(detector.detectors) > 1:
+        log(f"认得出的游戏语言：{'、'.join(game_lang.label(x) for x in detector.detectors)}（认出第一个画面时定下来）")
     log(f"数据库: {Path(db_path).resolve()}")
     log(f"截图保存到: {run_dir.resolve()}（{'保留全部' if keep else '识别完就删，只留待确认的局要用的'}；"
         "设置页改了开关，从下一局开始生效）")
@@ -421,6 +435,9 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 now = datetime.now()
                 aspect.check(frame)  # 游戏画面比例（16:10、4:3 时界面摆法不一样，见 layout.py）
                 screen = detector.detect(frame)
+                if detector.lang != lang:
+                    lang = detector.lang
+                    use_language(lang)
                 on_summary = screen == "summary"
                 cues.update(screen, now)  # 提示音：小队打完了、进经验值页（总结页读完了由 summary 告诉它）
                 in_match.update(screen, frame, now)  # 先交对局中的数据：结算画面上要用

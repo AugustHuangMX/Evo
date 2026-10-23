@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import calibration
+import game_lang
 import ranks
 import storage
 from hud import Snip, read_name
@@ -24,8 +25,6 @@ from ocr import crop, load_config, load_image
 
 CONFIG_NAME = "lobby.json"
 ROMAN = {"Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "1": "I", "l": "I", "|": "I", "Ⅴ": "V"}
-PROGRESS = re.compile(r"(\d{1,5})\s*/\s*\d{2,5}\s*排位点数")  # "868/1000 排位点数"（"前5名排位点数：1571"没有斜杠，不算）
-WHOLE_PROGRESS = re.compile(r"^(\d{1,6})\s*排位点数$")  # 大师、猎杀者不分段，可能只写"16523 排位点数"（还没见过样本）
 
 
 def roman(text):
@@ -34,13 +33,15 @@ def roman(text):
     return text if text in ranks.DIVISIONS else None
 
 
-def parse_tier(text):
-    """以段位名开头的一行（"钻石II"、"大师"）→ (段位, 文字里的段)；不是这样的一行返回 None。"""
+def parse_tier(text, names=None):
+    """以段位名开头的一行（"钻石II"、"大师"）→ (段位, 文字里的段)；不是这样的一行返回 None。
+    names：画面上的段位名 → 简体段位名（ranks.tier_names，别的语言如 "Diamond"）；不给就是简体。"""
+    names = names or ranks.tier_names()
     text = text.replace(" ", "")
-    for tier in sorted(ranks.TIERS, key=len, reverse=True):
-        key = tier.replace(" ", "")
+    for shown in sorted(names, key=len, reverse=True):
+        key = shown.replace(" ", "")
         if text.lower().startswith(key.lower()):
-            return tier, roman(text[len(key):])
+            return names[shown], roman(text[len(key):])
     return None
 
 
@@ -59,15 +60,17 @@ class LobbyReader:
         c = self.cfg
         out = {"name": None, "tier": None, "division": None, "progress": None, "score": None,
                "text_division": None, "emblem": None}
-        panel = c["panel"]
+        panel, patterns = c["panel"], c["patterns"]
+        names = ranks.tier_names(c.get("language"))
         for text, score in self._lines(frame, panel):
             if score < panel["min_score"]:
                 continue
-            tier = parse_tier(text)
+            tier = parse_tier(text, names)
             if tier and out["tier"] is None:
                 out["tier"] = tier[0]
                 out["text_division"] = tier[1] if score >= c["text_division_score"] else None
-            m = PROGRESS.search(text.replace(" ", "")) or WHOLE_PROGRESS.match(text.replace(" ", ""))
+            compact = text.replace(" ", "")
+            m = re.search(patterns["progress"], compact) or re.match(patterns["whole_progress"], compact)
             if m and out["progress"] is None:
                 out["progress"] = int(m[1])
         emblem = c["emblem"]
@@ -142,10 +145,12 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="读大厅截图上的玩家名、段位和段内分数")
     parser.add_argument("images", type=Path, nargs="+", help="大厅截图")
+    parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
+                        help="游戏语言（默认简体中文 zh-CN）")
     args = parser.parse_args()
 
     from ocr import SMALL_CROP_PARAMS, create_engine
-    reader = LobbyReader(create_engine(SMALL_CROP_PARAMS))
+    reader = LobbyReader(create_engine(SMALL_CROP_PARAMS), load_config(CONFIG_NAME, args.lang))
     for path in args.images:
         r = reader.read(load_image(path))
         extra = f"（徽章 {r['emblem'] or '-'}，文字 {r['text_division'] or '-'}）" if r["tier"] else ""

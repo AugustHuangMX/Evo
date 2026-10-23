@@ -21,15 +21,15 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import game_lang
 from layout import Mapping, cut
 from legends import LegendDetector
 from ocr import load_config, load_image
 from player_name import pick_name
-from screens import TEMPLATE_DIR, gray_crop, outline
+from screens import gray_crop, outline
 from storage import name_key
 
 CONFIG_NAME = "hud.json"
-HUD_TEMPLATE_DIR = TEMPLATE_DIR / "hud"
 TOP_FIELDS = ("squads_left", "kills", "assists", "participation", "damage", "rp_delta")
 KP_ROW = ("kills", "assists", "participation")  # 右上角同一行（从左往右）：全是 0 时整行不显示
 TOP_LABELS = {"squads_left": "剩余小队", "kills": "击杀", "assists": "助攻", "participation": "老板分",
@@ -71,8 +71,9 @@ class Snip:
         return cv2.resize(g, (max(1, g.shape[1] // 4), max(1, g.shape[0] // 4)), interpolation=cv2.INTER_AREA)
 
 
-def load_hud_template(name):
-    path = HUD_TEMPLATE_DIR / f"{name}.png"
+def load_hud_template(name, lang=None):
+    """对局中的一张参照图（灰度），没有返回 None。lang：游戏语言，带文字的（"观战"标签）每种语言一张，见 game_lang.py。"""
+    path = game_lang.template_path(f"hud/{name}.png", lang)
     if not path.is_file():
         return None
     return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
@@ -103,19 +104,25 @@ def clean_number(text, replace):
 
 
 class Hud:
-    """engine：识别引擎（ocr.LazyEngine，读数时才用到）；legends：LegendDetector（不给就新建一个）。"""
+    """engine：识别引擎（ocr.LazyEngine，读数时才用到）；legends：LegendDetector（不给就新建一个）；
+    lang：游戏语言（见 game_lang.py；记录程序认出游戏语言后用 use_language 换）。"""
 
-    def __init__(self, engine, legends=None, cfg=None):
+    def __init__(self, engine, legends=None, cfg=None, lang=None):
         self.engine = engine
-        self.cfg = cfg or load_config(CONFIG_NAME)
-        self.base = self.cfg["base_resolution"]
         self.legends = legends or LegendDetector()
+        self.use_language(lang, cfg)
+
+    def use_language(self, lang, cfg=None):
+        """换成这种游戏语言的规则和参照图（cfg 不给就读 config/hud.json 叠上这种语言的不同之处）。"""
+        self.lang = lang
+        self.cfg = cfg or load_config(CONFIG_NAME, lang)
+        self.base = self.cfg["base_resolution"]
         mates = self.cfg["teammates"]
         self.mate_templates = self.legends.scaled(mates["scale"])
-        self.spectate_template = load_hud_template("spectate")
-        self.icon_template = load_hud_template("damage_icon")
+        self.spectate_template = load_hud_template("spectate", lang)
+        self.icon_template = load_hud_template("damage_icon", lang)
         icons = self.cfg["top_right"]["kp_row"]["icons"]
-        self.kp_templates = {name: load_hud_template(icons[name]["template"]) for name in KP_ROW}  # 每一项前面的图标
+        self.kp_templates = {name: load_hud_template(icons[name]["template"], lang) for name in KP_ROW}  # 每一项前面的图标
         self.missing = [n for n, t in (("spectate", self.spectate_template), ("damage_icon", self.icon_template),
                                        *((icons[k]["template"], self.kp_templates[k]) for k in KP_ROW))
                         if t is None]  # 没有参照图的（认不出观战、读不出伤害等）
@@ -196,8 +203,7 @@ class Hud:
         values, scores = {}, {}
         for name, spec in top["fields"].items():  # 剩余小队数、RP（击杀那一行见下面）
             piece = snip.crop(spec["roi"], top["upscale"], pad=top["pad"])
-            pattern = r"^([+-]?\d{1,3})(?:排位.*)?$" if name == "rp_delta" else r"^(\d{1,3})$"
-            values[name], scores[name] = self._number(piece, pattern, spec["range"], top)
+            values[name], scores[name] = self._number(piece, spec["pattern"], spec["range"], top)
         values["damage"], scores["damage"], icon = self._damage(snip, top)
         icons = self._kp_icons(snip, top["kp_row"])
         row_shown = "kills" in icons or "assists" in icons
@@ -288,11 +294,12 @@ def template_specs(cfg):
 
 
 def save_template(name, image_path, cfg):
-    """按配置里的 template_box 从截图上截出参照图，存到 config/templates/hud/<name>.png。"""
+    """按配置里的 template_box 从截图上截出参照图，存到 config/templates/hud/<name>.png
+    （别的游戏语言存 config/templates/<语言>/hud/，见 game_lang.py）。"""
     spec, anchor = template_specs(cfg)[name]
     gray = gray_crop(load_image(image_path), spec["template_box"], cfg["base_resolution"], anchor)
-    HUD_TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
-    path = HUD_TEMPLATE_DIR / f"{name}.png"
+    path = game_lang.own_template_path(f"hud/{name}.png", cfg.get("language"))
+    path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imencode(".png", gray)[1].tofile(path)
     return path
 
@@ -301,17 +308,20 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="读对局中截图的左下角和右上角；或者生成参照图")
     parser.add_argument("images", type=Path, nargs="+", help="截图")
-    cfg = load_config(CONFIG_NAME)
-    parser.add_argument("--save-template", choices=tuple(template_specs(cfg)), help="从这张截图生成参照图")
+    parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
+                        help="游戏语言（默认简体中文 zh-CN）")
+    parser.add_argument("--save-template", choices=tuple(template_specs(load_config(CONFIG_NAME))),
+                        help="从这张截图生成参照图")
     args = parser.parse_args()
+    cfg = load_config(CONFIG_NAME, args.lang)
 
     if args.save_template:
         print(f"已生成参照图：{save_template(args.save_template, args.images[0], cfg)}")
         return
 
     from ocr import SMALL_CROP_PARAMS, create_engine
-    hud = Hud(create_engine(SMALL_CROP_PARAMS), cfg=cfg)
-    names = load_config("player_name.json")
+    hud = Hud(create_engine(SMALL_CROP_PARAMS), cfg=cfg, lang=args.lang)
+    names = load_config("player_name.json", args.lang)
     for path in args.images:
         img = load_image(path)
         own = hud.own_legend(img)

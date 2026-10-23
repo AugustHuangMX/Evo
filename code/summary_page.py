@@ -14,6 +14,7 @@ from pathlib import Path
 
 import cv2
 
+import game_lang
 from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image
 from paths import CAPTURES_DIR, data_relative
 from process_info import memory_mb
@@ -176,9 +177,11 @@ def main():
     parser = argparse.ArgumentParser(description="从赛后总结页截图里读出本局数据")
     parser.add_argument("image", type=Path, help="截图路径")
     parser.add_argument("--save-crops", action="store_true", help="把裁出来的小块存到 captures/debug_crops/")
+    parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
+                        help="游戏语言（默认简体中文 zh-CN）")
     args = parser.parse_args()
 
-    cfg = load_config(CONFIG_NAME)
+    cfg = load_config(CONFIG_NAME, args.lang)
     img = load_image(args.image)
     if args.save_crops:
         CROPS_DIR.mkdir(parents=True, exist_ok=True)

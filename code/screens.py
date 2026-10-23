@@ -9,8 +9,12 @@
 
 游戏更新后界面变了，参照图可能就不像了：重新截一张，用下面的命令重新生成。没有参照图的画面每次都直接跑识别（和以前一样）。
 
+游戏语言（见 game_lang.py）：ScreenDetector 只认一种语言；记录程序用 GameScreens，几种语言一起认，
+认出一个画面、只有一种语言的关键字对得上时就认定是这种语言，之后只按它比。
+
 检查截图：      python code/screens.py 截图1.png [截图2.png ...]   （打印每种画面的外观相似度和最后的结论）
 重新生成参照图：python code/screens.py --save-template summary 截图.png   （按配置里的 template_box 截一块）
+别的游戏语言：  两条命令都加上 --lang <语言>（如 --lang en；参照图存到 config/templates/<语言>/）
 """
 
 import argparse
@@ -21,10 +25,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import game_lang
 from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image, read_lines
-from paths import CONFIG_DIR
 
-TEMPLATE_DIR = CONFIG_DIR / "templates"
+TEMPLATE_DIR = game_lang.TEMPLATE_DIR
 
 
 def gray_crop(img, box, base, anchor=None):
@@ -38,9 +42,9 @@ def outline(gray):
     return g - cv2.GaussianBlur(g, (0, 0), 3)
 
 
-def load_template(name):
-    """读一种画面的参照图（灰度），没有就返回 None。"""
-    path = TEMPLATE_DIR / f"{name}.png"
+def load_template(name, lang=None):
+    """读一种画面的参照图（灰度），没有就返回 None。lang：游戏语言，这种语言没有自己的那张就用简体的（见 game_lang.py）。"""
+    path = game_lang.template_path(f"{name}.png", lang)
     if not path.is_file():
         return None
     return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
@@ -59,14 +63,16 @@ def template_outlines(template, spec):
 
 class ScreenDetector:
     """detect(画面) 返回画面的名字（如 "summary"），都不是返回 None。
-    按配置里的顺序检查，先认出的为准。engine：识别引擎（可以是 ocr.LazyEngine，用到时才加载模型）。"""
+    按配置里的顺序检查，先认出的为准。engine：识别引擎（可以是 ocr.LazyEngine，用到时才加载模型）。
+    lang：游戏语言（见 game_lang.py），None 是简体。"""
 
-    def __init__(self, engine, cfg=None):
+    def __init__(self, engine, cfg=None, lang=None):
         self.engine = engine
-        self.cfg = cfg or load_config("screens.json")
+        self.lang = lang or game_lang.DEFAULT
+        self.cfg = cfg or load_config("screens.json", lang)
         self.templates = {}  # 每种画面的参照图轮廓（几种大小各一份），没有参照图为 None
         for name, spec in self.cfg["screens"].items():
-            template = load_template(name)
+            template = load_template(name, lang)
             self.templates[name] = None if template is None else template_outlines(template, spec)
         self.missing = [name for name, t in self.templates.items() if t is None]  # 没有参照图的画面
         self.looked_alike = 0  # 外观检查通过、跑了识别的次数（统计用）
@@ -95,21 +101,74 @@ class ScreenDetector:
         text = "".join(t for t, _ in read_lines(self.engine, frame, spec["roi"], {**self.cfg, **spec}))
         return all(k in text for k in spec["keywords"])
 
+    def check(self, frame, name):
+        """这一帧是不是这个画面：外观像了，再读关键字。"""
+        if not self.looks_like(frame, name):
+            return False
+        self.looked_alike += 1
+        return self.has_keywords(frame, name)
+
     def detect(self, frame):
         for name in self.cfg["screens"]:
-            if self.looks_like(frame, name):
-                self.looked_alike += 1
-                if self.has_keywords(frame, name):
-                    return name
+            if self.check(frame, name):
+                return name
+        return None
+
+
+class GameScreens:
+    """几种游戏语言一起认（记录程序用；有哪几种见 game_lang.languages）。用法和 ScreenDetector 一样：detect(画面)。
+    - 还没认定游戏语言时，每种画面按每种语言各比一次。认出一个画面、而且只有一种语言的关键字对得上，
+      就认定是这种语言：游戏开着时换不了语言，之后只按它比，不多花 CPU
+    - 几种语言的关键字都对得上（比如繁体和简体的"排名第"一样）：画面照样认出，语言先不认定
+    - 只有一种语言时，一开始就认定
+    lang：现在按哪种语言读（认定之前是最近一次认出画面的那种，一开始是简体）；locked：认定了没有。
+    configs：{语言: screens.json 的规则}（测试用；不给就按 game_lang 读）。"""
+
+    def __init__(self, engine, langs=None, configs=None, log=None):
+        langs = list(langs or game_lang.languages())
+        configs = configs or {}
+        self.detectors = {lang: ScreenDetector(engine, configs.get(lang), lang) for lang in langs}
+        self.lang = langs[0]
+        self.locked = len(langs) == 1
+        self.log = log or (lambda message: None)
+
+    @property
+    def cfg(self):
+        return self.detectors[self.lang].cfg
+
+    @property
+    def looked_alike(self):
+        return sum(d.looked_alike for d in self.detectors.values())
+
+    @property
+    def missing(self):
+        """没有参照图的画面（别的语言前面带上语言，如 "en:summary"）。"""
+        return [name if lang == game_lang.DEFAULT else f"{lang}:{name}"
+                for lang, d in self.detectors.items() for name in d.missing]
+
+    def detect(self, frame):
+        if self.locked:
+            return self.detectors[self.lang].detect(frame)
+        order = [self.lang] + [lang for lang in self.detectors if lang != self.lang]
+        for name in self.cfg["screens"]:
+            matched = [lang for lang in order if self.detectors[lang].check(frame, name)]
+            if not matched:
+                continue
+            self.lang = matched[0]
+            if len(matched) == 1:
+                self.locked = True
+                self.log(f"游戏语言：{game_lang.label(self.lang)}（从{self.cfg['screens'][name]['label']}认出）")
+            return name
         return None
 
 
 def save_template(name, image_path, cfg):
-    """按配置里的 template_box，从一张截图上截出参照图，存到 config/templates/<name>.png。"""
+    """按配置里的 template_box，从一张截图上截出参照图，存到 config/templates/<name>.png
+    （别的游戏语言存 config/templates/<语言>/，见 game_lang.py）。"""
     spec = cfg["screens"][name]
     gray = gray_crop(load_image(image_path), spec["template_box"], cfg["base_resolution"], spec.get("anchor"))
-    TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
-    path = TEMPLATE_DIR / f"{name}.png"
+    path = game_lang.own_template_path(f"{name}.png", cfg.get("language"))
+    path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imencode(".png", gray)[1].tofile(path)
     return path
 
@@ -118,16 +177,18 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="判断截图是哪个画面；或者从截图生成参照图")
     parser.add_argument("images", type=Path, nargs="+", help="截图")
+    parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
+                        help="游戏语言（默认简体中文 zh-CN）")
     parser.add_argument("--save-template", metavar="画面", help="从这张截图生成这种画面的参照图（如 summary）")
     args = parser.parse_args()
 
-    cfg = load_config("screens.json")
+    cfg = load_config("screens.json", args.lang)
     if args.save_template:
         path = save_template(args.save_template, args.images[0], cfg)
         print(f"已生成参照图：{path}")
         return
 
-    detector = ScreenDetector(create_engine(SMALL_CROP_PARAMS), cfg)
+    detector = ScreenDetector(create_engine(SMALL_CROP_PARAMS), cfg, args.lang)
     if detector.missing:
         print(f"⚠ 这些画面还没有参照图，每次都会直接跑识别：{'、'.join(detector.missing)}")
     for path in args.images:

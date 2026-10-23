@@ -13,6 +13,7 @@ import re
 import sys
 from pathlib import Path
 
+import game_lang
 from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image, read_lines
 
 CONFIG_NAME = "eliminated.json"
@@ -36,9 +37,11 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="识别淘汰画面上的名次（排名第 X）")
     parser.add_argument("images", type=Path, nargs="+", help="淘汰画面截图")
+    parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
+                        help="游戏语言（默认简体中文 zh-CN）")
     args = parser.parse_args()
 
-    cfg = load_config(CONFIG_NAME)
+    cfg = load_config(CONFIG_NAME, args.lang)
     engine = create_engine(SMALL_CROP_PARAMS)
     for path in args.images:
         r = read_eliminated(engine, load_image(path), cfg)

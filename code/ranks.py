@@ -5,13 +5,27 @@
 """
 
 import json
+from functools import lru_cache
 
+import game_lang
 from paths import CONFIG_DIR
 
 _CFG = json.loads((CONFIG_DIR / "ranks.json").read_text(encoding="utf-8"))
 DIVISIONS = _CFG["divisions"]  # 每个段位里的段从低到高：IV → I
-TIERS = [t["name"] for t in _CFG["tiers"]]  # 段位从低到高
+TIERS = [t["name"] for t in _CFG["tiers"]]  # 段位从低到高（简体，存进数据库、面板上显示的就是这些名字）
 _BY_NAME = {t["name"]: t for t in _CFG["tiers"]}
+
+
+@lru_cache(maxsize=None)
+def tier_names(lang=None):
+    """游戏画面上的段位名 → 简体段位名（读大厅、经验值页用）。简体就是段位名本身；
+    别的语言写在 config/lang/<语言>.json 的 "ranks.json" → "names"（如 {"Diamond": "钻石"}）。"""
+    if lang in (None, game_lang.DEFAULT):
+        return {t: t for t in TIERS}
+    names = game_lang.load("ranks.json", lang).get("names")
+    if not names:
+        raise ValueError(f"config/lang/{lang}.json 里没有段位名（ranks.json → names）")
+    return game_lang.aliases(names)
 
 
 def has_divisions(tier):

@@ -14,6 +14,7 @@ import re
 from difflib import SequenceMatcher
 from pathlib import Path
 
+import game_lang
 from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image, read_lines
 
 CONFIG_NAME = "match_start.json"
@@ -26,12 +27,18 @@ def read_text(engine, img, spec, cfg):
 
 
 def closest_map(text, cfg):
-    """和已知地图最像的那个（相似度够高才算）。"""
-    text = text.replace(" ", "")
+    """和已知地图最像的那个（相似度够高才算），返回简体的地图名。别的游戏语言的地图名单是
+    {"画面上的写法": "简体名字"}（见 game_lang.aliases），比较时不管空格和大小写。"""
+    text = text.replace(" ", "").lower()
     if not text:
         return None
-    best = max(cfg["maps"], key=lambda m: SequenceMatcher(None, text, m).ratio())
-    return best if SequenceMatcher(None, text, best).ratio() >= cfg["map_min_similarity"] else None
+    maps = game_lang.aliases(cfg["maps"])
+
+    def similarity(shown):
+        return SequenceMatcher(None, text, shown.replace(" ", "").lower()).ratio()
+
+    best = max(maps, key=similarity)
+    return maps[best] if similarity(best) >= cfg["map_min_similarity"] else None
 
 
 def read_match_start(engine, img, cfg):
@@ -50,9 +57,11 @@ def read_match_start(engine, img, cfg):
 def main():
     parser = argparse.ArgumentParser(description="识别开局画面的模式和地图")
     parser.add_argument("images", type=Path, nargs="+", help="开局画面截图")
+    parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
+                        help="游戏语言（默认简体中文 zh-CN）")
     args = parser.parse_args()
 
-    cfg = load_config(CONFIG_NAME)
+    cfg = load_config(CONFIG_NAME, args.lang)
     engine = create_engine(SMALL_CROP_PARAMS)
     for path in args.images:
         r = read_match_start(engine, load_image(path), cfg)

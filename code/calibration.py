@@ -6,7 +6,7 @@
 - 对不上，或者缺两局以上：这几局标"待确认"，备注写出差多少；总分仍以大厅为准
 - 跨了大段（如钻石 → 大师、钻石 → 白金）：升大段可能有奖励分、降大段有保护，前后之差 ≠ 各局 RP 之和，只写日志不标
 - 两次之间没有记下任何排位局但总分变了（Evo 没开的时候打过）：只写日志
-- 大厅之前最近的那一局没有段位（没进经验值页）：它结束后的段位就是这次大厅读到的，顺便补上
+- 大厅之前最近的那一局没有段位（没进经验值页）：它结束后的段位就是这次大厅读到的，顺便补上（匹配等不算排位的局不补）
 只看同一个玩家名的局（多账号），还不知道玩家名的局也算进去。
 """
 
@@ -80,8 +80,8 @@ def _fill_last_rank(conn, reading, games, previous, log):
     if not games:
         return
     last = games[-1]
-    if last["rank_tier"] is not None:
-        return
+    if last["rank_tier"] is not None or last["mode"] in ("pubs", "other"):
+        return  # 已经有段位；或者是匹配等不算排位的局：段位不会变，不补
     if previous and previous[-1]["read_at"] >= last["ended_at"]:
         return  # 这一局之后已经回过大厅了，那次才是它结束后的段位
     storage.update_match(conn, last["match_id"], {"rank_tier": reading["rank_tier"],

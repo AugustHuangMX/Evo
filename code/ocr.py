@@ -6,7 +6,6 @@
 """
 
 import gc
-import json
 import time
 from pathlib import Path
 
@@ -15,8 +14,8 @@ import numpy as np
 import rapidocr
 from rapidocr import RapidOCR
 
+import game_lang
 from layout import cut
-from paths import CONFIG_DIR
 
 MODEL_DIR = Path(rapidocr.__file__).parent / "models"
 
@@ -78,9 +77,10 @@ class LazyEngine:
             self.log(f"识别模型闲置了 {self.idle_seconds} 秒，已释放")
 
 
-def load_config(name):
-    """读 config/ 里的一个识别规则文件，如 load_config("summary.json")。"""
-    return json.loads((CONFIG_DIR / name).read_text(encoding="utf-8"))
+def load_config(name, lang=None):
+    """读 config/ 里的一个识别规则文件，如 load_config("summary.json")。
+    lang：游戏语言（如 "en"），叠上这种语言和简体不一样的地方（见 game_lang.py）；None 是简体。"""
+    return game_lang.load(name, lang)
 
 
 def load_image(path):
