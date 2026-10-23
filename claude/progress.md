@@ -162,6 +162,7 @@
   - 音量：5–100% 滑块（振幅按音量的平方，50% 约小 12 dB），松手后保存、按新音量响一声"对局结束"。winsound 不能调音量，所以在数据文件夹的 `sounds/volume/` 另存调小了的副本（设置改了面板先做好，记录程序找不到时自己做；换音量删掉旧的）
   - 数据文件夹搬家时 `sounds/` 一起搬（`data_move.ITEMS`）
   - 相关文件：`code/sounds.py`、`code/panel_app.py`（`sound_view` 和 4 个新入口）、`panel/templates/settings.html`、`panel/static/style.css`、`code/data_move.py`、`assets/sounds/`、`tools/make_sounds.py`；文档 `docs/底座.md`、`docs/面板.md`、`docs/对局全流程图.md` 第 8 步
+  - 两个语音包（用户提供，自己录 / AI 原创音色，MIT）：`assets/sounds/manbo/`（"曼波"，本来就是 16 位 WAV）、`assets/sounds/woman/`（"严肃女声"，原文件是 MP3：在真的 WebView2 窗口里用设置页"自己的文件"同样的流程转成 16 位 44.1 kHz WAV，顺便测了 MP3 能解码；MP3 按用户要求删掉）。响度和 Evo 默认的差不多（RMS 0.09–0.13），不用调。下拉框：Evo 默认、曼波、严肃女声、自己的文件
   - 验证：`tests/test_sounds.py` 72 项全过（新加：每套声音包的格式、声音包切换和缺声、音量副本的振幅 / 重用 / 清理、自己的文件的核对和各种不合格、设置页的下拉框 / 滑块 / 选文件 / 恢复默认）；`tests/test_data_move.py` 加上搬 `sounds/`；在真的 WebView2 窗口里（临时数据文件夹）试了 14 项：Opus 压缩格式和 22 kHz WAV 转好存下、太长和不是音频的原因写在那一行下面、音量保存并响一声、换声音包、没有脚本错误；截图看了深色、浅色、窄窗口
 - **设置页"匿名统计"一栏精简**（2026-10-24 用户要求）：说明改成"Evo 仅会将数据用于改进识别"（原来是"打开后，Evo 开着时每小时……"）；去掉开着时的状态行（从什么时候起、已发送几局、上次发送）、"查看会发送的内容"（原样 JSON）、"关闭并删除已发送的数据"（按钮、`/settings/telemetry/delete`、`telemetry.delete_sent`、`telemetry.status`）；关着时仍写"已关闭：不发送任何数据"。顶部提问里"设置页里看到原样""或删除已发送的数据"两处跟着去掉，关掉时的提示不再说"可以在设置页删除"。`telemetry.preview` 留给 `python code/telemetry.py` 打印原样；服务器的 `/v1/delete` 留着（0.3.7、0.3.8 还有删除按钮）。没用的样式（`.stats-preview`、`.stats-json`）删了
   - 相关文件：`panel/templates/settings.html`、`panel/templates/base.html`、`code/panel_app.py`、`code/telemetry.py`、`panel/static/style.css`、`server/stats/worker.js`（注释）；文档 `docs/面板.md`、`docs/底座.md`
