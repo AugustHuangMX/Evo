@@ -42,7 +42,7 @@ def fresh(name):
 
 
 def make_data(folder, games=3):
-    """一个假的数据文件夹：数据库（games 局）、截图、日志、设置、窗口缓存。"""
+    """一个假的数据文件夹：数据库（games 局）、截图、日志、设置、自己选的提示音、窗口缓存。"""
     folder = Path(folder)
     conn = storage.connect(folder / "data" / "evo.db")
     for i in range(games):
@@ -53,6 +53,8 @@ def make_data(folder, games=3):
     (folder / "logs").mkdir()
     (folder / "logs" / "evo.log").write_text("记录\n", encoding="utf-8")
     (folder / "settings.json").write_text("{}", encoding="utf-8")
+    (folder / "sounds" / "custom").mkdir(parents=True)
+    (folder / "sounds" / "custom" / "xp.wav").write_bytes(b"w" * 2000)
     (folder / "webview").mkdir()
     (folder / "webview" / "cache.bin").write_bytes(b"c" * 1000)
     return folder
@@ -123,9 +125,10 @@ def move_checks():
     target = ROOT / "m" / "new" / "Evo Tracker Data"
     seen = []
     items = data_move.move_files(src, target, progress=lambda done, total: seen.append((done, total)))
-    out[f"复制：数据库、截图、日志、设置都在，窗口缓存不搬（{items}）"] = (
-        items == ["captures", "data", "logs", "settings.json"] and games_in(target) == 3
+    out[f"复制：数据库、截图、日志、设置、自己选的提示音都在，窗口缓存不搬（{items}）"] = (
+        items == ["captures", "data", "logs", "settings.json", "sounds"] and games_in(target) == 3
         and (target / "captures" / "live" / "run1" / "01.png").stat().st_size == 300_000
+        and (target / "sounds" / "custom" / "xp.wav").stat().st_size == 2000
         and not (target / "webview").exists())
     out["进度：最后一次等于总大小"] = bool(seen) and seen[-1][0] == seen[-1][1] > 0
     out["复制完原来的还在（新位置的 Evo 打开后才删）"] = games_in(src) == 3

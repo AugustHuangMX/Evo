@@ -1,10 +1,24 @@
 # 提示音
 
-Evo 自己合成的三段提示音（`python tools/make_sounds.py` 生成，改音符也在那里），和 Evo 的代码一样用 MIT 许可。
-什么时候响见 `code/sounds.py`。
+一个文件夹一套声音包，设置页"提示音"一栏整套切换（三声一起换）。什么时候响、怎么选、音量怎么调见 `code/sounds.py`。
 
-| 文件 | 什么时候响 | 声音 |
-|---|---|---|
-| `match_end.wav` | 对局结束（小队打完了），提醒去总结页 | 三个音从高往低，柔和 |
-| `summary.wav` | 总结页读完了，可以离开 | 三个音同时轻轻响起再散开 |
-| `xp.wav` | 进入经验值页 | 一个清脆的音 |
+每套声音包里：
+
+- `pack.json`：`name`（设置页显示的名字）、`by`（作者）、`license`（许可）、`order`（排第几，可以不写；Evo 默认永远排第一）
+- `match_end.wav`、`summary.wav`、`xp.wav`：16 位 PCM 的 WAV，每段最长 10 秒。缺哪一声就用 Evo 默认的那一声
+
+| 文件 | 什么时候响 |
+|---|---|
+| `match_end.wav` | 对局结束（小队打完了），提醒去总结页 |
+| `summary.wav` | 总结页读完了，可以离开 |
+| `xp.wav` | 进入经验值页 |
+
+## evo（Evo 默认）
+
+Evo 自己合成的三段提示音（`python tools/make_sounds.py` 生成，改音符也在那里），和 Evo 的代码一样用 MIT 许可。
+
+| 文件 | 声音 |
+|---|---|
+| `match_end.wav` | 三个音从高往低，柔和 |
+| `summary.wav` | 三个音同时轻轻响起再散开 |
+| `xp.wav` | 一个清脆的音 |

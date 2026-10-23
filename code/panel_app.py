@@ -1027,7 +1027,7 @@ def settings():
         autostart={**autostart.status(), "blocked": autostart.unavailable(),
                    "failed": session.pop("autostart_failed", None)},
         sounds_on=sounds.enabled(),
-        sound_list=[{"key": key, "label": label, "when": SOUND_WHEN[key]} for key, label in sounds.SOUNDS.items()],
+        sound=sound_view(),
         data_dir=db_path().parent,
         db_file=db_path().name,
         db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
@@ -1146,6 +1146,27 @@ SOUND_WHEN = {  # 设置页"提示音"一栏：每一声什么时候响（规则
 }
 
 
+def sound_view():
+    """设置页"提示音"一栏：声音包、音量、三声（自己的文件选了哪个、上次选文件没成功的原因）。"""
+    custom = sounds.custom_files()
+    failed = session.pop("sound_failed", None)
+    return {
+        "packs": sounds.packs(),
+        "pack": sounds.pack(),
+        "custom": sounds.CUSTOM,
+        "volume": sounds.volume(),
+        "volume_range": (sounds.VOLUME_MIN, sounds.VOLUME_MAX, sounds.VOLUME_STEP),
+        "max_seconds": sounds.MAX_SECONDS,
+        "list": [{"key": key, "label": label, "when": SOUND_WHEN[key], "file": custom.get(key),
+                  "failed": failed["error"] if failed and failed.get("name") == key else None}
+                 for key, label in sounds.SOUNDS.items()],
+    }
+
+
+def back_to_sounds():
+    return redirect(url_for("settings") + "#h-sounds")
+
+
 @app.post("/settings/sounds")
 def sounds_setting():
     """"提示音"开关（默认开）。记录程序每次要响时看一眼，所以马上生效。"""
@@ -1156,16 +1177,69 @@ def sounds_setting():
     return redirect(url_for("settings"))
 
 
+@app.post("/settings/sound-pack")
+def sound_pack():
+    """换声音包（三声一起换）。页面上选了就提交，回到"提示音"这一栏（换成"自己的文件"时下面出现选文件的按钮）。"""
+    try:
+        sounds.set_pack(request.form.get("pack"))
+    except ValueError:
+        abort(400)
+    return back_to_sounds()
+
+
+@app.post("/settings/sound-volume")
+def sound_volume():
+    """音量滑块：松手时页面用脚本提交（不刷新页面），回答存下的值；没有脚本时回到设置页。"""
+    try:
+        value = sounds.set_volume(request.form.get("volume", ""))
+    except ValueError:
+        abort(400)
+    if request.headers.get("X-Evo-Fetch") == "1":
+        return jsonify({"ok": True, "volume": value})
+    return back_to_sounds()
+
+
+@app.post("/settings/sound-file")
+def sound_file():
+    """"自己的文件"里某一声的"选择文件…"：窗口已经把选的文件转成 WAV（settings.html），这里核对、存进数据文件夹。
+    页面用脚本提交：回答成功没有、不成功的原因（显示在这一行下面）；没有脚本时回到设置页，原因同样写在这一行下面。"""
+    name = request.form.get("name")
+    upload = request.files.get("file")
+    if name not in sounds.SOUNDS or upload is None:
+        abort(400)
+    try:
+        sounds.save_custom(name, upload.read(sounds.MAX_BYTES + 1), request.form.get("filename"))
+        error = None
+    except sounds.SoundFileError as e:
+        error = str(e)
+    if request.headers.get("X-Evo-Fetch") == "1":
+        return jsonify({"ok": error is None, "error": error})
+    if error:
+        session["sound_failed"] = {"name": name, "error": error}
+    return back_to_sounds()
+
+
+@app.post("/settings/sound-file/clear")
+def sound_file_clear():
+    """"恢复默认"：这一声不用自己的文件了，用回 Evo 默认的。"""
+    name = request.form.get("name")
+    if name not in sounds.SOUNDS:
+        abort(400)
+    sounds.clear_custom(name)
+    return back_to_sounds()
+
+
 @app.post("/settings/sound-preview")
 def sound_preview():
-    """设置页的"试听"：不管开关，响一声。页面用脚本提交（不刷新页面），回答放出来没有；没有脚本时回到设置页。"""
+    """设置页的"试听"：按现在的声音包和音量，不管开关，响一声。页面用脚本提交（不刷新页面），回答放出来没有；
+    没有脚本时回到设置页。"""
     name = request.form.get("name")
     if name not in sounds.SOUNDS:
         abort(400)
     ok = sounds.preview(name)
     if request.headers.get("X-Evo-Fetch") == "1":
         return jsonify({"ok": ok})
-    return redirect(url_for("settings"))
+    return back_to_sounds()
 
 
 @app.post("/settings/open-folder")

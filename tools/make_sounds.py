@@ -1,4 +1,4 @@
-"""合成 Evo 的三段提示音（见 code/sounds.py）：python tools/make_sounds.py  →  assets/sounds/*.wav
+"""合成 Evo 的三段提示音（见 code/sounds.py）：python tools/make_sounds.py  →  assets/sounds/evo/*.wav（"Evo 默认"那套声音包）
 
 自己合成，不用别人的音效（没有版权问题，和代码一样是 MIT）。每次运行结果一样，改了下面的音符再运行一次就行。
 音色：正弦波加两个泛音，按指数衰减，像木琴 / 小钟；起音快慢、泛音多少每一声可以不一样。44.1 kHz、16 位、单声道。
@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹（本文件在 tools/ 里）
-OUT = ROOT / "assets" / "sounds"
+OUT = ROOT / "assets" / "sounds" / "evo"
 RATE = 44100
 PEAK = 0.55  # 最响处是满幅的 55%：游戏声音里听得到，又不吓人；玩家可以在 Windows 的音量合成器里调
 C5, E5, G5 = 523.25, 659.26, 783.99

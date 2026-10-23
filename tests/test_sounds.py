@@ -1,16 +1,23 @@
 """提示音（sounds.py、live_collect.SoundCues）：对局结束、总结页读完了、进入经验值页，每局每一声最多一次。
 
-- 声音文件：三个都在，格式对，不超过 2 秒、不爆音，和 tools/make_sounds.py 合成出来的一模一样
+- 声音文件：Evo 默认的三个都在，格式对，不超过 2 秒、不爆音，和 tools/make_sounds.py 合成出来的一模一样；
+  每套声音包都有 pack.json（名字、许可），WAV 是 16 位、不超过 10 秒
 - 开关：默认开；关了不响；试听不管开关
+- 声音包（整套切换）：默认 Evo 的；选的那套缺哪一声用 Evo 默认的；选的那套没有了用回 Evo 默认的
+- 音量：默认 100% 放原文件；调小了放调小的副本（振幅按音量的平方），同一音量不重做，换音量删掉旧的
+- 自己的文件：核对格式、长度后存进数据文件夹；读不出、格式不对、太长、空的都说原因；恢复默认
 - 什么时候响（直接喂画面，不用截图）：淘汰画面 / 冠军横幅 / "返回大厅"按钮响"对局结束"，已经到过总结页、经验值页就不响；
   总结页读完了才响；进经验值页响；来回切页不重复；下一局重新算
 - 用截图跑真正的记录程序：一局从开局到大厅，响了哪几声、顺序对不对；总结页停留太短不响"读完了"
-- 设置页：开关、三个"试听"（脚本提交，不刷新页面）
+- 设置页：开关、声音包下拉框、音量滑块、三个"试听"（脚本提交，不刷新页面）；选"自己的文件"时的选文件、恢复默认
 测试时不真的出声（fake_game 把声音换成记一笔）。
 
 运行：python tests/test_sounds.py
 """
 
+import io
+import json
+import shutil
 import sys
 import wave
 from datetime import datetime, timedelta
@@ -23,6 +30,7 @@ import numpy as np  # noqa: E402
 
 import app_settings  # noqa: E402
 import panel_app  # noqa: E402
+import paths  # noqa: E402
 import sounds  # noqa: E402
 import storage  # noqa: E402
 from live_collect import SoundCues  # noqa: E402
@@ -54,8 +62,30 @@ def file_checks():
         made = (make_sounds.render(make_sounds.SOUNDS[name]) * 32767).astype("<i2")
         ok.append(fmt == (1, 2, 44100) and seconds <= 2.0 and np.abs(data).max() / 32767 <= 0.6
                   and np.array_equal(data, made))
-    out["三个声音文件都在：单声道 16 位 44.1 kHz、不超过 2 秒、不爆音，和 tools/make_sounds.py 合成的一样"] = all(ok)
+    out["Evo 默认的三个声音文件都在：单声道 16 位 44.1 kHz、不超过 2 秒、不爆音，和 tools/make_sounds.py 合成的一样"] = all(ok)
     out["按一局里的先后排：对局结束、总结页读完了、经验值页"] = list(sounds.SOUNDS) == ["match_end", "summary", "xp"]
+    bad = []
+    for folder in sorted(p for p in sounds.PACKS_DIR.iterdir() if p.is_dir()):
+        try:
+            info = json.loads((folder / "pack.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            bad.append(f"{folder.name}：没有 pack.json")
+            continue
+        if not info.get("name") or not info.get("license"):
+            bad.append(f"{folder.name}：pack.json 缺名字或许可")
+        files = [folder / f"{name}.wav" for name in sounds.SOUNDS if (folder / f"{name}.wav").is_file()]
+        if not files:
+            bad.append(f"{folder.name}：一个声音都没有")
+        for f in files:
+            with wave.open(str(f)) as w:
+                if w.getsampwidth() != 2 or w.getnchannels() not in (1, 2) or w.getnframes() / w.getframerate() > 10:
+                    bad.append(f"{folder.name}/{f.name}：要 16 位、单声道或立体声、不超过 10 秒")
+        extra = {p.name for p in folder.iterdir()} - {"pack.json"} - {f"{name}.wav" for name in sounds.SOUNDS}
+        if extra:
+            bad.append(f"{folder.name}：不认识的文件 {sorted(extra)}")
+    out[f"每套声音包：有 pack.json（名字、许可），WAV 是 16 位、不超过 10 秒（{bad or '都对'}）"] = not bad
+    keys = [one["key"] for one in sounds.packs()]
+    out[f"设置页的顺序：Evo 默认第一，自己的文件最后（{keys}）"] = keys[0] == "evo" and keys[-1] == "custom"
     return out
 
 
@@ -76,9 +106,140 @@ def setting_checks():
     app_settings.set_value(sounds.SETTING_KEY, None)
     real = sounds._output
     sounds._output = None
-    with mock.patch.object(sounds, "path", lambda name: ROOT / "nothing.wav"):
+    with mock.patch.object(sounds, "path", lambda name, pack="evo": ROOT / "nothing.wav"):
         out["找不到声音文件：不出错，返回没响"] = sounds.preview("xp") is False
     sounds._output = real
+    return out
+
+
+def wav_bytes(seconds=1.0, rate=44100, channels=1, width=2, value=8000):
+    """一段 WAV（每个采样都是同一个数），测试用。"""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as f:
+        f.setnchannels(channels)
+        f.setsampwidth(width)
+        f.setframerate(rate)
+        f.writeframes(value.to_bytes(width, "little", signed=True) * int(rate * seconds) * channels)
+    return buf.getvalue()
+
+
+def samples(file):
+    with wave.open(str(file)) as f:
+        return np.frombuffer(f.readframes(f.getnframes()), "<i2"), f.getparams()
+
+
+def reset():
+    for key in (sounds.PACK_KEY, sounds.VOLUME_KEY, sounds.CUSTOM_NAMES_KEY):
+        app_settings.set_value(key, None)
+    shutil.rmtree(sounds.CUSTOM_DIR.parent, ignore_errors=True)
+
+
+def pack_checks():
+    """声音包：用临时的声音包文件夹（Evo 默认的那套照抄，另加一套只有一声的）。"""
+    out = {}
+    reset()
+    packs = fake_game._TEMP / "sound-packs"
+    shutil.rmtree(packs, ignore_errors=True)
+    shutil.copytree(sounds.PACKS_DIR / "evo", packs / "evo")
+    (packs / "voice").mkdir()
+    (packs / "voice" / "pack.json").write_text(json.dumps({"name": "语音", "license": "MIT"}), encoding="utf-8")
+    (packs / "voice" / "summary.wav").write_bytes(wav_bytes())
+    (packs / "broken").mkdir()  # 没有 pack.json：不算
+    with mock.patch.object(sounds, "PACKS_DIR", packs):
+        out["没选过：用 Evo 默认的"] = sounds.pack() == "evo" and sounds.source("xp") == packs / "evo" / "xp.wav"
+        out["下拉框：Evo 默认、语音、自己的文件（没有 pack.json 的不算）"] = (
+            [one["name"] for one in sounds.packs()] == ["Evo 默认", "语音", "自己的文件"])
+        sounds.set_pack("voice")
+        out["选了语音包：有的那一声用它的"] = sounds.source("summary") == packs / "voice" / "summary.wav"
+        out["语音包缺的那一声：用 Evo 默认的"] = sounds.source("xp") == packs / "evo" / "xp.wav"
+        try:
+            sounds.set_pack("../evo")
+            out["不认识的声音包：拒绝"] = False
+        except ValueError:
+            out["不认识的声音包：拒绝"] = sounds.pack() == "voice"
+        shutil.rmtree(packs / "voice")
+        out["选的那套没有了（换版本时删掉了）：用回 Evo 默认的"] = sounds.pack() == "evo"
+    reset()
+    return out
+
+
+def volume_checks():
+    out = {}
+    reset()
+    original = sounds.path("xp")
+    out["默认 100%：放原文件，不做副本"] = sounds.volume() == 100 and sounds.playable("xp") == original
+    out["音量对齐到 5 的倍数，超出范围拉回来"] = (
+        sounds.set_volume("52") == 50 and sounds.set_volume(0) == 5 and sounds.set_volume(250) == 100)
+    sounds.set_volume(50)
+    copy = sounds.playable("xp")
+    made = list(sounds.VOLUME_DIR.glob("*.wav"))
+    out[f"调到 50%：设置改了就把三声的副本做好（{len(made)} 个）"] = len(made) == 3 and copy.parent == sounds.VOLUME_DIR
+    quiet, params = samples(copy)
+    loud, loud_params = samples(original)
+    out["副本：格式不变，振幅是原来的 25%（50% 的平方）"] = (
+        params == loud_params and np.array_equal(quiet, (loud * 0.25).astype("<i2")))
+    stamp = copy.stat().st_mtime_ns
+    out["同一音量再放：用做好的副本，不重做"] = sounds.playable("xp") == copy and copy.stat().st_mtime_ns == stamp
+    sounds.set_volume(20)
+    out["换了音量：旧副本删掉"] = not copy.exists() and len(list(sounds.VOLUME_DIR.glob("*.wav"))) == 3
+    real = sounds._output
+    sounds._output = None
+    with mock.patch.object(sounds.winsound, "PlaySound") as play:
+        sounds.preview("xp")
+    sounds._output = real
+    out["试听放的是调小了的副本"] = play.call_args[0][0] == str(sounds.playable("xp"))
+    sounds.set_volume(100)
+    out["调回 100%：放原文件，副本全删掉"] = (
+        sounds.playable("xp") == original and not list(sounds.VOLUME_DIR.glob("*.wav")))
+    app_settings.set_value(sounds.VOLUME_KEY, "很大")
+    out["设置里的音量坏了：当作 100%"] = sounds.volume() == 100
+    try:
+        sounds.set_volume("abc")
+        out["音量不是数字：拒绝"] = False
+    except ValueError:
+        out["音量不是数字：拒绝"] = True
+    reset()
+    return out
+
+
+def custom_checks():
+    out = {}
+    reset()
+    sounds.set_pack("custom")
+    out["选了自己的文件、还没选文件：都用 Evo 默认的"] = (
+        all(sounds.source(name) == sounds.path(name) for name in sounds.SOUNDS) and sounds.custom_files() == {})
+    length = sounds.save_custom("match_end", wav_bytes(2.5, channels=2), "我的 声音.mp3")
+    out["存好：在数据文件夹里，用它"] = (
+        round(length, 2) == 2.5 and sounds.source("match_end") == sounds.custom_path("match_end")
+        and sounds.custom_path("match_end").is_relative_to(paths.DATA_DIR / "sounds"))
+    out["设置页显示原来的文件名和秒数"] = sounds.custom_files() == {"match_end": {"file": "我的 声音.mp3", "seconds": 2.5}}
+    out["别的两声：还是 Evo 默认的"] = sounds.source("xp") == sounds.path("xp")
+    sounds.set_volume(50)
+    quiet, _ = samples(sounds.playable("match_end"))
+    out["调了音量：自己的文件也调小"] = quiet.max() == 2000
+    sounds.set_pack("evo")
+    out["换回 Evo 默认：不用自己的文件（文件留着）"] = (
+        sounds.source("match_end") == sounds.path("match_end") and sounds.custom_path("match_end").is_file())
+    sounds.set_pack("custom")
+
+    def why(data):
+        try:
+            sounds.save_custom("xp", data, "x.mp3")
+            return None
+        except sounds.SoundFileError as e:
+            return str(e)
+
+    out["读不出来（不是 WAV）：说原因"] = why(b"ID3 not a wav") == "读不出这个文件。请换一个 MP3 或 WAV 文件再试"
+    out["24 位 WAV：放不了，说原因"] = why(wav_bytes(width=3)) == "这种 WAV 格式放不了。请换一个 MP3 文件再试"
+    out["太长：写出几秒、最长几秒"] = why(wav_bytes(10.5)) == "这段声音有 10.5 秒，最长 10 秒。请剪短一些再选"
+    out["空的：说原因"] = why(wav_bytes(0)) == "文件是空的或者不完整。请换一个文件再试"
+    out["太大：说原因"] = why(b"x" * (sounds.MAX_BYTES + 1)) == "文件太大。请选一段不超过 10 秒的声音"
+    out["不合格的都不存"] = not sounds.custom_path("xp").exists()
+    sounds.clear_custom("match_end")
+    out["恢复默认：删掉文件，用回 Evo 默认的"] = (
+        not sounds.custom_path("match_end").exists() and sounds.custom_files() == {}
+        and sounds.source("match_end") == sounds.path("match_end"))
+    reset()
     return out
 
 
@@ -179,12 +340,59 @@ def panel_checks():
     client.post("/settings/sounds", data={"token": token, "on": "1"})
     out["再打开：记进设置"] = app_settings.get(sounds.SETTING_KEY) is True
     app_settings.set_value(sounds.SETTING_KEY, None)
+
+    reset()
+    s = page()
+    out["声音包下拉框：选着 Evo 默认，最后一项是自己的文件；没选自己的文件时没有选文件的按钮"] = (
+        '<option value="evo" selected>Evo 默认</option>' in s and '<option value="custom" >自己的文件</option>' in s
+        and ">选择文件…</button>" not in s)
+    out["音量滑块：5–100，默认 100%"] = (
+        'type="range" id="sound-volume" name="volume" min="5" max="100" step="5" value="100"' in s
+        and ">100%</output>" in s)
+    r = client.post("/settings/sound-pack", data={"token": token, "pack": "custom"})
+    out["换声音包：记进设置，回到提示音这一栏"] = (
+        sounds.pack() == "custom" and r.status_code == 302 and r.headers["Location"].endswith("/settings#h-sounds"))
+    out["不认识的声音包：拒绝"] = client.post("/settings/sound-pack", data={"token": token, "pack": "x"}).status_code == 400
+    s = page()
+    out["选了自己的文件：三声各有\"选择文件…\"，写着还没选、响的是默认的"] = (
+        s.count(">选择文件…</button>") == 3 and s.count("还没选文件，响的是 Evo 默认的声音") == 3 and "恢复默认" not in s)
+
+    def upload(name, data, fetch=True):
+        return client.post("/settings/sound-file", headers={"X-Evo-Fetch": "1"} if fetch else {}, data={
+            "token": token, "name": name, "filename": "提示.mp3", "file": (io.BytesIO(data), f"{name}.wav")})
+
+    r = upload("summary", wav_bytes(1.5))
+    s = page()
+    out["选文件：存好，页面上写着文件名、秒数，有\"恢复默认\""] = (
+        r.get_json() == {"ok": True, "error": None} and sounds.custom_path("summary").is_file()
+        and '你的文件：<span class="sound-file-name">提示.mp3</span>（<span class="num">1.5</span> 秒）' in s
+        and s.count(">恢复默认</button>") == 1)
+    r = upload("xp", wav_bytes(12))
+    out["太长：回答原因（页面写在这一行下面），不存"] = (
+        r.get_json() == {"ok": False, "error": "这段声音有 12.0 秒，最长 10 秒。请剪短一些再选"}
+        and not sounds.custom_path("xp").exists())
+    r = upload("xp", b"not a wav", fetch=False)
+    s = page()
+    out["没有脚本时不合格：回到提示音这一栏，原因写在那一行下面（只显示一次）"] = (
+        r.headers["Location"].endswith("#h-sounds")
+        and 'id="sound-error-xp" role="alert">读不出这个文件。请换一个 MP3 或 WAV 文件再试</div>' in s
+        and 'id="sound-error-xp" role="alert" hidden></div>' in page())
+    out["选文件：不认识的那一声拒绝"] = upload("x", wav_bytes()).status_code == 400
+    out["选文件：没带口令拒绝"] = client.post("/settings/sound-file", data={"name": "xp"}).status_code == 403
+    client.post("/settings/sound-file/clear", data={"token": token, "name": "summary"})
+    out["恢复默认：删掉文件"] = not sounds.custom_path("summary").exists() and "恢复默认" not in page()
+    r = client.post("/settings/sound-volume", data={"token": token, "volume": "35"}, headers={"X-Evo-Fetch": "1"})
+    out["音量：脚本提交，回答存下的值，页面显示"] = (
+        r.get_json() == {"ok": True, "volume": 35} and sounds.volume() == 35 and 'value="35"' in page())
+    out["音量不是数字：拒绝"] = client.post("/settings/sound-volume", data={"token": token, "volume": "x"}).status_code == 400
+    reset()
     return out
 
 
 def main():
-    print("提示音（声音文件、开关、什么时候响、记录程序、设置页）")
-    checks = {**file_checks(), **setting_checks(), **rule_checks(), **panel_checks()}
+    print("提示音（声音文件、开关、声音包、音量、自己的文件、什么时候响、记录程序、设置页）")
+    checks = {**file_checks(), **setting_checks(), **pack_checks(), **volume_checks(), **custom_checks(),
+              **rule_checks(), **panel_checks()}
     try:
         checks.update(collect_checks())
     except MissingShots as e:

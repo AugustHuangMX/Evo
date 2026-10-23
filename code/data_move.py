@@ -5,7 +5,7 @@
 1. 检查（check）：Apex 开着不搬（免得丢掉正在记录的这一局）；不能是现在的位置、不能在现在的数据文件夹里面
    （或反过来）、不能在程序文件夹里（换版本时会被一起删掉）；要能写入、空间够（数据大小 × 1.1 + 50 MB）。
    那里已经有 Evo 的数据：不合并、不覆盖，问用户"改用那份"还是取消（2026-10-20 用户决定）
-2. 搬（_run）：暂停记录 → 复制 Evo 自己的数据库、截图、运行记录、设置（数据库用 SQLite 的备份功能，其他文件逐个复制；
+2. 搬（_run）：暂停记录 → 复制 Evo 自己的数据库、截图、运行记录、设置、自己选的提示音（数据库用 SQLite 的备份功能，其他文件逐个复制；
    窗口的缓存 webview\\ 正在用，不搬；数据文件夹里别的东西不碰）→
    核对（每个文件的大小、数据库的局数和完整性）→ 在新位置写 _moved_from.json → 改指路文件（Evo.exe 旁边和
    %LOCALAPPDATA%\\Evo 里的 data_location.txt，见 paths.py）→ 打开新的 Evo（--wait-pid 等这个退出）→ 托盘程序退出。
@@ -33,7 +33,7 @@ import paths
 MARKER = "_moved_from.json"  # 搬完写在新位置：从哪里搬来的、搬了哪些（新的 Evo 打开后据此删旧的）
 # 只搬 Evo 自己的这几样，数据文件夹里别的东西不碰（万一数据文件夹指到了放着别的东西的地方）。
 # 窗口缓存 webview\\ 正在用，不搬（新位置会重新生成），旧的在新的 Evo 打开后删掉
-ITEMS = ("data", "captures", "logs", "settings.json")
+ITEMS = ("data", "captures", "logs", "settings.json", "sounds")  # sounds：设置页选的自己的提示音、调过音量的副本（sounds.py）
 SQLITE_TEMP = (".db-journal", ".db-wal", ".db-shm")  # 数据库的临时文件：数据库用备份功能复制，这些不要
 CHUNK = 1024 * 1024
 QUIT_DELAY = 1.5  # 秒：新的 Evo 打开后，旧的等一下再退出，让页面先显示"正在重新打开"

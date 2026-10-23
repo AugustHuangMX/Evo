@@ -480,6 +480,14 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .switch[aria-checked="true"] .switch-knob { transform: translateX(18px); background: #FFFFFF; }
 .switch:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
 .switch[disabled] { opacity: 0.45; cursor: default; }  /* 用源码运行时"保留全部截图"锁定为开 */
+/* 提示音：音量滑块和开关打开时同一种蓝；自己的文件的文件名可能很长，可以在任意处换行 */
+.sound-volume { align-items: center; gap: 12px; }
+.sound-volume input[type="range"] { width: 180px; min-height: 38px; margin: 0; accent-color: var(--p3-bg); cursor: pointer; }
+.sound-volume input[type="range"]:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.volume-value { min-width: 5ch; text-align: right; }
+.sound-file { margin-top: 2px; }
+.sound-file-name { color: var(--text); overflow-wrap: anywhere; }
+.sound-note { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--row-border); }
 .update-new { margin-top: 8px; font-size: 13px; }
 .update-notes { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
 .btn[aria-busy="true"] { cursor: progress; }

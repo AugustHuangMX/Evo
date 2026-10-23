@@ -156,7 +156,15 @@
 
 ### 2026-10-24
 
+- **提示音：换声音包、用自己的文件、调音量**（2026-10-24 用户决定：整套切换，三声一起换；能用自己的音频文件；Evo 里能调音量；语音包随安装包发；自己的文件存在数据文件夹）：
+  - 声音包：`assets/sounds/<名字>/` 一个文件夹一套（`pack.json` 写名字、作者、许可 + 三个 16 位 WAV，每段最长 10 秒，缺的那一声用默认的）；原来的三段挪进 `assets/sounds/evo/`（"Evo 默认"，`tools/make_sounds.py` 改成写到那里）。设置页"提示音"一栏加"声音"下拉框（Evo 默认 / 语音包 / 自己的文件，选了就保存、回到这一栏）
+  - 自己的文件：每一声"选择文件…"，窗口用 WebView2 自带的解码把 MP3、WAV、M4A 等转成 16 位 44.1 kHz 的 WAV 再上传（不加依赖、播放方式不变），`sounds.save_custom` 核对格式和长度后存进数据文件夹的 `sounds/custom/`；读不出、太长（> 10 秒）等原因写在那一行下面；"恢复默认"删掉文件。没选的那一声响默认的
+  - 音量：5–100% 滑块（振幅按音量的平方，50% 约小 12 dB），松手后保存、按新音量响一声"对局结束"。winsound 不能调音量，所以在数据文件夹的 `sounds/volume/` 另存调小了的副本（设置改了面板先做好，记录程序找不到时自己做；换音量删掉旧的）
+  - 数据文件夹搬家时 `sounds/` 一起搬（`data_move.ITEMS`）
+  - 相关文件：`code/sounds.py`、`code/panel_app.py`（`sound_view` 和 4 个新入口）、`panel/templates/settings.html`、`panel/static/style.css`、`code/data_move.py`、`assets/sounds/`、`tools/make_sounds.py`；文档 `docs/底座.md`、`docs/面板.md`、`docs/对局全流程图.md` 第 8 步
+  - 验证：`tests/test_sounds.py` 72 项全过（新加：每套声音包的格式、声音包切换和缺声、音量副本的振幅 / 重用 / 清理、自己的文件的核对和各种不合格、设置页的下拉框 / 滑块 / 选文件 / 恢复默认）；`tests/test_data_move.py` 加上搬 `sounds/`；在真的 WebView2 窗口里（临时数据文件夹）试了 14 项：Opus 压缩格式和 22 kHz WAV 转好存下、太长和不是音频的原因写在那一行下面、音量保存并响一声、换声音包、没有脚本错误；截图看了深色、浅色、窄窗口
 - **设置页"匿名统计"一栏精简**（2026-10-24 用户要求）：说明改成"Evo 仅会将数据用于改进识别"（原来是"打开后，Evo 开着时每小时……"）；去掉开着时的状态行（从什么时候起、已发送几局、上次发送）、"查看会发送的内容"（原样 JSON）、"关闭并删除已发送的数据"（按钮、`/settings/telemetry/delete`、`telemetry.delete_sent`、`telemetry.status`）；关着时仍写"已关闭：不发送任何数据"。顶部提问里"设置页里看到原样""或删除已发送的数据"两处跟着去掉，关掉时的提示不再说"可以在设置页删除"。`telemetry.preview` 留给 `python code/telemetry.py` 打印原样；服务器的 `/v1/delete` 留着（0.3.7、0.3.8 还有删除按钮）。没用的样式（`.stats-preview`、`.stats-json`）删了
   - 相关文件：`panel/templates/settings.html`、`panel/templates/base.html`、`code/panel_app.py`、`code/telemetry.py`、`panel/static/style.css`、`server/stats/worker.js`（注释）；文档 `docs/面板.md`、`docs/底座.md`
   - 验证：`tests/test_telemetry.py` 35 项全过（新加：说明的新写法、开着时不显示状态、没有原样 / 随机编号 / 删除按钮、删除地址 404、关掉的提示不提删除、顶部提问不再说原样和删除）；`tests/run_all.py` 23 组里 22 组通过，没通过的"开机自动启动"是另一个会话改了顶部提问的标题、测试还没跟上，和这次无关；临时数据文件夹开面板截图看了开 / 关、深色 / 浅色
   - 还没改：`PRIVACY.md`（第四节写着能看原样、能删除）、`site/privacy.html`、README、`release/使用说明.txt`，等用户定怎么写
+

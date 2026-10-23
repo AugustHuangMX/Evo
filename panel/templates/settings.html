@@ -49,13 +49,14 @@
       </div>
     </section>
 
-    {# 提示音（sounds.py，什么时候响见 live_collect.SoundCues）：开关 + 每一声的"试听"（不管开关；脚本提交，不刷新页面） #}
+    {# 提示音（sounds.py，什么时候响见 live_collect.SoundCues）：开关、声音包（三声一起换）、音量、每一声的"试听"（不管开关；
+       脚本提交，不刷新页面）。选"自己的文件"时每一声还能"选择文件…"（窗口先转成 WAV，见下面的脚本）、"恢复默认" #}
     <section class="card settings-card" aria-labelledby="h-sounds">
       <h2 id="h-sounds">提示音</h2>
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="sounds-name">对局结束时的提示音</div>
-          <div class="setting-desc">每局最多响三声，每一声只响一次。音量在 Windows 的"音量合成器"里调 Evo</div>
+          <div class="setting-desc">每局最多响三声，每一声只响一次</div>
         </div>
         <form method="post" action="{{ url_for('sounds_setting') }}">
           <input type="hidden" name="token" value="{{ token }}">
@@ -67,19 +68,77 @@
           </button>
         </form>
       </div>
-      {% for one in sound_list %}
+      {% set custom = sound.pack == sound.custom %}
+      <form method="post" action="{{ url_for('sound_pack') }}" class="setting" id="sound-pack-form">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div class="setting-text">
+          <label class="setting-name" for="sound-pack">声音</label>
+          <div class="setting-desc">三声一起换。选"{{ sound.packs[-1].name }}"可以把每一声换成你自己的音频</div>
+        </div>
+        <div class="setting-actions inline">
+          <select id="sound-pack" name="pack">
+            {% for one in sound.packs %}
+            <option value="{{ one.key }}" {{ 'selected' if one.key == sound.pack }}>{{ one.name }}</option>
+            {% endfor %}
+          </select>
+          <noscript><button type="submit" class="btn">保存</button></noscript>
+        </div>
+      </form>
+      <form method="post" action="{{ url_for('sound_volume') }}" class="setting" id="sound-volume-form">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div class="setting-text">
+          <label class="setting-name" for="sound-volume">音量</label>
+          <div class="setting-desc" id="sound-volume-desc">只调 Evo 的提示音，松开后按新音量响一声</div>
+        </div>
+        <div class="setting-actions inline sound-volume">
+          <input type="range" id="sound-volume" name="volume" min="{{ sound.volume_range[0] }}" max="{{ sound.volume_range[1] }}"
+                 step="{{ sound.volume_range[2] }}" value="{{ sound.volume }}" aria-describedby="sound-volume-desc"
+                 aria-valuetext="{{ sound.volume }}%">
+          <output for="sound-volume" class="num volume-value" id="sound-volume-value">{{ sound.volume }}%</output>
+          <noscript><button type="submit" class="btn">保存</button></noscript>
+        </div>
+      </form>
+      {% for one in sound.list %}
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="sound-{{ one.key }}">{{ one.label }}</div>
           <div class="setting-desc">{{ one.when }}</div>
+          {% if custom %}
+          <div class="setting-desc sound-file" id="sound-file-{{ one.key }}">
+            {%- if one.file %}你的文件：<span class="sound-file-name">{{ one.file.file }}</span>
+            {%- if one.file.seconds %}（<span class="num">{{ '%.1f'|format(one.file.seconds) }}</span> 秒）{% endif %}
+            {%- else %}还没选文件，响的是 Evo 默认的声音{% endif -%}
+          </div>
+          <div class="setting-desc update-error" id="sound-error-{{ one.key }}" role="alert"{{ ' hidden' if not one.failed }}>{{ one.failed or '' }}</div>
+          {% endif %}
         </div>
-        <form method="post" action="{{ url_for('sound_preview') }}" data-sound-preview>
-          <input type="hidden" name="token" value="{{ token }}">
-          <input type="hidden" name="name" value="{{ one.key }}">
-          <button type="submit" class="btn" aria-describedby="sound-{{ one.key }}">试听</button>
-        </form>
+        <div class="setting-actions">
+          <form method="post" action="{{ url_for('sound_preview') }}" data-sound-preview>
+            <input type="hidden" name="token" value="{{ token }}">
+            <input type="hidden" name="name" value="{{ one.key }}">
+            <button type="submit" class="btn" aria-describedby="sound-{{ one.key }}">试听</button>
+          </form>
+          {% if custom %}
+          <form method="post" action="{{ url_for('sound_file') }}" enctype="multipart/form-data" data-sound-file>
+            <input type="hidden" name="token" value="{{ token }}">
+            <input type="hidden" name="name" value="{{ one.key }}">
+            <input type="file" name="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac" hidden>
+            <button type="button" class="btn" aria-describedby="sound-{{ one.key }} sound-file-{{ one.key }}">选择文件…</button>
+          </form>
+          {% if one.file %}
+          <form method="post" action="{{ url_for('sound_file_clear') }}">
+            <input type="hidden" name="token" value="{{ token }}">
+            <input type="hidden" name="name" value="{{ one.key }}">
+            <button type="submit" class="btn-text" aria-describedby="sound-{{ one.key }}">恢复默认</button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </div>
       </div>
       {% endfor %}
+      {% if custom %}
+      <p class="setting-desc sound-note">支持 MP3、WAV、M4A 等常见格式，每段最长 <span class="num">{{ sound.max_seconds }}</span> 秒。Evo 会转成 WAV 存在数据文件夹里，原来的文件不动。</p>
+      {% endif %}
     </section>
 
     <section class="card settings-card" aria-labelledby="h-rec">
@@ -396,6 +455,99 @@
         });
     });
   });
+  // 提示音换声音包：选了就保存，回到"提示音"这一栏
+  var packSelect = document.getElementById("sound-pack");
+  packSelect.addEventListener("change", function () { packSelect.form.submit(); });
+
+  // 音量：拖动时数字跟着变；松手（或用方向键调完）0.3 秒后保存，再按新音量响一声"对局结束"
+  var volume = document.getElementById("sound-volume"), volumeValue = document.getElementById("sound-volume-value");
+  var volumeTimer = null;
+  volume.addEventListener("input", function () {
+    volumeValue.textContent = volume.value + "%";
+    volume.setAttribute("aria-valuetext", volume.value + "%");
+  });
+  volume.addEventListener("change", function () {
+    clearTimeout(volumeTimer);
+    volumeTimer = setTimeout(function () {
+      var form = volume.form, headers = { "X-Evo-Fetch": "1" };
+      fetch(form.action, { method: "POST", body: new FormData(form), headers: headers })
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function () {
+          var body = new FormData();
+          body.append("token", form.elements.token.value);
+          body.append("name", "match_end");
+          return fetch("{{ url_for('sound_preview') }}", { method: "POST", body: body, headers: headers });
+        })
+        .catch(function () { volumeValue.textContent = "没存上"; });
+    }, 300);
+  });
+
+  // 自己的文件：在窗口里把选的音频（MP3、WAV、M4A……）解码、转成 16 位 WAV，再交给 Evo 核对、保存。
+  // 窗口本身就是浏览器内核，能解码常见格式，Evo 不用另加解码的依赖，播放也照旧用 Windows 自带的
+  var MAX_SECONDS = {{ sound.max_seconds }}, MAX_FILE = 20 * 1024 * 1024;
+  function toWav(audio) {
+    var channels = Math.min(2, audio.numberOfChannels), n = audio.length, size = n * channels * 2;
+    var out = new DataView(new ArrayBuffer(44 + size)), data = [], at = 44;
+    function text(pos, s) { for (var i = 0; i < s.length; i++) out.setUint8(pos + i, s.charCodeAt(i)); }
+    text(0, "RIFF"); out.setUint32(4, 36 + size, true); text(8, "WAVE");
+    text(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, channels, true);
+    out.setUint32(24, audio.sampleRate, true); out.setUint32(28, audio.sampleRate * channels * 2, true);
+    out.setUint16(32, channels * 2, true); out.setUint16(34, 16, true);
+    text(36, "data"); out.setUint32(40, size, true);
+    for (var c = 0; c < channels; c++) data.push(audio.getChannelData(c));
+    for (var i = 0; i < n; i++) {
+      for (c = 0; c < channels; c++) {
+        var s = Math.max(-1, Math.min(1, data[c][i]));
+        out.setInt16(at, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        at += 2;
+      }
+    }
+    return new Blob([out], { type: "audio/wav" });
+  }
+  document.querySelectorAll("form[data-sound-file]").forEach(function (form) {
+    var input = form.querySelector("input[type=file]"), btn = form.querySelector("button");
+    var key = form.elements.name.value, error = document.getElementById("sound-error-" + key);
+    function fail(message) {
+      error.textContent = message;
+      error.hidden = false;
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+      btn.textContent = "选择文件…";
+      input.value = "";
+    }
+    btn.addEventListener("click", function () { input.click(); });
+    input.addEventListener("change", function () {
+      var file = input.files[0];
+      if (!file) return;
+      if (file.size > MAX_FILE) return fail("文件太大。请选一段不超过 " + MAX_SECONDS + " 秒的声音");
+      error.hidden = true;
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "处理中…";
+      file.arrayBuffer()
+        .then(function (raw) { return new OfflineAudioContext(1, 1, 44100).decodeAudioData(raw); })
+        .catch(function () { throw new Error("读不出这个文件。请换一个 MP3 或 WAV 文件再试"); })
+        .then(function (audio) {
+          if (audio.duration > MAX_SECONDS + 0.05) {
+            throw new Error("这段声音有 " + audio.duration.toFixed(1) + " 秒，最长 " + MAX_SECONDS + " 秒。请剪短一些再选");
+          }
+          var body = new FormData();
+          body.append("token", form.elements.token.value);
+          body.append("name", key);
+          body.append("filename", file.name);
+          body.append("file", toWav(audio), key + ".wav");
+          return fetch(form.action, { method: "POST", body: body, headers: { "X-Evo-Fetch": "1" } })
+            .then(function (r) { return r.json(); }, function () { return { ok: false }; });
+        })
+        .then(function (s) {
+          if (!s.ok) throw new Error(s.error || "没存上，请再试一次");
+          history.replaceState(null, "", "#h-sounds");  // 重新打开页面后停在"提示音"这一栏，显示新的文件名
+          location.reload();
+        })
+        .catch(function (e) { fail(e.message); });
+    });
+  });
+
   // 开关（开机自动启动、提示音、保留全部截图、自动检查）：点下去先把圆点滑过去，再提交保存（页面会重新打开）
   document.querySelectorAll(".switch").forEach(function (sw) {
     sw.addEventListener("click", function () {
