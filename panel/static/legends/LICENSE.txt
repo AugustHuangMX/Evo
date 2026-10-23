@@ -1,6 +1,6 @@
 传奇头像图标（Evo 面板里传奇名字前面的小头像）
 
-这些图标不适用 Evo 代码的 MIT 许可证，每个文件的许可见下表。
+这些图标不适用 Evo 代码的 AGPL-3.0 许可证，每个文件的许可见下表。
 
 来源：Apex Legends Wiki（https://apexlegends.wiki.gg/），和 wiki 上的文件逐字节相同。
 每个文件的原始页面：https://apexlegends.wiki.gg/wiki/File:<文件名>

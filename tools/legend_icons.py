@@ -6,7 +6,7 @@
 2. 去掉绘图软件（Inkscape）留下的编辑信息
 3. 量出图形实际画到哪里（用 Edge 无界面模式），四周的空白裁成一样多，每个头像上下一样高
 
-许可：每个原图的许可不一样（不适用 MIT），写在 assets/legends/LICENSE.txt，这里原样复制过去、随安装包一起发。
+许可：每个原图的许可不一样（不适用 AGPL-3.0），写在 assets/legends/LICENSE.txt，这里原样复制过去、随安装包一起发。
 不在 LICENSE.txt 里的原图不生成：先去 wiki 的文件页上查清许可、写进去。
 
 新传奇上线：把 wiki 上的图标放进 assets/legends/，在 LICENSE.txt 里加一行，再运行 python tools/legend_icons.py

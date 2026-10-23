@@ -4,7 +4,7 @@
 2. 准备微软的 WebView2 安装程序（webview2.py 用它，电脑上没有 WebView2 时问用户要不要装）：
    build/webview2 里没有就从微软下载，每次都核对是微软签名的
 3. 用 PyInstaller 按 evo.spec 打包（文件夹模式：一个很小的 Evo.exe + _internal 文件夹）
-4. 放入许可证：Evo 自己的 MIT 许可证；pystray 的 LGPL 许可证（以及它引用的 GPL 全文）
+4. 放入许可证：Evo 自己的 AGPL-3.0 许可证；pystray 的 LGPL 许可证（以及它引用的 GPL 全文）
 5. 打印打包结果的大小
 
 需要先安装 PyInstaller（只在开发时用，不会装进程序里）：python -m pip install pyinstaller
@@ -28,7 +28,8 @@ ICON_SIZES = [(s, s) for s in (16, 24, 32, 48, 64, 128, 256)]
 # 微软的 WebView2 常青版引导程序（Evergreen Bootstrapper），微软允许随软件分发
 WEBVIEW2_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 
-LICENSE_NOTE = """Evo 自己的代码使用 MIT 许可证，见上一层的 LICENSE.txt。
+LICENSE_NOTE = """Evo 自己的代码和提示音使用 GNU AGPL-3.0 许可证，见上一层的 LICENSE.txt。
+Evo 的源代码：https://github.com/AugustHuangMX/Evo
 
 Evo 使用了以下第三方库，它们各自的许可证随库一起放在 _internal 文件夹里（*.dist-info）：
 
@@ -38,7 +39,7 @@ Evo 使用了以下第三方库，它们各自的许可证随库一起放在 _in
 - 其他主要依赖：RapidOCR（Apache 2.0）、ONNX Runtime（MIT）、OpenCV（Apache 2.0）、NumPy（BSD）、
   Flask（BSD）、Pillow（MIT-CMU）、dxcam（MIT）、PP-OCR 模型（Apache 2.0）
 - 面板字体 Chakra Petch：SIL Open Font License 1.1，见 _internal/panel/static/fonts/OFL.txt
-- 面板里传奇名字前的小头像：来自 Apex Legends Wiki（https://apexlegends.wiki.gg/），不适用 MIT，
+- 面板里传奇名字前的小头像：来自 Apex Legends Wiki（https://apexlegends.wiki.gg/），不适用 AGPL-3.0，
   每个文件的许可不一样，见 _internal/panel/static/legends/LICENSE.txt
 - _internal/webview2/MicrosoftEdgeWebview2Setup.exe：微软的 Microsoft Edge WebView2 安装程序，按微软的许可随 Evo 分发。
   只在电脑上没有 WebView2、你同意安装时才运行

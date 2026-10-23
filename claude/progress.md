@@ -169,4 +169,9 @@
   - 隐私政策（用户决定：不再声明能看原样、能删除，也不写别的删除办法）：`PRIVACY.md` 第四节"发送什么"去掉"查看会发送的内容"，"保留多久"去掉"随时可以用按钮删除"，"怎么关掉、删除"改成"怎么关掉"只留关开关；第八节括号改成"见第四节"；英文版两处删除的说法去掉；生效日期改成 2026-10-24（文中写着修改时要改）。README 改成"随时可以在设置页关掉"。本机 `site/privacy.html` 同样改、`site/index.html` 去掉"删除已发送的数据"，下次发布时上传；`site/changelog.html` 里 0.3.7 的更新内容是当时的记录，不改。`release/使用说明.txt` 本来就没写这些
   - 相关文件（第二次提交）：`panel/templates/settings.html`、`tests/test_telemetry.py`、`docs/面板.md`、`PRIVACY.md`、`README.md`
   - 验证：`tests/test_telemetry.py` 35 项全过（新加：说明的新写法、开着时不显示状态、没有原样 / 随机编号 / 删除按钮、删除地址 404、关掉的提示不提删除、顶部提问不再说原样和删除）；`tests/run_all.py` 23 组里 22 组通过，没通过的"开机自动启动"是另一个会话改了顶部提问的标题、测试还没跟上，和这次无关；临时数据文件夹开面板截图看了开 / 关、深色 / 浅色；官网隐私页截图看了第 04 节
+- **许可证从 MIT 改成 AGPL-3.0**（2026-10-24 用户决定：群友提醒加速器等公司可能直接拿 Evo 的代码放进自己的产品。比较过：禁止商用（PolyForm Noncommercial）就不算开源了；GPL-3.0 管不到把代码放在服务器上用的情况。README 不写商用授权的联系方式；提示音也跟着改）
+  - `LICENSE` 换成 gnu.org 上的英文原文（一字不改，GitHub 才认得出）；README「许可证和声明」写明版权、一句话说明，以及改之前的代码（包括 0.3.8 及以前）仍然适用 MIT
+  - 跟着改：设置页"关于 Evo"、`tools/build.py` 随安装包的许可证说明（加了源代码地址）、三个声音包的 `pack.json` 和 `assets/sounds/README.md`、传奇头像的两份 `LICENSE.txt`（`tests/test_legend_icons.py` 改查"AGPL-3.0"）、CLAUDE.md 原则 3（不复制别人代码的理由换成：代码全是自己的，以后才能单独授权）、`docs/底座.md`、`docs/面板.md`、`docs/对局全流程图.md`
+  - 官网（`site/` 首页的下载信息和常见问题、三个页面的页脚）本机已改，下次发版时随 publish.py 上线（用户决定）；这次只提交、不推送，发版时再推
+  - 验证：`tests/test_legend_icons.py` 12 项、`tests/test_sounds.py` 72 项、`tests/test_telemetry.py` 35 项全过；`tests/test_autostart.py` 有 2 项没过（首页、战绩页顶部问开机自启），和这次无关（这次没改那两页，工作区里另有别的会话没提交的 `base.html`、`panel_app.py`）。官网首页用 Edge 无界面模式截图看过：电脑上一行放得下，手机上"免费开源（AGPL-3.0）"整项换行，不拆开
 

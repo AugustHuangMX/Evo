@@ -1,7 +1,7 @@
 """传奇头像（assets/legends/ → python tools/legend_icons.py → panel/static/legends/）：图标、许可文件、面板上显示。不用截图。
 
 - 图标：config/legends.json 里每位传奇都有一个；是去掉了编辑信息的 SVG，正方形 viewBox，大小交给样式
-- 许可（每个文件不一样，不适用 MIT）：每个原图都写在 LICENSE.txt 里；随安装包发的那份和原图旁边的一样
+- 许可（每个文件不一样，不适用 AGPL-3.0）：每个原图都写在 LICENSE.txt 里；随安装包发的那份和原图旁边的一样
 - 战绩页：自己和队友的传奇前有头像；总览页：最近对局、传奇表现有头像；都是装饰（读屏软件跳过）
 - 认不出图标的传奇（以后的新传奇）、没认出传奇的局：留出空位，名字照常显示，不报错
 - 面板能提供图标文件（image/svg+xml）
@@ -52,7 +52,7 @@ def license_checks():
     return {
         f"每个原图都写在 LICENSE.txt 里{'' if not unlisted else f'：没写 {unlisted}'}": not unlisted,
         "随安装包发的许可文件和原图旁边的一样": shipped.is_file() and shipped.read_text(encoding="utf-8") == text,
-        "许可文件写明不适用 MIT、来源和各种许可的链接": "MIT" in text and "apexlegends.wiki.gg" in text
+        "许可文件写明不适用 AGPL-3.0、来源和各种许可的链接": "AGPL-3.0" in text and "apexlegends.wiki.gg" in text
         and "creativecommons.org/licenses/by-nc-sa/3.0/" in text and "creativecommons.org/licenses/by-sa/3.0/" in text,
     }
 

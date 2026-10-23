@@ -9,7 +9,7 @@
 声音包（2026-10-24 用户决定：整套切换，三声一起换）：
 - 随 Evo 发的：assets/sounds/<名字>/ 一个文件夹一套，里面 pack.json（name 显示的名字、by 作者、license 许可、
   order 排第几）和 match_end.wav、summary.wav、xp.wav（16 位 PCM，每段最长 MAX_SECONDS 秒）。
-  evo 是 Evo 自己合成的那套（tools/make_sounds.py，MIT），永远排第一；缺哪一声就用 evo 的那一声
+  evo 是 Evo 自己合成的那套（tools/make_sounds.py，AGPL-3.0），永远排第一；缺哪一声就用 evo 的那一声
 - 自己的文件（custom）：设置页给每一声选一个音频文件（MP3、WAV 等），窗口先转成 WAV
   （panel/templates/settings.html），这里核对后存进数据文件夹的 sounds/custom/；没选的那一声用 evo 的
 音量（VOLUME_MIN–100%，默认 100）：winsound 不能调音量，所以另存一份调小了的副本（数据文件夹的 sounds/volume/）
