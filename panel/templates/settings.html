@@ -344,7 +344,7 @@
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="stats-name">发送匿名的对局数据，帮助改进 Evo</div>
-          <div class="setting-desc">Evo 仅会将数据用于改进识别</div>
+          <div class="setting-desc">Evo 会将数据用于改进识别</div>
           {% if not stats_on %}<div class="setting-desc stats-status">已关闭：不发送任何数据</div>{% endif %}
         </div>
         <form method="post" action="{{ url_for('telemetry_setting') }}">

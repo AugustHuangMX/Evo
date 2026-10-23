@@ -1,6 +1,6 @@
 # Evo 隐私政策
 
-生效日期：2026 年 10 月 22 日　·　适用于 Evo 0.1.0 及以后的版本
+生效日期：2026 年 10 月 24 日　·　适用于 Evo 0.1.0 及以后的版本
 
 Evo 是一个开源的 Apex Legends 战绩记录工具，由个人开发者制作和维护，与 EA、Respawn 没有任何关系。
 
@@ -56,7 +56,7 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 为了知道有多少人在用 Evo、大家用哪些传奇，以及哪些画面 Evo 还读不准，0.3.7 起 Evo 可以把你的对局数据匿名发给开发者。**这个功能默认关闭，只有你同意了才会发送。**
 
 - **什么时候问你**：第一次打开 Evo 时，窗口顶部会问一次"愿意发送匿名的对局数据，帮助改进 Evo 吗？"。你点"同意"之前，Evo 不发送任何统计数据；点"不了"或不回答，就一直不发。以后可以在【设置】→【匿名统计】里随时打开或关闭。
-- **发送什么**（【设置】→【匿名统计】→"查看会发送的内容"能看到原样）：
+- **发送什么**：
   - 一个匿名编号：Evo 在你电脑上随机生成的一串字符，和你的游戏账号、电脑都没有关系，只用来区分哪些数据来自同一台电脑、统计每天有多少人在用；
   - Evo 的版本号；
   - 每天一次："今天在用 Evo"，加上日期、屏幕分辨率、Apex 视频设置里的分辨率和显示模式（全屏、无边框、窗口），以及设置页选的游戏画面比例；
@@ -65,8 +65,8 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 - **什么时候发送**：Evo 开着时，启动后约 1 分钟发一次，之后每小时一次（没有新的局要发时不联网）；每局结束 1 小时以后才发（大厅校准、你的修正多半已经做完）。发过的局之后又改了（比如你在战绩页修正），会再发一次，覆盖服务器上原来那一局。连不上就等下次，不影响 Evo 的其他功能。
 - **发到哪里**：`https://stats.evotracker.cn`，由 Cloudflare 的 Workers 服务接收，存在 Cloudflare 的 D1 数据库里（亚太地区的服务器，不在中国大陆）。和打开任何网页一样，Cloudflare 能看到你的 IP 地址和请求时间；接收程序不把 IP 地址存进数据库，也不记请求日志。
 - **怎么用**：只用来做统计（每天有多少人在用、各版本有多少人、各传奇的选用率和表现、各段位的人数、识别准不准、常见的分辨率）和改进 Evo 的识别。汇总以后的统计（例如"本赛季各传奇的选用率"）可能会公开在官网或 Evo 里，但不会公开任何一个编号的数据，也不会提供或出售给别人。
-- **保留多久**：用来做长期统计（比如看各赛季的变化），不会自动删除；不再需要时会删掉。你随时可以用下面说的按钮删除你发过的数据。
-- **怎么关掉、删除**：【设置】→【匿名统计】→ 关掉开关，之后不再发送任何数据。"关闭并删除已发送的数据"会请服务器删掉你这个匿名编号发过的所有数据，并关闭匿名统计；以后再打开会用一个新编号，和以前的数据对不上。因为数据是匿名的，开发者自己也认不出哪些数据是你的，所以要删除请用这个按钮（删掉 Evo 的数据文件夹以后，匿名编号也跟着没了，就没法再删除以前发过的数据了）。
+- **保留多久**：用来做长期统计（比如看各赛季的变化），不会自动删除；不再需要时会删掉。
+- **怎么关掉**：【设置】→【匿名统计】→ 关掉开关，之后不再发送任何数据。
 
 如果 Evo 以后要加任何新的联网功能，会先在 Evo 里问你、默认不开启，并更新这份说明。
 
@@ -108,7 +108,7 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 
 ## 八、怎么查看、导出和删除你的数据
 
-数据都在你自己的电脑上，完全由你掌控（开着匿名统计时发出去的那部分，见第四节怎么删除）：
+数据都在你自己的电脑上，完全由你掌控（开着匿名统计时发出去的那部分见第四节）：
 
 - **查看和修正**：在 Evo 窗口的【总览】【战绩】页查看；识别错的局可以在战绩页改正。
 - **导出**：【设置】→【导出全部 CSV】，导出的文件里包含你的游戏名。
@@ -141,7 +141,7 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 **This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.**
 
 - **All data stays on your computer.** Evo captures the screen while the game is running and saves match results, screenshots, a log file and settings in its local data folder (shown in Evo's Settings page; from 0.3.5 the default is an `Evo Tracker Data` folder next to the program and it can be moved in Settings; earlier versions used `%LOCALAPPDATA%\Evo`). Nothing is uploaded unless you opt in to anonymous statistics (see below). There is no account system, no third-party analytics, no ads and no automatic crash reporting.
-- **Anonymous statistics (from 0.3.7, off by default, opt-in only).** On first launch Evo asks once whether you want to send anonymous match data to help improve Evo; nothing is sent unless you click "同意" (Agree), and you can turn it off at any time in Settings. If you opt in, Evo sends to `https://stats.evotracker.cn` (a Cloudflare Worker storing data in a Cloudflare D1 database in the Asia-Pacific region; source code in `server/stats/`): a random anonymous ID generated on your computer (not linked to your game account or device), the Evo version, once a day a "used today" record with the date, screen resolution, the resolution and display mode from Apex's video settings and the aspect-ratio setting, and for each match that ends after you opted in: date, mode, map, your legend, your two teammates' legends, placement, kills/assists/knockdowns, damage, RP change, rank tier (e.g. "Diamond", no points), which screen the RP was read from, whether the match was flagged for review, which fields you corrected (not the values), the Evo version that recorded it, and a match key derived from the anonymous ID. It never sends player names or IDs (yours or anyone else's), screenshots, logs, your notes, file paths or device information. Data is sent about a minute after Evo starts and then every hour (only when there is something new to send); the receiving server does not store IP addresses or keep request logs (Cloudflare can see your IP address as with any web request). The data is used only for statistics and to improve recognition; aggregated statistics (never per-ID data) may be published; it is not shared or sold. Data is kept for long-term statistics (for example, comparing seasons) and deleted when no longer needed; you can delete what you sent at any time from Settings. "关闭并删除已发送的数据" (Turn off and delete sent data) in Settings deletes everything sent under your anonymous ID and turns the feature off.
+- **Anonymous statistics (from 0.3.7, off by default, opt-in only).** On first launch Evo asks once whether you want to send anonymous match data to help improve Evo; nothing is sent unless you click "同意" (Agree), and you can turn it off at any time in Settings. If you opt in, Evo sends to `https://stats.evotracker.cn` (a Cloudflare Worker storing data in a Cloudflare D1 database in the Asia-Pacific region; source code in `server/stats/`): a random anonymous ID generated on your computer (not linked to your game account or device), the Evo version, once a day a "used today" record with the date, screen resolution, the resolution and display mode from Apex's video settings and the aspect-ratio setting, and for each match that ends after you opted in: date, mode, map, your legend, your two teammates' legends, placement, kills/assists/knockdowns, damage, RP change, rank tier (e.g. "Diamond", no points), which screen the RP was read from, whether the match was flagged for review, which fields you corrected (not the values), the Evo version that recorded it, and a match key derived from the anonymous ID. It never sends player names or IDs (yours or anyone else's), screenshots, logs, your notes, file paths or device information. Data is sent about a minute after Evo starts and then every hour (only when there is something new to send); the receiving server does not store IP addresses or keep request logs (Cloudflare can see your IP address as with any web request). The data is used only for statistics and to improve recognition; aggregated statistics (never per-ID data) may be published; it is not shared or sold. Data is kept for long-term statistics (for example, comparing seasons) and deleted when no longer needed.
 - **Teammates (versions after 0.2.0).** From the post-match summary screen, Evo also saves your two teammates' in-game names, the IDs shown under their cards, and their stats for that match (kills/assists/knockdowns, damage, survival time, revives, respawns), so the Matches page can show who you played with. Opponents' names and IDs are not saved, and nobody's rank is saved.
 - **Screenshots** show the whole screen at that moment, so they may contain other players' in-game names and anything else on screen (for example a Discord or Steam overlay). They stay on your computer.
 - **Update check and in-app update (network features added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once every 8 hours while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `https://dl.evotracker.cn/latest.json` (latest version number, release date, release notes, and the address and SHA-256 checksum of the new package). From version 0.3.3, when you click "立即更新" (Update now), Evo downloads the new package from `https://dl.evotracker.cn` (the same file as on the website), verifies its SHA-256 and keeps it in the `_update` folder inside Evo's program folder; it installs it (closes for a few seconds, replaces its program files and reopens) only after you click "安装并重新启动" (Install and restart). Your match data is not affected. The requests contain only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare) can see your IP address and the time of the request. Evo never downloads or installs updates without you asking.
@@ -151,6 +151,6 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 - **The Evo window** shows a local page served on `127.0.0.1` only, and loads nothing from the internet. It uses Microsoft Edge WebView2, whose diagnostic data is governed by your Windows privacy settings.
 - **Website.** `evotracker.cn` and `dl.evotracker.cn` are served by Cloudflare. The website uses no cookies, no analytics and no scripts. Cloudflare processes access data such as IP addresses to deliver the site and protect it from attacks ([Cloudflare Privacy Policy](https://www.cloudflare.com/privacypolicy/)). The developer only looks at aggregated statistics.
 - **Feedback files.** If you choose to send your log file or screenshots to the developer, they are used only to investigate your issue, are not shared, and are deleted once the issue is resolved (at most 90 days). Screenshots are added to Evo's test set only with your explicit consent, with unrelated content (including other players' names and IDs) blacked out; you can withdraw consent at any time.
-- **Your data, your control.** You can view, correct, export (CSV) and delete all data from Evo's Settings page, or delete the data folder. Anonymous statistics you sent can be deleted from the Settings page (see above).
+- **Your data, your control.** You can view, correct, export (CSV) and delete all data from Evo's Settings page, or delete the data folder.
 - **Children.** If you are under 14, ask a parent or guardian before turning on anonymous statistics or sending feedback files.
 - **Contact:** [GitHub Issues](https://github.com/AugustHuangMX/Evo/issues) (public) or the QQ group 1128519951.

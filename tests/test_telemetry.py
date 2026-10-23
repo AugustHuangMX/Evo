@@ -207,8 +207,8 @@ def panel_checks(conn):
         out["设置页：匿名统计一栏，开关关着，写着不发送"] = (
             '<h2 id="h-stats">匿名统计</h2>' in settings
             and 'aria-checked="false" aria-labelledby="stats-name"' in settings and "已关闭：不发送任何数据" in settings)
-        out["设置页的说明：Evo 仅会将数据用于改进识别（不写\"打开后，Evo ……\"）"] = (
-            "Evo 仅会将数据用于改进识别" in settings and "打开后，Evo" not in settings)
+        out["设置页的说明：Evo 会将数据用于改进识别（不写\"打开后，Evo ……\"）"] = (
+            "Evo 会将数据用于改进识别" in settings and "打开后，Evo" not in settings)
         got = post("/settings/telemetry", on="1", next="/settings")
         out["设置页打开：同意、马上在后台发一次、开关开着"] = (
             telemetry.consent() is True and sending.called
