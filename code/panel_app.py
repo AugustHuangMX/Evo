@@ -1046,8 +1046,7 @@ def settings():
         feedback_url=FEEDBACK_URL,
         feedback_group=FEEDBACK_GROUP,
         update_auto=app_settings.get("update_auto") is True,
-        stats=telemetry.status(),
-        stats_preview=telemetry.preview(db()),
+        stats_on=telemetry.consent() is True,
         last_check=app_settings.get("update_last_check"),
         newest=update_check.known_newer(),
         job=updater.state(update_check.known_newer()),
@@ -1238,20 +1237,8 @@ def telemetry_setting():
     elif was is None:
         flash("好的，不发送。以后可以在\"设置\"里打开。", "ok")
     else:
-        flash("已关闭匿名统计，不会再发送任何数据。已经发送的可以在设置页删除。", "ok")
+        flash("已关闭匿名统计，不会再发送任何数据。", "ok")
     return back_to_page()
-
-
-@app.post("/settings/telemetry/delete")
-def telemetry_delete():
-    """"关闭并删除已发送的数据"：请服务器删掉这个匿名编号发过的所有数据（要联网，最多等十几秒）。"""
-    try:
-        telemetry.delete_sent()
-    except telemetry.SendError as e:
-        flash(f"没删成：{e}。稍后再试一次。", "error")
-    else:
-        flash("已删除发送过的数据，并关闭了匿名统计。", "ok")
-    return redirect(url_for("settings") + "#stats")
 
 
 # ---------- 检查更新（update_check.py） ----------

@@ -1,8 +1,9 @@
 """匿名统计（0.3.7 起，2026-10-22 用户决定）：用户同意了，才把对局数据发给开发者，用来统计有多少人在用、
 大家用哪些传奇，以及改进识别。默认不发。
 
-- 第一次打开时页面顶部问一次（在"自动检查新版本""开机自动启动"之后，一次只问一件事）；设置页"数据与隐私"里
-  可以随时关掉、查看会发送的内容、删除已经发送的数据。没回答、点了"不了"、关掉以后，一个请求都不发
+- 第一次打开时页面顶部问一次（在"自动检查新版本""开机自动启动"之后，一次只问一件事）；设置页"匿名统计"里
+  可以随时关掉。没回答、点了"不了"、关掉以后，一个请求都不发（0.3.7、0.3.8 设置页还能看发送内容的原样、
+  删除已发送的数据，2026-10-24 用户决定去掉）
 - 只发同意以后结束的局（同意的时间记在 telemetry_since；关掉再打开，从重新打开时算起）
 - 发给 https://stats.evotracker.cn（Cloudflare Worker + D1 数据库，代码在 server/stats/）。托盘程序启动 1 分钟后
   发一次，之后每小时一次（evo_app.start_telemetry；没有新的局、今天的日活也发过了就不联网）；在设置页同意时马上发一次。连不上就等下一次，不提示
@@ -10,7 +11,7 @@
 - 每局结束 SETTLE_MINUTES 分钟以后才发（大厅校准、用户修正多半已经做完）。发过的局记下摘要（data/telemetry_sent.json），
   之后这一局又变了（大厅校准、用户在战绩页改了）就再发一次，服务器上覆盖原来的那一行
 
-发送的内容只有这些（ping_payload、match_payload；设置页能看到原样）：
+发送的内容只有这些（ping_payload、match_payload；python code/telemetry.py 打印原样）：
 - 每次：匿名编号、Evo 版本号
 - 日活：日期、屏幕分辨率、Apex 视频设置里的分辨率和显示模式（全屏 / 无边框 / 窗口）、设置页选的游戏画面比例
 - 每局：对局编号（由匿名编号和本机的局号算出来的一串乱码，只用来覆盖同一局）、日期、记这一局的 Evo 版本号、
@@ -22,9 +23,9 @@
 用到的设置（app_settings）：
 - telemetry_consent：True 同意 / False 不同意；还没问过时没有这一项
 - telemetry_since：同意的时间（只发这之后结束的局）
-- telemetry_id：匿名编号（随机生成，和游戏账号、电脑都无关；删除已发送的数据以后换一个新的）
+- telemetry_id：匿名编号（随机生成，和游戏账号、电脑都无关）
 - telemetry_ping_day：上次发送日活的日期
-- telemetry_last：上次发送的时间和结果（设置页显示）
+- telemetry_last：上次发送的时间和结果（只记下来，排查问题用）
 
 测试时把 STATS_URL 换成本机的测试地址（或者设环境变量 EVO_STATS_URL）。
 用法：python code/telemetry.py   → 打印会发送的内容（不发送）
@@ -230,30 +231,10 @@ def send(db_path=DB_PATH, now=None):
         return result
 
 
-def delete_sent():
-    """设置页"关闭并删除已发送的数据"：请服务器删掉这个匿名编号发过的所有数据，然后关掉发送、换一个新编号、
-    忘掉发过哪些局（以后再同意，和以前的数据对不上）。连不上时抛出 SendError，什么都不改。"""
-    with _lock:
-        install = app_settings.get(ID_KEY)
-        if _valid_id(install):
-            _post("/v1/delete", {"id": install})
-        app_settings.set_value(CONSENT_KEY, False)
-        app_settings.set_value(ID_KEY, None)  # 以后再同意时重新生成
-        app_settings.set_value(PING_KEY, None)
-        app_settings.set_value(LAST_KEY, None)
-        SENT_PATH.unlink(missing_ok=True)
-
-
-# ---------- 设置页 ----------
-
-def status():
-    """设置页显示：同意了没有、匿名编号、从什么时候算起、发过几局、上次发送的结果。"""
-    return {"consent": consent(), "id": app_settings.get(ID_KEY) if _valid_id(app_settings.get(ID_KEY)) else None,
-            "since": app_settings.get(SINCE_KEY), "sent": len(_load_sent()), "last": app_settings.get(LAST_KEY)}
-
+# ---------- 开发时看 ----------
 
 def preview(conn):
-    """"查看会发送的内容"：一次发送的原样（每局的那一份以最近一局为例）。不联网，也不生成匿名编号。"""
+    """一次发送的原样（每局的那一份以最近一局为例），python code/telemetry.py 打印。不联网，也不生成匿名编号。"""
     install = app_settings.get(ID_KEY) if _valid_id(app_settings.get(ID_KEY)) else "（同意后随机生成）"
     row = conn.execute("SELECT * FROM matches ORDER BY ended_at DESC, match_id DESC LIMIT 1").fetchone()
     body = {"id": install, "version": storage.APP_VERSION, "ping": ping_payload(datetime.now().strftime("%Y-%m-%d")),
