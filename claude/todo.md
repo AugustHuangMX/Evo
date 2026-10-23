@@ -71,6 +71,7 @@
   - [ ] 第一步（用户来做，10-24 已答应）：把游戏切成繁体、英文，各打排位、匹配一局截样本（`python tools/frame_capture.py --out captures/frames/繁体`、`--out captures/frames/英文`；截完切回简体）
   - [ ] 看过截图后：每种语言写 `config/lang/<语言>.json`（关键字、地图名、段位名、模式、"排位点数"的格式、区域有变化的）、生成参照图（`screens.py` / `hud.py` 加 `--lang`），用截图整局重放测一遍
   - [ ] 自检（`evo_app.check_images`）改成用 `screens.GameScreens`，别的语言的截图也认得出
+  - 设置页"游戏语言"已经有了（10-24，见 progress.md）：加了 `config/lang/zh-TW.json`、`en.json` 以后，繁體中文、English 自动变成能选
   - [ ] 发布时：使用说明、官网写上支持哪几种游戏语言
   - 面板用英文、繁体显示：这次不做（2026-10-24 用户决定）
 - [ ] **每局结束后的通知**：Windows 通知，如"第 3 名，4 杀，1250 伤害，RP +85"；全屏游戏时能不能看到要实测（提示音 2026-10-21 已做，见 progress.md）

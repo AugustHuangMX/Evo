@@ -148,12 +148,25 @@
           <div class="label">屏幕分辨率</div>
           <div class="info-value">自动检测{% if resolution %}（<span class="num">{{ resolution }}</span>）{% endif %}</div>
         </div>
-        <div>
-          <div class="label">游戏界面语言</div>
-          <div class="info-value">简体中文</div>
-          <div class="setting-desc">目前只支持中文游戏界面</div>
-        </div>
       </div>
+      {# 游戏语言（game_lang.py）：默认自动识别；选了某种语言就只按它认。还没做好的语言显示但不能选（2026-10-24 用户决定）。记录程序每隔几秒看一眼 #}
+      <form method="post" action="{{ url_for('game_language_setting') }}" class="setting">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div class="setting-text">
+          <label class="setting-name" for="language-select">游戏语言</label>
+          <div class="setting-desc">游戏界面用的语言。"自动识别"会在认出第一个画面时自己判断；选了某种语言，Evo 就只按这种语言识别</div>
+          {% if language.pending %}<div class="setting-desc">{{ language.pending | join('、') }} 还没做好，做好以后就能选</div>{% endif %}
+        </div>
+        <div class="setting-actions inline">
+          <select id="language-select" name="language">
+            <option value="{{ language.auto }}" {{ 'selected' if language.choice == language.auto }}>自动识别（推荐）</option>
+            {% for one in language.options %}
+            <option value="{{ one.value }}" {{ 'selected' if language.choice == one.value }}{{ ' disabled' if not one.ready }}>{{ one.name }}{{ '（还没做好）' if not one.ready }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn">保存</button>
+        </div>
+      </form>
       {# 游戏画面比例（game_aspect.py）：拉伸分辨率时截图还是显示器的比例，要另外知道游戏自己的比例。记录程序每隔几秒看一眼 #}
       <form method="post" action="{{ url_for('game_aspect_setting') }}" class="setting">
         <input type="hidden" name="token" value="{{ token }}">

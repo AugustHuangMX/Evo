@@ -7,6 +7,8 @@
 - 段位名、地图名：画面上的写法（"DIAMOND II"、"OLYMPUS"）→ 简体名字；简体照旧
 - 认语言：只有一种语言的关键字对得上就认定，之后只按它比；几种都对得上（分不出来）先不认定；只有一种语言时一开始就认定
 - 记录程序：一开始按测试语言（总结页的区域故意挪走），认出简体的总结页后换成简体的规则，读出来和只用简体时一样
+- 设置页"游戏语言"（2026-10-24 用户要的）：自动识别 + 简体中文、繁體中文、English，还没做好的显示但不能选；
+  选了存进设置，选还没做好的拒绝；记录程序按设置走：选了某种语言就只按它认，改回自动识别再重新认
 - 大厅校准：大厅之前最近的那一局是匹配局时不补段位，排位局、不知道模式的局照旧补
 
 截图不在仓库里，见 fake_game.py；找不到截图时只跑不用截图的部分。
@@ -16,14 +18,17 @@
 
 import copy
 import json
+import re
 import tempfile
 from pathlib import Path
 from unittest import mock
 
 from fake_game import BLACK, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
 
+import app_settings
 import calibration
 import game_lang
+import panel_app
 import ranks
 import storage
 from lobby import parse_tier
@@ -123,6 +128,60 @@ def calibration_checks():
     return out
 
 
+def setting_checks():
+    """设置页"游戏语言"：下拉框里有哪几种、设置怎么读，GameScreens 怎么跟着设置走（不用截图）。"""
+    out = {}
+    empty, langs = FOLDER / "lang-empty", FOLDER / "lang-setting"
+    empty.mkdir(parents=True, exist_ok=True)
+    write_lang(langs, "xx", {"name": "测试语言", "configs": {}})
+    game_lang._files.clear()
+    with mock.patch.object(game_lang, "LANG_DIR", empty):
+        out["options_now"] = game_lang.options()
+        app_settings.set_value(game_lang.SETTING_KEY, "zh-TW")
+        out["choice_not_ready"] = game_lang.choice()
+        app_settings.set_value(game_lang.SETTING_KEY, "zh-CN")
+        out["choice_ready"] = game_lang.choice()
+    with mock.patch.object(game_lang, "LANG_DIR", langs):
+        out["options_extra"] = game_lang.options()
+    game_lang._files.clear()
+    app_settings.set_value(game_lang.SETTING_KEY, game_lang.AUTO)
+
+    said, steps = [], []
+    s = GameScreens(LazyEngine(SMALL_CROP_PARAMS), ["zh-CN", "xx"], {"xx": unreadable_screens()}, log=said.append)
+    for choice in ("auto", "xx", "xx", "auto", "yy"):
+        s.use_choice(choice)
+        steps.append((s.lang, s.locked))
+    out["steps"], out["said"] = steps, said
+    one = GameScreens(LazyEngine(SMALL_CROP_PARAMS), ["zh-CN"])
+    one.use_choice("zh-CN")
+    one.use_choice("auto")
+    out["single"] = one.locked and one.lang == "zh-CN"
+    return out
+
+
+def panel_checks():
+    """设置页"识别"一栏的"游戏语言"下拉框和保存。"""
+    out = {}
+    panel_app.app.config["DB"] = str(FOLDER / "panel.db")
+    storage.connect(panel_app.app.config["DB"]).close()
+    client, token = panel_app.app.test_client(), panel_app.app.config["TOKEN"]
+    page = client.get("/settings").get_data(as_text=True)
+    out["page"] = bool('for="language-select"' in page and '<option value="auto" selected>自动识别（推荐）</option>' in page
+                       and re.search(r'<option value="zh-CN"\s*>简体中文</option>', page)
+                       and re.search(r'<option value="zh-TW"\s+disabled>繁體中文（还没做好）</option>', page)
+                       and re.search(r'<option value="en"\s+disabled>English（还没做好）</option>', page)
+                       and "繁體中文、English 还没做好，做好以后就能选" in page and "目前只支持中文游戏界面" not in page)
+    saved = client.post("/settings/game-language", data={"token": token, "language": "zh-CN"},
+                        follow_redirects=True).get_data(as_text=True)
+    out["save"] = bool(app_settings.get(game_lang.SETTING_KEY) == "zh-CN" and "游戏语言已改成" in saved
+                       and re.search(r'<option value="zh-CN"\s*selected\s*>简体中文</option>', saved))
+    out["not_ready"] = client.post("/settings/game-language", data={"token": token, "language": "zh-TW"}).status_code == 400         and app_settings.get(game_lang.SETTING_KEY) == "zh-CN"
+    out["no_token"] = client.post("/settings/game-language", data={"language": "auto"}).status_code != 302
+    client.post("/settings/game-language", data={"token": token, "language": "auto"})
+    out["back_auto"] = app_settings.get(game_lang.SETTING_KEY) == "auto"
+    return out
+
+
 def detect_checks(images):
     """GameScreens 认语言（用简体的截图，测试语言见 unreadable_screens）。"""
     engine = LazyEngine(SMALL_CROP_PARAMS)
@@ -164,14 +223,18 @@ def collect_checks(images):
     game_lang._files.clear()
     with mock.patch.object(game_lang, "LANG_DIR", langs), mock.patch.object(game_lang, "languages", lambda: ["xx", "zh-CN"]):
         rows, _, log = run_collect(frames, pictures.get)
+        app_settings.set_value(game_lang.SETTING_KEY, "zh-CN")  # 设置页选了简体：一开始就只按简体认
+        picked, _, picked_log = run_collect(frames, pictures.get)
+        app_settings.set_value(game_lang.SETTING_KEY, game_lang.AUTO)
     game_lang._files.clear()
     return {"plain": summary_row(plain), "switched": summary_row(rows),
-            "log": [line for line in log if "游戏语言" in line]}
+            "log": [line for line in log if "游戏语言" in line],
+            "picked": summary_row(picked), "picked_log": [line for line in picked_log if "游戏语言" in line]}
 
 
 def main():
-    print("游戏语言（规则按语言分开、认出游戏语言）")
-    r, cal = rule_checks(), calibration_checks()
+    print("游戏语言（规则按语言分开、认出游戏语言、设置页选游戏语言）")
+    r, cal, st, pn = rule_checks(), calibration_checks(), setting_checks(), panel_checks()
     checks = {
         "规则叠法：字典逐项合并、列表整个换掉，不改动简体的规则": r["merge"],
         "简体：读出来就是 config/ 里的文件（多一项 language）": r["default"],
@@ -184,6 +247,21 @@ def main():
         "地图名：简体照旧；别的语言按 {写法: 简体名字}，不管大小写、空格；都不像就不填": r["maps"],
         f"大厅校准：最近一局没有段位时，排位局和不知道模式的局补上、匹配局不补（{cal}）":
             cal == {"ranked": "白金", None: "白金", "pubs": None},
+        f"设置页能选的语言：简体中文、繁體中文、English，还没做好的标出来（{st['options_now']}）":
+            st["options_now"] == [("zh-CN", "简体中文", True), ("zh-TW", "繁體中文", False), ("en", "English", False)],
+        "config/lang/ 里有、上面没列的语言（社区加的）也能选，排在后面":
+            st["options_extra"][-1] == ("xx", "测试语言", True) and len(st["options_extra"]) == 4,
+        "设置里存的是还没做好的语言：当作自动识别；存的是简体：就是简体":
+            st["choice_not_ready"] == "auto" and st["choice_ready"] == "zh-CN",
+        f"记录程序跟着设置走：选了某种语言就只按它认；改回自动识别，下一个画面重新认；不认识的当作自动识别（{st['steps']}）":
+            st["steps"] == [("zh-CN", False), ("xx", True), ("xx", True), ("xx", False), ("xx", False)]
+            and st["said"] == ["游戏语言：xx（设置页选的）", "游戏语言：改成自动识别，认出下一个画面时定下来"],
+        "只有一种语言时，改回自动识别也还是它": st["single"],
+        "设置页：\"识别\"一栏有\"游戏语言\"下拉框，默认自动识别；繁體中文、English 灰着不能选，写明还没做好；不再写\"只支持中文\"":
+            pn["page"],
+        "选简体中文保存：记进设置，页面上选中，顶部提示": pn["save"],
+        "选还没做好的语言（繁體中文）：拒绝，设置不变": pn["not_ready"],
+        "没带口令：拒绝": pn["no_token"] and pn["back_auto"],
     }
     try:
         images = {SUMMARY: load(shot(SUMMARY))}
@@ -201,6 +279,9 @@ def main():
         f"记录程序的日志：开头写认得出哪几种语言，认定时写一行（{c['log']}）":
             len(c["log"]) == 2 and c["log"][0] == "认得出的游戏语言：测试语言、简体中文（认出第一个画面时定下来）"
             and c["log"][1].endswith("游戏语言：简体中文（从总结页认出）"),
+        f"记录程序：设置页选了简体，一开始就只按简体认，读出来一样（日志：{c['picked_log'][1:]}）":
+            c["picked"] == c["plain"] and len(c["picked_log"]) == 2
+            and c["picked_log"][1].endswith("游戏语言：简体中文（设置页选的）"),
     })
     return report(checks)
 

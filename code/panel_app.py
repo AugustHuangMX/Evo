@@ -29,6 +29,7 @@ import app_settings
 import autostart
 import data_move
 import game_aspect
+import game_lang
 import ranks
 import screenshots
 import sounds
@@ -1023,6 +1024,7 @@ def settings():
         "settings.html",
         resolution=f"{size[0]} × {size[1]}" if size else None,
         aspect=aspect_view(size),
+        language=language_view(),
         move=move_view(),
         autostart={**autostart.status(), "blocked": autostart.unavailable(),
                    "failed": session.pop("autostart_failed", None)},
@@ -1063,6 +1065,13 @@ def aspect_view(size):
         found = size[0] / size[1]  # 没读到游戏设置：和屏幕一样
     return {"choice": game_aspect.choice(), "auto": game_aspect.AUTO, "options": list(game_aspect.ASPECTS),
             "detected": game_aspect.name(found) if found else None, "why": why}
+
+
+def language_view():
+    """设置页"游戏语言"：选了什么、下拉框里有哪几种（还没做好的显示但不能选，见 game_lang.options）。"""
+    options = [{"value": lang, "name": name, "ready": ready} for lang, name, ready in game_lang.options()]
+    return {"choice": game_lang.choice(), "auto": game_lang.AUTO, "options": options,
+            "pending": [o["name"] for o in options if not o["ready"]]}
 
 
 def move_view():
@@ -1114,6 +1123,18 @@ def game_aspect_setting():
     app_settings.set_value(game_aspect.SETTING_KEY, value)
     picked = "自动检测" if value == game_aspect.AUTO else value
     flash(f"游戏画面比例已改成\"{picked}\"：正在记录的话，几秒内就按新的比例识别。", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/settings/game-language")
+def game_language_setting():
+    """"游戏语言"：自动识别 / 某一种做好了的语言。记录程序每隔几秒看一眼设置，所以几秒内生效。"""
+    value = request.form.get("language")
+    if value != game_lang.AUTO and value not in game_lang.languages():
+        abort(400)
+    app_settings.set_value(game_lang.SETTING_KEY, value)
+    picked = "自动识别" if value == game_lang.AUTO else game_lang.label(value)
+    flash(f"游戏语言已改成\"{picked}\"：正在记录的话，几秒内就按新的设置识别。", "ok")
     return redirect(url_for("settings"))
 
 

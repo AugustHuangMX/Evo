@@ -7,6 +7,9 @@
 - 读出来的地图名、段位名、模式统一换成简体存（"Olympus" → "奥林匹斯"），数据库和面板不用分语言
 - 游戏开着时没法换语言，所以记录程序每开一次游戏只认一次是哪种语言（见 screens.GameScreens）
 
+- 设置页"游戏语言"（settings.json 里的 game_language）：自动识别（默认）/ 某一种语言（只按它认，不再自己判断）。
+  设置页列出 KNOWN 里的几种，还没有规则文件的显示但不能选（2026-10-24 用户决定）；记录程序每隔几秒看一眼设置
+
 加一种语言：截好这种语言的各个画面，写 config/lang/<语言>.json，生成参照图
 （python code/screens.py --lang <语言> --save-template ...），跑 python tests/run_all.py。
 
@@ -17,20 +20,25 @@ import copy
 import json
 from pathlib import Path
 
+import app_settings
 from paths import CONFIG_DIR
 
 DEFAULT = "zh-CN"
 DEFAULT_NAME = "简体中文"
+KNOWN = {DEFAULT: DEFAULT_NAME, "zh-TW": "繁體中文", "en": "English"}  # 设置页列出的（有没有做好看 languages()）
 LANG_DIR = CONFIG_DIR / "lang"
 TEMPLATE_DIR = CONFIG_DIR / "templates"
+SETTING_KEY = "game_language"
+AUTO = "auto"
+CHECK_SECONDS = 5  # 记录程序每隔几秒看一眼设置页的"游戏语言"
 
-_files = {}  # 语言 → config/lang/<语言>.json 的内容（读一次就留着）
+_files = {}  # config/lang/<语言>.json 的路径 → 内容（读一次就留着；没有这个文件为 None）
 
 
 def _lang_file(lang, lang_dir=None):
-    key = (lang, str(lang_dir))
+    path = Path(lang_dir or LANG_DIR) / f"{lang}.json"
+    key = str(path)
     if key not in _files:
-        path = Path(lang_dir or LANG_DIR) / f"{lang}.json"
         _files[key] = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
     return _files[key]
 
@@ -43,11 +51,24 @@ def languages(lang_dir=None):
 
 
 def label(lang, lang_dir=None):
-    """语言的名字（写日志用）：简体中文、繁體中文、English。"""
+    """语言的名字（写日志、设置页用）：简体中文、繁體中文、English。"""
     if lang in (None, DEFAULT):
         return DEFAULT_NAME
     data = _lang_file(lang, lang_dir)
-    return (data or {}).get("name", lang)
+    return (data or {}).get("name", KNOWN.get(lang, lang))
+
+
+def choice():
+    """设置页选的游戏语言：AUTO（自动识别），或者一种有规则文件的语言（选过、后来规则文件没了的，当作 AUTO）。"""
+    value = app_settings.get(SETTING_KEY, AUTO)
+    return value if value in languages() else AUTO
+
+
+def options():
+    """设置页"游戏语言"下拉框里的语言：[(语言, 名字, 做好了没有)]。KNOWN 里的几种都列出来（还没做好的显示但不能选），
+    config/lang/ 里有、KNOWN 里没有的（社区加的）排在后面。"""
+    ready = languages()
+    return [(lang, label(lang), lang in ready) for lang in [*KNOWN, *(x for x in ready if x not in KNOWN)]]
 
 
 def _merge(base, over):

@@ -420,6 +420,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         return summary.saved + post.inserted
 
     frames, last_seen, warned = 0, time.monotonic(), False  # 截了几帧；最近一次认出画面的时刻
+    next_lang_check = time.monotonic()  # 下一次看设置页"游戏语言"的时刻
     try:
         while keep_going():
             tick = time.monotonic()
@@ -434,6 +435,9 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 frames += 1
                 now = datetime.now()
                 aspect.check(frame)  # 游戏画面比例（16:10、4:3 时界面摆法不一样，见 layout.py）
+                if tick >= next_lang_check:  # 设置页的"游戏语言"：每隔几秒看一眼，改了几秒内生效
+                    next_lang_check = tick + game_lang.CHECK_SECONDS
+                    detector.use_choice(game_lang.choice())
                 screen = detector.detect(frame)
                 if detector.lang != lang:
                     lang = detector.lang

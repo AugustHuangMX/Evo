@@ -121,6 +121,7 @@ class GameScreens:
       就认定是这种语言：游戏开着时换不了语言，之后只按它比，不多花 CPU
     - 几种语言的关键字都对得上（比如繁体和简体的"排名第"一样）：画面照样认出，语言先不认定
     - 只有一种语言时，一开始就认定
+    - 设置页选了某种语言（use_choice）：只按它认，不再自己判断；改回"自动识别"：认出下一个画面时重新定
     lang：现在按哪种语言读（认定之前是最近一次认出画面的那种，一开始是简体）；locked：认定了没有。
     configs：{语言: screens.json 的规则}（测试用；不给就按 game_lang 读）。"""
 
@@ -130,7 +131,21 @@ class GameScreens:
         self.detectors = {lang: ScreenDetector(engine, configs.get(lang), lang) for lang in langs}
         self.lang = langs[0]
         self.locked = len(langs) == 1
+        self.choice = game_lang.AUTO
         self.log = log or (lambda message: None)
+
+    def use_choice(self, choice):
+        """设置页的"游戏语言"（game_lang.choice()）：AUTO 自己认；某种语言 = 只按它认（没有这种语言时当作 AUTO）。"""
+        choice = choice if choice in self.detectors else game_lang.AUTO
+        if choice == self.choice:
+            return
+        self.choice = choice
+        if choice != game_lang.AUTO:
+            self.lang, self.locked = choice, True
+            self.log(f"游戏语言：{game_lang.label(choice)}（设置页选的）")
+        else:
+            self.locked = len(self.detectors) == 1
+            self.log("游戏语言：改成自动识别" + ("" if self.locked else "，认出下一个画面时定下来"))
 
     @property
     def cfg(self):
