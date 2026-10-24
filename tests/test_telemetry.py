@@ -233,7 +233,8 @@ def panel_checks(conn):
         "查看会发送的内容" not in settings and "随机编号" not in settings
         and app_settings.get(telemetry.ID_KEY) not in settings and "关闭并删除已发送的数据" not in settings)
     out["删除的地址已经去掉"] = client.post("/settings/telemetry/delete", data={"token": token}).status_code == 404
-    out["关于 Evo：写明只有更新和同意的匿名统计会联网"] = "只有更新和你同意的匿名统计会联网" in settings
+    out["关于 Evo：不再写'全本地'（2026-10-24 用户决定：不强调不联网）"] = (
+        "关于 Evo" in settings and "全本地" not in settings and "会联网" not in settings)
 
     out["没带口令：拒绝"] = client.post("/settings/telemetry", data={"on": "1"}).status_code == 403
     return out
