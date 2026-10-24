@@ -13,7 +13,6 @@ import fake_game  # noqa: F401  要在项目代码之前导入（设置临时数
 import test_accounts
 import test_autostart
 import test_aspect
-import test_cloud_sync
 import test_data_move
 import test_diag
 import test_eliminated
@@ -60,8 +59,14 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "数据页\"全体玩家\"（开了匿名统计才能看、下载汇总、和自己比、筛选、连不上）": test_global_stats,
          "总览页\"关注我\"（B 站、小黑盒）": test_follow,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
-         "云同步（二维码、绑定、上传、重传、删除、连不上、手机上解绑、设置页）": test_cloud_sync,
          "诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_diag}
+
+try:  # 云同步（微信小程序）的测试只在开发者电脑上，不上传 GitHub（2026-10-24 用户决定）：有就一起跑
+    import test_cloud_sync
+
+    TESTS["云同步（二维码、绑定、上传、重传、删除、连不上、手机上解绑、设置页）"] = test_cloud_sync
+except ImportError:
+    pass
 
 
 def main():

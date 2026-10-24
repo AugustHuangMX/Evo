@@ -350,7 +350,8 @@
       </div>
     </section>
 
-    {% include "_cloud.html" %}
+    {# 微信小程序（_cloud.html、panel_cloud.py）：只在开发者电脑上、小程序上线前不打进安装包，没有就不显示 #}
+    {% if cloud_view is defined %}{% include "_cloud.html" %}{% endif %}
 
     {# 匿名统计（telemetry.py）：默认关；打开后每小时发送一次同意以后的对局。只有开关和一句说明
        （2026-10-24 用户决定：不显示发送状态、发送内容的原样，去掉"关闭并删除已发送的数据"） #}

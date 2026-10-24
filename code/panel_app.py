@@ -39,7 +39,10 @@ import telemetry
 import update_check
 import updater
 import paths
-import panel_cloud
+try:  # 设置页"微信小程序"一栏。小程序的文件只在开发者电脑上，不上传 GitHub、小程序上线前不打进安装包
+    import panel_cloud  # （2026-10-24 用户决定）：没有就不显示这一栏
+except ImportError:
+    panel_cloud = None
 from paths import CAPTURES_DIR, CONFIG_DIR, PANEL_DIR, data_absolute
 from post_match import COUNTED_KILLS_NOTES, NO_SUMMARY_NOTES
 
@@ -123,7 +126,8 @@ app = Flask(__name__, template_folder=str(PANEL_DIR / "templates"), static_folde
 app.secret_key = secrets.token_hex(16)  # 每次启动随机生成，用于页面上的提示消息
 app.config["TOKEN"] = secrets.token_urlsafe(16)  # 修改、删除时要带上的口令
 app.config["DB"] = storage.DB_PATH
-app.register_blueprint(panel_cloud.bp)  # 设置页"微信小程序"：绑定、解绑、立即同步（panel_cloud.py）
+if panel_cloud is not None:
+    app.register_blueprint(panel_cloud.bp)  # 设置页"微信小程序"：绑定、解绑、立即同步（panel_cloud.py）
 
 
 # ---------- 数据库连接：每次网页请求打开一次，请求结束时关闭 ----------

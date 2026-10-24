@@ -157,6 +157,12 @@
 
 ### 2026-10-24
 
+- **微信小程序的内容不上传 GitHub**（2026-10-24 用户决定"永远都不要上传 github"；范围用户选的：小程序本身 + Evo 里绑定、上传战绩的部分，别的文档照常上传）。当时 GitHub 上的 main 还是 0.3.8（`e61a85a`），小程序的东西都没推过：
+  - 改写还没推送的 23 个本机提交，拿掉 `miniprogram/`、`docs/小程序.md`、`code/cloud_sync.py`、`code/panel_cloud.py`、`code/qr.py`、`panel/templates/_cloud.html`、`tests/test_cloud_sync.py`、`tools/cloud_ping.py`（只用 Git 内部命令重建提交，作者、时间、说明不变，不碰工作区：另一个会话正在工作，它没提交的 18 个文件原样没动）；只改了小程序页面的那一个提交（"小程序页面……"）跳过。核对：新的每个提交里都没有这些文件，最后的内容 = 原来的去掉这些文件。原来的提交在本机分支 `local/miniprogram-history`（不推送），文件本身留在本机、写进 `.gitignore`
+  - GitHub 上的 Evo 没有这些文件也能运行：`evo_app.py`、`panel_app.py` 找不到就不同步、不显示"微信小程序"一栏（`settings.html` 有 `cloud_view` 才 include）；`run_all.py` 有 `test_cloud_sync` 才跑；`tools/evo.spec` 加 `WITH_CLOUD = False`：小程序上线前安装包里不带这几个模块和 `_cloud.html`
+  - 验证：导出要推送的样子（没有这些文件）单独跑：面板四页都打得开、设置页没有这一栏；`test_telemetry` 36、`test_global_stats` 29、`test_stats_page` 28、`test_sounds` 67、`test_share` 30、`test_follow` 8 项全过。本机（有这些文件）`test_cloud_sync` 47 项全过
+  - CLAUDE.md"协作约定"写明；记忆里也记了：每次推送前查 `git log origin/main..main -- <这些路径>` 为空
+
 - **数据页"全体玩家"**（2026-10-24 和用户讨论定的：在 Evo 的数据页里和所有 Evo 玩家对比；只有开了匿名统计的人能看，没开时蒙版 + 锁 + 开启按钮；队友的击杀、伤害也算，已经同意的人不用重新问；样本少也照样显示、不写说明；防刷先不管；范围先放"全部 / 近 7 天"，赛季下个赛季前再讨论；右上角加刷新小按钮；四项都放，前三项突出、段位分布收起来）：
   - 匿名统计多发两名队友这一局的击杀 / 助攻 / 击倒 / 伤害（`telemetry.py` 的 `mate_stats`，单独一项，老服务器照收）
   - 服务器（`server/stats/`）：收 `mate_stats`（`matches` 加 8 列，`add_mate_stats.sql`）；定时任务每小时算一次汇总存进 `summary` 表（有新数据或换了一天才算），`GET /v1/summary` 读出来。10 份（范围 × 模式 × 段位组），传奇按全队三个人算，组合前 30，每名玩家的场均（排好序），段位分布。用线上数据的副本在本机算（783 局，约 40 KB），再用 Python 从同一份数据独立算一遍逐项比：全部一致（只有 x.xx5 的四舍五入 Python 和 JS 写法不同）。发现简体中文的匹配局模式都是空的（开局画面规则里只有"排位赛"），"匹配"改成按"不是排位"算

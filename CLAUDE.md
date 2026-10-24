@@ -88,3 +88,4 @@ RP：游戏里没有单一的"总 RP"，只有"段位 + 段内进度"。**总分
 - 新增依赖前先说明理由和对内存 / 体积的影响
 - 不要删除或覆盖我的截图样本
 - 不提交到仓库：`captures/`（测试截图）、`data/`、数据库文件、`site/`；小程序的 AppSecret、云开发的密钥（也不写进 Evo）；别的玩家的名字和 ID（队友的测试答案只在本机：`tests/replay_20261016_teammates.csv`、`tests/in_match_teammates.json`）
+- **微信小程序的内容永远不上传 GitHub**（2026-10-24 用户决定）：`miniprogram/`、`docs/小程序.md`，以及 Evo 里绑定、上传战绩的 `code/cloud_sync.py`、`code/panel_cloud.py`、`code/qr.py`、`panel/templates/_cloud.html`、`tests/test_cloud_sync.py`、`tools/cloud_ping.py`（都写在 `.gitignore` 里，只在本机；之前的提交在本机分支 `local/miniprogram-history`，不推送）。GitHub 上的 Evo 没有这些文件也要能运行（找不到就不显示那一栏、不同步）；小程序上线前也不打进安装包（`tools/evo.spec` 的 `WITH_CLOUD`）。别的文档里写到小程序照常上传。推送前先查 `git log origin/main..main -- <这些路径>` 为空

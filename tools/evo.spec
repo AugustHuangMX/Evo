@@ -6,6 +6,10 @@ from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 
 ROOT = os.path.dirname(SPECPATH)  # 项目文件夹（本文件在 tools/ 里）
 CODE = os.path.join(ROOT, "code")  # 程序代码
+# 微信小程序（绑定、上传战绩：cloud_sync.py、panel_cloud.py、qr.py、_cloud.html）：这些文件只在开发者电脑上，不上传 GitHub
+# （2026-10-24 用户决定）。小程序上线以前不打进安装包（0.4.0 起），Evo 找不到它们就不显示那一栏、不同步；上线时改成 True
+WITH_CLOUD = False
+CLOUD_MODULES = ["cloud_sync", "panel_cloud", "qr"]
 
 datas = [
     (os.path.join(ROOT, "config"), "config"),                    # 识别规则
@@ -22,12 +26,14 @@ a = Analysis(
     [os.path.join(CODE, "evo_app.py")],
     pathex=[CODE],
     datas=datas,
-    excludes=["tkinter", "matplotlib", "IPython", "pytest"],  # 用不到的大模块
+    excludes=["tkinter", "matplotlib", "IPython", "pytest", *([] if WITH_CLOUD else CLOUD_MODULES)],  # 用不到的大模块
     # pystray 是 LGPL：以 .py 源文件形式放在 _internal/pystray 里（不压进程序内部），别人可以换成自己改过的版本
     module_collection_mode={"pystray": "py"},
 )
 # OpenCV 自带的视频读写组件（ffmpeg，29 MB）：Evo 只读写图片，用不到（2026-10-17 实测读图、存 PNG、缩放、比对都不会加载它）
 a.binaries = [b for b in a.binaries if "opencv_videoio_ffmpeg" not in b[0]]
+if not WITH_CLOUD:
+    a.datas = [d for d in a.datas if os.path.basename(d[0]) != "_cloud.html"]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

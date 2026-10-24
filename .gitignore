@@ -48,3 +48,14 @@ Thumbs.db
 desktop.ini
 # 对局中样本的队友名字（别的玩家的名字），只留在本机（找不到时只检查读到了名字，见 tests/test_in_match.py）
 tests/in_match_teammates.json
+
+# ===== 微信小程序：只在本机，不上传 GitHub（2026-10-24 用户决定；原来的提交在本机分支 local/miniprogram-history）=====
+# 小程序本身（页面、云函数）和 Evo 里绑定、上传战绩的部分。GitHub 上的 Evo 没有这些文件也能运行（不显示那一栏、不同步）
+miniprogram/
+docs/小程序.md
+code/cloud_sync.py
+code/panel_cloud.py
+code/qr.py
+panel/templates/_cloud.html
+tests/test_cloud_sync.py
+tools/cloud_ping.py
