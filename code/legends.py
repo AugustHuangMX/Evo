@@ -17,10 +17,9 @@ import time
 from pathlib import Path
 
 import cv2
-import numpy as np
 
 from ocr import load_config, load_image
-from screens import TEMPLATE_DIR, gray_crop, load_template, outline
+from screens import TEMPLATE_DIR, gray_crop, load_template, match, outline
 
 LEGEND_TEMPLATE_DIR = TEMPLATE_DIR / "legends"
 
@@ -52,8 +51,7 @@ class LegendDetector:
         for key, template in (templates or self.templates).items():
             if template.shape[0] > region.shape[0] or template.shape[1] > region.shape[1]:
                 continue
-            s = cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED)
-            result.append((key, float(np.nan_to_num(s, nan=-1.0).max())))  # 纯色的区域算不出相似度，当作不像
+            result.append((key, float(match(region, template).max())))  # 纯色的区域算不出相似度，当作不像（见 screens.match）
         return sorted(result, key=lambda pair: pair[1], reverse=True)
 
     def decide(self, ranked, min_similarity=None, min_margin=None):

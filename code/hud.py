@@ -26,7 +26,7 @@ from layout import Mapping, cut
 from legends import LegendDetector
 from ocr import load_config, load_image
 from player_name import pick_name
-from screens import gray_crop, outline
+from screens import gray_crop, match, outline
 from storage import name_key
 
 CONFIG_NAME = "hud.json"
@@ -83,7 +83,7 @@ def best_match(region, template):
     """参照图在 region 里最像的位置：(相似度, x, y)。纯色区域算不出相似度，当作不像。"""
     if template is None or template.shape[0] > region.shape[0] or template.shape[1] > region.shape[1]:
         return -1.0, 0, 0
-    result = np.nan_to_num(cv2.matchTemplate(outline(region), outline(template), cv2.TM_CCOEFF_NORMED), nan=-1.0)
+    result = match(outline(region), outline(template))  # 纯色的位置当作不像（见 screens.match）
     _, score, _, (x, y) = cv2.minMaxLoc(result)
     return float(score), x, y
 

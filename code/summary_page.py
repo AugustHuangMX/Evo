@@ -115,10 +115,11 @@ def read_summary(engine, img, cfg, save_crops=False):
 
 
 def is_champion(engine, img, cfg):
-    """总结页顶部的大字是不是"捍卫者"（拿冠军；被淘汰时是"全军覆没"）。"""
+    """总结页顶部的大字是不是"捍卫者"（拿冠军；被淘汰时是"全军覆没"）。配置里可以写几种（别的语言还没核实时）。"""
     banner = cfg["banner"]
+    names = [banner["champion"]] if isinstance(banner["champion"], str) else banner["champion"]
     result = engine(crop(img, banner["roi"], cfg, banner.get("anchor")))
-    return any(banner["champion"] in text for text in result.txts or ())
+    return any(name in text for text in result.txts or () for name in names)
 
 
 def to_seconds(duration):

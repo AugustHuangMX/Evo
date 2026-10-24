@@ -174,15 +174,15 @@ def panel_checks():
                        and re.search(r'<option value="zh-TW"\s+disabled>繁體中文（还没做好）</option>', page)
                        and re.search(r'<option value="en"\s+disabled>English（还没做好）</option>', page)
                        and "繁體中文、English 还没做好，做好以后就能选" in page and "目前只支持中文游戏界面" not in page)
-    page = client.get("/settings").get_data(as_text=True)  # 现在的规则：有英文，没有繁体
+    page = client.get("/settings").get_data(as_text=True)  # 现在的规则：英文、繁体都有了
     out["page_now"] = bool(re.search(r'<option value="en"\s*>English</option>', page)
-                           and re.search(r'<option value="zh-TW"\s+disabled>繁體中文（还没做好）</option>', page)
-                           and "繁體中文 还没做好，做好以后就能选" in page)
+                           and re.search(r'<option value="zh-TW"\s*>繁體中文</option>', page)
+                           and "还没做好" not in page)
     saved = client.post("/settings/game-language", data={"token": token, "language": "zh-CN"},
                         follow_redirects=True).get_data(as_text=True)
     out["save"] = bool(app_settings.get(game_lang.SETTING_KEY) == "zh-CN" and "游戏语言已改成" in saved
                        and re.search(r'<option value="zh-CN"\s*selected\s*>简体中文</option>', saved))
-    refused = client.post("/settings/game-language", data={"token": token, "language": "zh-TW"}).status_code
+    refused = client.post("/settings/game-language", data={"token": token, "language": "ja"}).status_code
     out["not_ready"] = refused == 400 and app_settings.get(game_lang.SETTING_KEY) == "zh-CN"
     out["no_token"] = client.post("/settings/game-language", data={"language": "auto"}).status_code != 302
     client.post("/settings/game-language", data={"token": token, "language": "auto"})
@@ -267,9 +267,9 @@ def main():
         "只有一种语言时，改回自动识别也还是它": st["single"],
         "设置页（只有简体的规则时）：\"识别\"一栏有\"游戏语言\"下拉框，默认自动识别；繁體中文、English 灰着不能选，写明还没做好；不再写\"只支持中文\"":
             pn["page"],
-        "有了英文的规则（config/lang/en.json）：English 能选了，繁體中文还灰着": pn["page_now"],
+        "有了英文、繁体的规则（config/lang/）：English、繁體中文都能选，不再写\"还没做好\"": pn["page_now"],
         "选简体中文保存：记进设置，页面上选中，顶部提示": pn["save"],
-        "选还没做好的语言（繁體中文）：拒绝，设置不变": pn["not_ready"],
+        "选不支持的语言（日文 ja）：拒绝，设置不变": pn["not_ready"],
         "没带口令：拒绝": pn["no_token"] and pn["back_auto"],
     }
     try:

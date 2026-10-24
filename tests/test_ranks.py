@@ -68,6 +68,8 @@ def xp_checks():
         "下一段位:青铜IV": ("菜鸟", "I"),
         "下一段位:菜鸟IV": None,
         "下一段位:翡翠II": None,
+        "下一段位:白金": None,  # 分段的段位读不到段数（"I"很细，常被漏掉）：不猜成黄金 I（2026-10-24 繁体截图）
+        "下一段位:白金！": ("白金", "II"),  # "I"读成"！"
     }
     wrong = {t: current_rank(t) for t, want in cases.items() if current_rank(t) != want}
     return {f"经验值页由'下一段位'推当前段位（{len(cases)} 种写法）{'' if not wrong else f'：错了 {wrong}'}": not wrong}

@@ -34,6 +34,7 @@ import test_stats_page
 import test_summary_page
 import test_teammates
 import test_telemetry
+import test_traditional
 import test_updater
 import test_webview2
 
@@ -47,6 +48,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "游戏画面比例（16:10、4:3：换算、自动检测、设置页、整局重放）": test_aspect,
          "游戏语言（规则按语言分开、认出游戏语言、设置页选游戏语言、匹配局不补段位）": test_game_lang,
          "英文游戏画面（排位、匹配两局整段重放）": test_english,
+         "繁体中文游戏画面（匹配两局、排位一局整段重放）": test_traditional,
          "数据文件夹（放在哪里、搬家、指路文件、老玩家自动搬）": test_data_move,
          "传奇头像（图标、许可文件、战绩页和总览页）": test_legend_icons,
          "开机自动启动（启动项、任务管理器里关掉、换了位置、被拦住、面板）": test_autostart,

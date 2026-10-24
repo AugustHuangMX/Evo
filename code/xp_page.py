@@ -19,7 +19,7 @@ import ranks
 from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image, read_lines
 
 CONFIG_NAME = "xp.json"
-ROMAN = {"Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "1": "I", "l": "I", "|": "I"}
+ROMAN = {"Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "1": "I", "l": "I", "|": "I", "!": "I", "！": "I"}
 
 
 def normalize(text):
@@ -74,8 +74,10 @@ def current_rank(next_text, names=None):
         prev = tiers[t - 1]
         return prev, (divisions[-1] if ranks.has_divisions(prev) else None)
 
-    if roman == "":  # 下一段位不分段（如大师）
-        return top_of_previous()
+    if roman == "":
+        if ranks.has_divisions(tier):  # 分段的段位却没读到段数（"I"很细，常被漏掉）：不猜，留空（回大厅时用大厅的段位补）
+            return None
+        return top_of_previous()  # 下一段位不分段（如大师）
     if roman not in divisions:
         return None
     d = divisions.index(roman)

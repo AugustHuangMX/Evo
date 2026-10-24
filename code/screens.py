@@ -50,6 +50,29 @@ def load_template(name, lang=None):
     return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
 
 
+FLAT = 1e-3  # 窗口里轮廓的方差小于这个（纯色、没有一点纹理），比出来的相似度不算数
+LOW = 0.3  # 相似度比这个低时用不上（认画面、图标、传奇的门槛都在 0.35 以上），不用查平不平
+
+
+def match(region, template):
+    """参照图轮廓在 region（也是轮廓）里每个位置的相似度（TM_CCOEFF_NORMED，-1 到 1），用的人只看最大值。
+    纯色、没有一点纹理的位置当作不像（-1）：OpenCV 在这种位置上会算出 0.9、1.0 这样的假高分
+    （2026-10-24 繁体截图：桌面上录像软件黑色的播放器，淘汰画面的参照图比出 1.0）。
+    最像的都不到 LOW（所有门槛都比它高）就不用管；够像时只查最像的那个位置平不平（几乎总是不平），
+    平的话才把所有平的位置去掉。每帧要比一百多次，这样几乎不多花时间。"""
+    result = np.nan_to_num(cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED), copy=False, nan=-1.0)
+    _, best, _, (x, y) = cv2.minMaxLoc(result)
+    h, w = template.shape[:2]
+    if best < LOW or region[y:y + h, x:x + w].var() >= FLAT:
+        return result
+    s, sq = cv2.integral2(region, sdepth=cv2.CV_64F, sqdepth=cv2.CV_64F)
+    total = s[h:, w:] - s[:-h, w:] - s[h:, :-w] + s[:-h, :-w]
+    squares = sq[h:, w:] - sq[:-h, w:] - sq[h:, :-w] + sq[:-h, :-w]
+    variance = squares / (h * w) - (total / (h * w)) ** 2
+    result[variance < FLAT] = -1.0
+    return result
+
+
 def compact(text):
     """比关键字前：去掉空格、换成小写。"""
     return text.replace(" ", "").lower()
@@ -96,9 +119,8 @@ class ScreenDetector:
         spec = self.cfg["screens"][name]
         gray = gray_crop(frame, spec["roi"], self.cfg["base_resolution"], spec.get("anchor"))
         region = outline(shrunk(gray, spec.get("shrink", 1)))
-        # 纯色的区域（如黑屏）算不出相似度，当作不像
-        return max(float(np.nan_to_num(cv2.matchTemplate(region, t, cv2.TM_CCOEFF_NORMED), nan=-1.0).max())
-                   for t in templates)
+        # 纯色的区域（如黑屏）算不出相似度，当作不像（见 match）
+        return max(float(match(region, t).max()) for t in templates)
 
     def looks_like(self, frame, name):
         """第 1 步：外观像不像。没有参照图的画面一律算像（直接交给识别）。"""
