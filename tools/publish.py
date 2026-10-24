@@ -315,11 +315,12 @@ def update_site(digest, size, dry_run):
 # ---------- 更新日志页（site/changelog.html） ----------
 
 def changelog_groups(notes):
-    """更新内容按开头的"新增：""改进：""修复："分组、去掉开头。返回 [(组名, 样式, [条目…])…]，空的组不要。"""
+    """更新内容按开头的"新增：""改进：""修复：""其他："分组、去掉开头（别的开头原样归到"其他"）。
+    返回 [(组名, 样式, [条目…])…]，空的组不要。0.4.0 时"其他："没去掉，页面上成了"其他"下面一条"其他：……"。"""
     groups = {name: [] for name, _ in NOTE_GROUPS}
     for note in notes:
         name, sep, rest = note.partition("：")
-        if sep and name in groups and name != "其他" and rest.strip():
+        if sep and name in groups and rest.strip():
             groups[name].append(rest.strip())
         else:
             groups["其他"].append(note)
