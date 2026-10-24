@@ -38,22 +38,27 @@ _kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTR
 _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 
 
-def process_names():
-    """当前所有进程的名字（小写），如 {"explorer.exe", "r5apex.exe", ...}。"""
+def processes():
+    """当前所有进程：[(进程号, 名字（小写）), ...]，如 [(4321, "r5apex.exe"), ...]。"""
     snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snapshot in (None, INVALID_HANDLE_VALUE):
-        return set()
-    names = set()
+        return []
+    found = []
     try:
         entry = PROCESSENTRY32W()
         entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
         ok = _kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
         while ok:
-            names.add(entry.szExeFile.lower())
+            found.append((entry.th32ProcessID, entry.szExeFile.lower()))
             ok = _kernel32.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
         _kernel32.CloseHandle(snapshot)
-    return names
+    return found
+
+
+def process_names():
+    """当前所有进程的名字（小写），如 {"explorer.exe", "r5apex.exe", ...}。"""
+    return {name for _, name in processes()}
 
 
 def game_running(names=GAME_PROCESSES):

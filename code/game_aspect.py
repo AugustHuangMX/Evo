@@ -9,6 +9,9 @@
 记录程序每隔几秒看一眼（AspectWatcher：设置改了、文件改了才重新读），变了就写一行日志。
 
 查看自动检测的结果：python code/game_aspect.py
+
+app_settings 用到时才 import：诊断工具（evo_diag.py）只读视频设置文件，不能连带 import paths.py
+（它一 import 就会在程序旁边建数据文件夹）。
 """
 
 import ctypes
@@ -20,7 +23,6 @@ from ctypes import wintypes
 from fractions import Fraction
 from pathlib import Path
 
-import app_settings
 import layout
 
 SETTING_KEY = "game_aspect"
@@ -96,6 +98,8 @@ def from_video_config(path=None):
 
 def choice():
     """设置页选的：AUTO 或 ASPECTS 里的一个。"""
+    import app_settings
+
     value = app_settings.get(SETTING_KEY, AUTO)
     return value if value in ASPECTS else AUTO
 
