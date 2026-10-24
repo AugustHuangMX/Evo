@@ -199,4 +199,9 @@
   - 跟着改：设置页"关于 Evo"、`tools/build.py` 随安装包的许可证说明（加了源代码地址）、三个声音包的 `pack.json` 和 `assets/sounds/README.md`、传奇头像的两份 `LICENSE.txt`（`tests/test_legend_icons.py` 改查"AGPL-3.0"）、CLAUDE.md 原则 3（不复制别人代码的理由换成：代码全是自己的，以后才能单独授权）、`docs/底座.md`、`docs/面板.md`、`docs/对局全流程图.md`
   - 官网（`site/` 首页的下载信息和常见问题、三个页面的页脚）本机已改，下次发版时随 publish.py 上线（用户决定）；这次只提交、不推送，发版时再推
   - 验证：`tests/test_legend_icons.py` 12 项、`tests/test_sounds.py` 72 项、`tests/test_telemetry.py` 35 项全过；`tests/test_autostart.py` 有 2 项没过（首页、战绩页顶部问开机自启），和这次无关（这次没改那两页，工作区里另有别的会话没提交的 `base.html`、`panel_app.py`）。官网首页用 Edge 无界面模式截图看过：电脑上一行放得下，手机上"免费开源（AGPL-3.0）"整项换行，不拆开
-
+- **小程序第 ① 步：试通**（2026-10-24，用户决定做微信小程序 + 微信云开发同步战绩，项目从"全本地"改成"本地优先"；方案和定下来的几项见 `docs/小程序.md`）：
+  - 项目 `miniprogram/`：`app/` 试通用的首页（点按钮调云函数），`cloud/ping` 试通用的云函数（回调用者是谁、云端时间）；AppID `wx66778b2164382d27`，云开发免费环境 `evo-tracker-d9gxbsamvb3e3b063`。用户在开发者工具里先用模板建过项目，`project.config.json` 被我没看就覆盖了（原样从开发者工具的模板缓存找回、备份过），模板的示例文件用户同意后删了（腾讯的示例代码，不能进仓库）
+  - 小程序 → 云函数：开发者工具模拟器和手机预览都通
+  - 电脑 → 云函数：云开发 HTTP API（`https://{环境 ID}.api.tcloudbasegateway.com`）+ 匿名登录，不用自己的域名和备案，Evo 里不放任何密钥；云函数从 `TCB_UUID` 认出是哪台电脑（同一个设备编号每次都是同一个匿名用户）。没用 HTTP 访问服务：默认域名只建议测试用，正式用要备案的域名。用户在控制台开了三处：匿名登录、OPA 策略"允许 / 云函数 / 匿名用户"、云函数安全规则 `{"*": {"invoke": "auth != null"}}`（各自没开时的报错见 `docs/小程序.md`）
+  - 云开发价格查清记进 `docs/小程序.md`：没发布前免费，上线后第 15 天起 19.9 元/月
+  - 验证：`python tools/cloud_ping.py` 回 200，`caller.TCB_UUID` 和匿名登录回的 `sub` 一致；改安全规则后小程序里调 ping 照样通
