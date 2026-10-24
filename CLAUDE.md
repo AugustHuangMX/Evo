@@ -1,6 +1,6 @@
 # Evo（项目说明）
 
-Evo：一个轻量、本地优先、开源的 Apex Legends 战绩记录器，面向 PC 玩家（Steam / EA App）。通过屏幕截图 + OCR 自动记录每局的名次、击杀、伤害和排位分（RP）变化。识别都在本机完成，数据默认只存在本机；绑定微信小程序以后，战绩同步到云端（微信云开发），手机上也能看，可以随时解绑（2026-10-24 用户决定，之前是"全本地"）。
+Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家（Steam / EA App）。通过屏幕截图 + OCR 自动记录每局的名次、击杀、伤害和排位分（RP）变化。绑定微信小程序以后，战绩同步到云端（微信云开发），手机上也能看，可以随时解绑。
 
 命名：项目名 Evo（取自游戏里随伤害升级的进化护甲）。名称中不用 "Apex"、"Legends" 等 EA 商标，只在简介中写 "for Apex Legends"。仓库名和 Python 包名用 `evo-tracker`。
 
@@ -52,7 +52,7 @@ Evo：一个轻量、本地优先、开源的 Apex Legends 战绩记录器，面
 
 - Python 3.13（Windows）：新版 numpy 要求 3.12+，onnxruntime 暂不支持 3.15
 - 文件布局：程序代码在 `code/`（互相 import 时直接写模块名，如 `import storage`）；只在开发时用的脚本（打包、安装、发布、伪数据、探测工具、`evo.spec`）在 `tools/`（先 `import code_path` 才能 import 程序代码）；测试在 `tests/`；根目录只放文档和文件夹；素材放 `assets/`。运行命令都带上文件夹，如 `python code/evo_app.py`、`python tools/build.py`
-- 截屏 `dxcam`（备选 `mss`）；图像 `opencv-python-headless` + `numpy`（不要装 `opencv-python`，会冲突）；引擎 RapidOCR + onnxruntime（模型内置、单线程）；存储 SQLite；面板 Flask + 纯 HTML/CSS（不联网）；窗口 `pywebview` + WebView2；托盘 `pystray`；打包 PyInstaller（一个文件夹）。细节见 docs/底座.md
+- 截屏 `dxcam`（备选 `mss`）；图像 `opencv-python-headless` + `numpy`（不要装 `opencv-python`，会冲突）；引擎 RapidOCR + onnxruntime（模型内置、单线程）；存储 SQLite；面板 Flask + 纯 HTML/CSS；窗口 `pywebview` + WebView2；托盘 `pystray`；打包 PyInstaller（一个文件夹）。细节见 docs/底座.md
 - 小程序：微信原生写法（JavaScript + WXML / WXSS）+ 微信云开发（云函数用 Node.js），用微信开发者工具调试。细节见 docs/小程序.md
 - 打游戏用安装好的 Evo：程序在 `E:\Evo Tracker`，数据在 `E:\Evo Tracker Data`。用源码运行 `python code/evo_app.py` 时战绩也记进这个数据文件夹，所以源码版和安装版不能同时开；Evo 开着时不能重新安装
 

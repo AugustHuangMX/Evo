@@ -62,7 +62,7 @@
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 15v2.5"/></svg>
     </span>
     <h2 id="h-locked">开启匿名统计后可以查看全体玩家的数据</h2>
-    <p class="locked-text">看看大家最常用哪些传奇、哪些组合，以及你的数据在 Evo 玩家中排在哪里。数据来自开启了匿名统计的玩家：Evo 会把你以后每一局的传奇、名次、击杀、伤害等（队友的也一样）匿名发给开发者，不发送游戏名、ID 和截图。</p>
+    <p class="locked-text">看看大家最常用哪些传奇、哪些组合，以及你的数据在 Evo 玩家中排在哪里。数据来自开启了匿名统计的玩家。</p>
     <form method="post" action="{{ url_for('telemetry_setting') }}">
       <input type="hidden" name="token" value="{{ token }}">
       <input type="hidden" name="on" value="1">
