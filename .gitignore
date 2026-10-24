@@ -59,3 +59,5 @@ code/qr.py
 panel/templates/_cloud.html
 tests/test_cloud_sync.py
 tools/cloud_ping.py
+# 宣传片（onetake 做的，见 release/宣传片/分镜.md）：用到 onetake 的 motion.js（PolyForm Noncommercial 许可，不能放进 AGPL 的仓库），视频文件也很大，只留在本机
+release/宣传片/
