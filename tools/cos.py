@@ -1,7 +1,7 @@
 """腾讯云对象存储 COS（国内备用线路的存储桶）：发布时上传文件。publish.py 用，只在开发电脑上用，不进 Evo。
 
 不用腾讯云的 SDK（要多装好几个包）：只是上传几个文件，用 Python 自带的库按 COS 的"请求签名"规则发请求就行。
-大文件分块上传（每块 8 MB，每块出错重试几次），每块都带 Content-MD5，COS 收到的和本机的不一样会拒收。
+大文件分块上传（每块 2 MB，同时传 8 块，每块出错重试几次），每块都带 Content-MD5，COS 收到的和本机的不一样会拒收。
 每个文件都记下 SHA-256（x-cos-meta-sha256），publish.py 用它判断线上是不是已经是这个文件。
 
 密钥：只能往这个存储桶上传的子账号的 SecretId / SecretKey，放在 %USERPROFILE%\\.evo\\cos.json
@@ -17,21 +17,26 @@ import hashlib
 import hmac
 import json
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 import update_check
 
 KEY_FILE = Path.home() / ".evo" / "cos.json"
-PART = 8 * 2**20  # 分块上传每块多大
-SIMPLE_MAX = 16 * 2**20  # 比这小的一次传完
-TRIES = 4  # 每个请求最多试几次（从瑞士传到上海，偶尔会断）
-TIMEOUT = 120
+# 从瑞士传到上海：一个连接只有约 40 KB/s，同时 8 个合计约 200 KB/s（16 个也只到约 240 KB/s）。所以大文件分成小块、
+# 同时传几块；块小一点，断了只重传这一块。112 MB 的安装包约 10 分钟（2026-10-25 实测）
+PART = 2 * 2**20  # 分块上传每块多大
+WORKERS = 8  # 同时传几块
+SIMPLE_MAX = 4 * 2**20  # 比这小的一次传完
+TRIES = 5  # 每个请求最多试几次（从瑞士传到上海，偶尔会断）
+TIMEOUT = 300  # 秒：一块（2 MB）要在这么久里传完；Python 对一次发送的整段数据算总时间
 
 
 class CosError(Exception):
@@ -130,14 +135,23 @@ def upload(path, name, content_type, digest, cache_control=None, log=print):
     upload_id = _xml_text(body, "UploadId")
     if not upload_id:
         raise CosError(f"COS 没给分块上传的编号：{body[:200]!r}")
-    parts = []
-    try:
+    starts = list(range(0, size, PART))
+    done, lock, began = [0], threading.Lock(), time.monotonic()
+
+    def put_part(number):
         with open(path, "rb") as f:
-            for number, start in enumerate(range(0, size, PART), 1):
-                _, headers, _ = _request("PUT", name, params={"partNumber": str(number), "uploadId": upload_id},
-                                         body=f.read(PART))
-                parts.append((number, headers.get("ETag", "")))
-                log(f"    COS：{min(start + PART, size) / 2**20:.0f} / {size / 2**20:.0f} MB")
+            f.seek(starts[number - 1])
+            body = f.read(PART)
+        _, headers, _ = _request("PUT", name, params={"partNumber": str(number), "uploadId": upload_id}, body=body)
+        with lock:
+            done[0] += len(body)
+            speed = done[0] / max(time.monotonic() - began, 0.001)
+            log(f"    COS：{done[0] / 2**20:.0f} / {size / 2**20:.0f} MB（{speed / 1024:.0f} KB/s）")
+        return number, headers.get("ETag", "")
+
+    try:
+        with ThreadPoolExecutor(WORKERS) as pool:
+            parts = sorted(pool.map(put_part, range(1, len(starts) + 1)))
         xml = "<CompleteMultipartUpload>" + "".join(
             f"<Part><PartNumber>{n}</PartNumber><ETag>{etag}</ETag></Part>" for n, etag in parts) + "</CompleteMultipartUpload>"
         _, _, body = _request("POST", name, params={"uploadId": upload_id}, headers={"content-type": "application/xml"},
