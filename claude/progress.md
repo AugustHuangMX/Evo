@@ -163,7 +163,7 @@
   - Evo：`code/global_stats.py`（新：只有开了匿名统计才下载，不带匿名编号，存 `data/global_stats.json`，24 小时内不重复下载；"你"的数字在本机算，"超过 X% 的玩家"一样的算一半）、`panel_app.stats_everyone` + `POST /stats/everyone/refresh`、`panel/templates/stats_all.html`、`_stats_tabs.html`（新）、`stats.html` 顶部加切换、`style.css`。设计时用了 ui-ux-pro-max（图标按钮有读屏名字、加载中有反馈、"你"比全体好坏不只靠颜色、焦点框、关掉动画时不转）
   - 文字（草稿，等用户确认）：锁住时的说明、顶部提问加"队友的传奇、击杀、伤害也一样""汇总以后你可以在数据页'全体玩家'里看到"、README、`PRIVACY.md` 和 `site/privacy.html`（中英文：第一节加 `global_stats.json`，第四节加队友数据和"全体玩家"一段）
   - 文档：`docs/面板.md`"全体玩家"、`docs/底座.md`"匿名统计"
-  - **还没部署到线上**：改线上数据库被自动权限拦下，留给用户（见 todo.md）
+  - 部署（2026-10-24 下午，用户自己运行的：`add_mate_stats.sql` → `schema.sql` → `wrangler deploy`）：线上 matches 表 28 列、`summary` 表有了；`/v1/summary` 回 200，10 份都在（排位 50 人 621 局、匹配 33 人 185 局），Cloudflare 压缩后约 5 KB；用 Evo 的 `global_stats.fetch()` 在临时数据文件夹里真连一次，下载、存下、24 小时内不重下都对。带队友数据的局要等新版 Evo 发出去才有（现在 0 局）
   - 验证：`tests/test_global_stats.py`（新，29 项，已加进 `run_all.py`）；`tests/test_telemetry.py` 36 项、`tests/test_stats_page.py` 全过；本机 `wrangler dev` 跑新的 worker（线上数据的副本）：带队友数据的一局存进新列、格式不对的一局拒收、定时任务重算；演示数据 + 真实汇总用 Edge 无界面模式截图看过深色、浅色、窄窗口、匹配、近 7 天、展开段位分布、锁住（深浅两种）
 - **诊断工具 `Evo诊断工具.exe`**（2026-10-24 用户要的：一位用户反馈"没有任何记录"，只看日志查不出原因。用户决定：单个 exe、命令行窗口、截图缩到 1080p + 每分钟一张原图）：
   - 先查了那份日志（0.3.8，3840×2160，数据在 `D:\Evo Tracker Data`）：外观像的 3 次 / 0 次，传奇 12 分钟才认出第 2 次。用 0.3.8 的代码模拟，排除了 4K 本身和 HDR 发白；只是游戏语言不对解释不了传奇也认不出；发现 dxcam 拿不到新画面时 Evo 拿到的是缓存的旧图，dxcam 的警告也不进 Evo 的日志（详见 `docs/识别经验.md`"用户反馈'没有任何记录'时怎么查"）

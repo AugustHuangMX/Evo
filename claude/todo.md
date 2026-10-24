@@ -69,7 +69,7 @@
   - [ ] 发 0.3.7 时：`release/更新内容.txt` 加一条（如"新增：匿名统计（默认不发，第一次打开时问你；设置页能看到发送内容的原样，随时可以关掉、删除已发送的数据）"，原文先给用户确认）；改过的 `site/privacy.html`、`site/index.html` 随发布一起上传
   - [ ] 发布以后：过几天用 `python tools/stats_report.py` 看有没有数据进来、日志里"匿名统计：没发出去"多不多（国内家用宽带到 Cloudflare 的情况只测过机房网络）
   - [ ] **数据页"全体玩家"剩下的**（2026-10-24 用户定的方案：Evo 里和全体对比，开了匿名统计才能看；Evo 这边和服务器代码已完成，见 progress.md；规则见 `docs/面板.md`"全体玩家"、`docs/底座.md`"匿名统计"）：
-    - [ ] **部署服务器**（会改线上的统计数据库，只加列、加表；要用户同意或用户自己运行；顺序不能反，而且要在发布带这个功能的 Evo 之前）：`cd server/stats` → `wrangler d1 execute evo-stats --remote --file add_mate_stats.sql` → `wrangler d1 execute evo-stats --remote --file schema.sql` → `wrangler deploy` → 打开 `https://stats.evotracker.cn/v1/summary` 看到汇总
+    - [ ] 看定时任务有没有跑：有新数据进来以后，下一个整点第 7 分钟（UTC）`https://stats.evotracker.cn/v1/summary` 里的 `made_at` 应该变（2026-10-24 部署后第一份汇总是第一次打开这个地址时现算的，还没见过定时任务算的）
     - [ ] 用户确认文字：锁住时卡片上的标题和说明（`stats_all.html`）、页面顶部匿名统计提问里加的一句（`base.html`）、README、`PRIVACY.md` 和 `site/privacy.html`（中英文）的新段落；里面写的是"0.3.9 起"，按实际发布的版本号改
     - [ ] 发版时 `release/更新内容.txt` 加一条（原文先给用户确认），`site/privacy.html` 随发布上传
     - [ ] 赛季：下个赛季开始前和用户重点讨论（范围按钮加"本赛季"、各赛季的开始日期写进 `config/`）
