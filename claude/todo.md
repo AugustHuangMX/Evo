@@ -130,7 +130,7 @@
 
 ## 六、需要你来做或决定的
 
-- [ ] **宣传片第一版**（2026-10-24 做了草稿，见 progress.md；文件在 `release/宣传片/`，不进 git）：要改的告诉 Claude；已定：去掉移动时的「咻」声、音乐换成 Kevin MacLeod「Chill Wave」（CC BY 4.0，发布时简介里要署名，见 `release/宣传片/分镜.md`）、拉远时换成一条连续的趋势线（2026-10-24 用户）；还要你看：第 4 版 `renders/draft4.mp4`、字幕文案；③ 定稿后出正式版：1080p 60 帧就够（2026-10-24 用户决定，不出 4K），`render.py --fps 60`，大约 25 分钟
+- [ ] **发布宣传片**（成片 2026-10-24 做好，见 progress.md）：`release/宣传片/renders/Evo宣传片_1080p60.mp4`（2:24，1080p 60 帧，不进 git）；发到 B 站等地方时，简介里要加音乐署名：`"Chill Wave" Kevin MacLeod (incompetech.com) Licensed under Creative Commons: By Attribution 4.0 License`；要改的话改 `release/宣传片/` 里的文件再出片（命令见 `release/宣传片/分镜.md`）
 - [ ] **诊断工具发给用户**（2026-10-24 做好，见 progress.md）：把 `dist/Evo诊断工具.exe`（`python tools/build_diag.py` 打包）发给反馈"没有任何记录"的那位用户（4K、0.3.8），收到压缩包后放进 `captures/`，运行 `python tools/diag_report.py 压缩包`。还要定：以后放在哪里给玩家下载（QQ 群文件 / 官网下载页 / GitHub Releases）；360、火绒拦不拦这个单个 exe
 - [ ] **要不要在 Evo 里也查"截屏卡住"**（底座改动，等你定）：游戏开着时连续几分钟拿不到新画面就写进日志；dxcam 的警告也记进 evo.log；开始记录时写上有几个显示器、截的是哪个。这样以后只看日志就分得清"截屏卡住 / 游戏在副屏"和"画面认不出"
 - [ ] 官网要你来做的：开通 Cloudflare R2（要绑一张信用卡或 PayPal，免费额度内不扣钱）；给 GitHub 账号开两步验证（SignPath 要求）；用 itdog.cn 测国内访问，并请国内朋友用手机流量打开、在微信 / QQ 里发链接看会不会被拦
