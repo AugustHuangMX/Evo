@@ -8,7 +8,7 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 
 | 什么时候 | 读 |
 |---|---|
-| 每次开工 | [claude/todo.md](claude/todo.md)（所有待办只放在那里）、[claude/progress.md](claude/progress.md)（已完成的里程碑和版本记录） |
+| 每次开工 | [claude/todo.md](claude/todo.md)（所有待办只放在那里）、[claude/progress.md](claude/progress.md)（已完成的里程碑和版本记录；10-22 及以前的里程碑在 [claude/progress_archive.md](claude/progress_archive.md)，平时不读，要查旧记录时再看） |
 | 改模型（识别逻辑、`config/`） | [docs/模型流程.drawio](docs/模型流程.drawio)（实际怎么跑）、[docs/对局全流程图.md](docs/对局全流程图.md)（规则为什么这样定）、[docs/识别经验.md](docs/识别经验.md)（实测结论、游戏画面特征） |
 | 改页面 | [docs/面板.md](docs/面板.md) |
 | 打包、安装、发布、改托盘或窗口 | [docs/底座.md](docs/底座.md) |
@@ -55,7 +55,7 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 - 截屏 `dxcam`（备选 `mss`）；图像 `opencv-python-headless` + `numpy`（不要装 `opencv-python`，会冲突）；引擎 RapidOCR + onnxruntime（模型内置、单线程）；存储 SQLite；面板 Flask + 纯 HTML/CSS；窗口 `pywebview` + WebView2；托盘 `pystray`；打包 PyInstaller（一个文件夹）。细节见 docs/底座.md
 - 小程序：微信原生写法（JavaScript + WXML / WXSS）+ 微信云开发（云函数用 Node.js），用微信开发者工具调试。细节见 docs/小程序.md
 - 打游戏用安装好的 Evo：程序在 `E:\Evo Tracker`，数据在 `E:\Evo Tracker Data`。用源码运行 `python code/evo_app.py` 时战绩也记进这个数据文件夹，所以源码版和安装版不能同时开；Evo 开着时不能重新安装
-- 下载和一键更新（2026-10-24 用户决定）：**一键更新只下载变了的文件**（增量更新：和玩家现在的版本比，只下变了的那些，0.3.7 → 0.3.8 是 11 MB，完整包是 112 MB），以后每次发布都这样；完整压缩包只给第一次安装和太旧的版本。官网默认下载还是 dl.evotracker.cn，下面写"下载慢？尝试备用下载方式"，给出备用线路（国内的腾讯云 COS、gh-proxy）；一键更新也按这个顺序换线路。还没做完时见 todo.md，做完后细节写在 docs/底座.md
+- 下载和一键更新（2026-10-24 用户决定）：**一键更新只下载变了的文件**（增量更新：和玩家现在的版本比，只下变了的那些，0.3.7 → 0.3.8 是 11 MB，完整包是 112 MB），以后每次发布都这样；完整压缩包只给第一次安装和太旧的版本。官网默认下载还是 dl.evotracker.cn，下面写"下载慢？尝试备用下载方式"，给出备用线路（国内的腾讯云 COS；gh-proxy 用户决定暂时不用）；一键更新也按这个顺序换线路。细节见 docs/底座.md，剩下没做的见 todo.md
 
 ## 模型（怎么识别、记录）
 
