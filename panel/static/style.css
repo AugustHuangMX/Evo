@@ -536,6 +536,28 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .feedback-btn:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
 .feedback .setting-desc { margin-top: 8px; text-align: center; text-wrap: balance; }
 
+/* 设置页"微信小程序"（_cloud.html）：绑定了时名字后面一个绿点；绑定对话框里的二维码总是白底黑块（扫码要），深色主题也一样 */
+.cloud-on { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--good); vertical-align: middle; }
+.dialog.cloud-dialog { width: min(420px, calc(100vw - 32px)); }
+.cloud-body { display: flex; flex-direction: column; gap: 16px; padding: 24px; }
+.cloud-body h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.cloud-body h2:focus { outline: none; }
+.cloud-body [data-step] { display: flex; flex-direction: column; gap: 14px; }
+.cloud-body [hidden] { display: none !important; }  /* .btn 的 display 会盖过 hidden，按步骤显示的按钮要真的藏起来 */
+.cloud-qr { align-self: center; width: 232px; height: 232px; padding: 6px; border-radius: 8px; background: #FFFFFF;
+  box-shadow: 0 0 0 1px var(--border); display: flex; align-items: center; justify-content: center; }
+.cloud-qr svg { display: block; width: 100%; height: 100%; }
+.cloud-qr-wait { color: #5F6670; font-size: 13px; }
+.cloud-howto { margin: 0; padding-left: 22px; line-height: 1.8; }
+.cloud-wait { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; color: var(--muted); font-size: 13px; }
+.cloud-wait[hidden] { display: none; }
+.cloud-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--good); animation: cloud-pulse 1.4s ease-in-out infinite; }
+@keyframes cloud-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cloud-pulse { animation: none; } }
+.cloud-error { margin: 0; color: var(--bad); font-size: 13px; text-align: center; }
+.cloud-ok { margin: 0; color: var(--good); font-size: 16px; font-weight: 600; }
+.cloud-body .dialog-desc { margin: 0; }
+
 /* ---------- 动效 ----------
    只用 opacity、transform、clip-path，都很便宜；面板窗口只在你打开它时运行，不影响游戏。
    动画都在 0.3 秒左右，不让你等。

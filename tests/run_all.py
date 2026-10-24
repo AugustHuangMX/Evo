@@ -13,6 +13,7 @@ import fake_game  # noqa: F401  要在项目代码之前导入（设置临时数
 import test_accounts
 import test_autostart
 import test_aspect
+import test_cloud_sync
 import test_data_move
 import test_eliminated
 import test_follow
@@ -53,7 +54,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "分享战绩（三种卡片、不写队友名字、对话框、保存图片）": test_share,
          "数据页（常一起玩的队友、传奇表现）": test_stats_page,
          "总览页\"关注我\"（B 站、小黑盒）": test_follow,
-         "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry}
+         "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
+         "云同步（二维码、绑定、上传、重传、删除、连不上、手机上解绑、设置页）": test_cloud_sync}
 
 
 def main():

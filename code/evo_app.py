@@ -656,6 +656,9 @@ def main():
                                  UPDATE_FIRST_DELAY_BACKGROUND if args.background else UPDATE_FIRST_DELAY)
             start_telemetry(log, stop_update_checker,  # 用户同意了才发匿名统计
                             STATS_FIRST_DELAY_BACKGROUND if args.background else STATS_FIRST_DELAY)
+            import cloud_sync  # 绑定了微信小程序才联网，定时上传战绩（cloud_sync.py）
+
+            cloud_sync.start(log, stop_update_checker, background=args.background)
             data_move.watch_auto_move(log, stop_update_checker)  # 数据还在 C 盘旧的默认位置：Apex 没开时自动搬到程序旁边
             if not args.background:
                 panel.open(window=not args.no_window)  # 一打开 Evo 就弹出窗口，而不是只在托盘里
