@@ -49,7 +49,7 @@ from post_match import COUNTED_KILLS_NOTES, NO_SUMMARY_NOTES
 # 面板文件的类型写死：Flask 按 Windows 注册表判断文件类型，有的软件会把 .css 改成 text/plain，
 # WebView2 和浏览器就不用这个样式表，面板只剩一堆没排好的文字
 for _type, _ext in (("text/css", ".css"), ("text/javascript", ".js"), ("font/woff2", ".woff2"),
-                    ("image/webp", ".webp"), ("image/png", ".png")):
+                    ("image/webp", ".webp"), ("image/png", ".png"), ("image/jpeg", ".jpg")):
     mimetypes.add_type(_type, _ext)
 
 PER_PAGE = 20
@@ -351,6 +351,7 @@ def view(row):
         "no_summary": any(n in (row["review_note"] or "") for n in NO_SUMMARY_NOTES),  # 没有总结页的局：队友只能靠对局中认
         "has_evidence": bool(row["evidence_path"]),
         "evidence_recorded": screenshots.recorded(row["evidence_path"]),  # 记录程序存的截图：确认、删除这一局时会删掉
+        "evidence_summary": screenshots.is_summary(row["evidence_path"]),  # 总结页截图：确认时留着，删除这一局时才删
         "form": {name: "" if row[name] is None else row[name] for name in EDITABLE},
         "warn_fields": warn_fields(row["review_note"]) if row["needs_review"] else set(),
     }
@@ -1005,7 +1006,7 @@ def update(match_id):
         if edited:
             fields["edited"] = ",".join(sorted(edited))
     fields["needs_review"] = 0  # 人工确认过了，不再标记待确认（review_note 保留，记录当初为什么待确认）
-    deleted = screenshots.discard(db(), row)  # 确认过了，截图不再需要（原则 2）
+    deleted = screenshots.discard(db(), row)  # 确认过了，截图不再需要（原则 2）；总结页截图留着
     if deleted:
         fields["evidence_path"] = None
     storage.update_match(db(), match_id, fields)
@@ -1015,7 +1016,7 @@ def update(match_id):
 
 @app.post("/matches/<int:match_id>/delete")
 def delete(match_id):
-    deleted = screenshots.discard(db(), storage.get_match(db(), match_id))
+    deleted = screenshots.discard(db(), storage.get_match(db(), match_id), removing=True)
     storage.delete_match(db(), match_id)
     flash(f"已删除第 {match_id} 号对局" + ("和它的截图" if deleted else ""), "ok")
     return back_to_list()
@@ -1102,7 +1103,7 @@ def db_path():
 @app.route("/settings")
 def settings():
     shot_count, shot_bytes = folder_usage(CAPTURES_DIR / "live")
-    clean_count, clean_bytes = screenshots.cleanable(db())
+    clean = screenshots.cleanable(db())
     size = screen_size()
     return render_template(
         "settings.html",
@@ -1125,8 +1126,9 @@ def settings():
         keep_shots=app_settings.get(screenshots.KEEP_ALL_KEY, False) is True,
         shots_locked=screenshots.in_project(),  # 用源码运行：永远保留全部，开关和删除按钮都不能用
         recording=screenshots.recording_folder() is not None,
-        clean_count=clean_count,
-        clean_size=size_text(clean_bytes),
+        clean_count=clean.deleted,
+        clean_convert=clean.converted,
+        clean_size=size_text(clean.freed),
         version=storage.APP_VERSION,
         source_url=SOURCE_URL,
         feedback_url=FEEDBACK_URL,
@@ -1369,22 +1371,26 @@ def keep_shots_setting():
     if on:
         flash("已开启\"保留全部截图\"：从下一局开始，每局的截图都会留着。", "ok")
     else:
-        flash("已关闭\"保留全部截图\"：从下一局开始识别完就删。之前存下的截图不会自动删。", "ok")
+        flash("已关闭\"保留全部截图\"：从下一局开始识别完就删，总结页截图转成 JPG 留着。之前存下的截图不会自动删。", "ok")
     return redirect(url_for("settings"))
 
 
 @app.post("/settings/clean-shots")
 def clean_shots():
-    """"删除已识别完的截图"按钮：只留"待确认"的局要用的截图，正在记录的这一次不动（screenshots.clean_up）。"""
+    """"删除已识别完的截图"按钮：留总结页截图（转成 JPG）和"待确认"的局要用的截图，正在记录的这一次不动
+    （screenshots.clean_up）。"""
     if screenshots.in_project():
         abort(400)
-    deleted, freed = screenshots.clean_up(db())
-    left, _ = screenshots.cleanable(db())
-    if deleted:
-        flash(f"已删除 {deleted} 张截图，腾出 {size_text(freed)}"
-              + (f"。还有 {left} 张没删掉（可能正被别的程序打开），关掉后再试一次" if left else ""), "ok")
-    elif left:
-        flash(f"{left} 张截图没删掉（可能正被别的程序打开），关掉后再试一次", "error")
+    done = screenshots.clean_up(db())
+    left = screenshots.cleanable(db())
+    stuck = left.deleted + left.converted
+    if done.deleted or done.converted:
+        parts = ([f"删除 {done.deleted} 张截图"] if done.deleted else []) + (
+            [f"把 {done.converted} 张总结页截图转成了 JPG"] if done.converted else [])
+        flash(f"已{'，'.join(parts)}，腾出 {size_text(done.freed)}"
+              + (f"。还有 {stuck} 张没处理（可能正被别的程序打开），关掉后再试一次" if stuck else ""), "ok")
+    elif stuck:
+        flash(f"{stuck} 张截图没处理（可能正被别的程序打开），关掉后再试一次", "error")
     else:
         flash("没有可以删的截图", "ok")
     return redirect(url_for("settings"))

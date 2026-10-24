@@ -22,7 +22,7 @@
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
-- 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留"待确认"的局要用的
+- 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留总结页截图（转成 JPG）和"待确认"的局要用的
 - 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅、淘汰画面、冠军横幅也存，
   进入时一张、离开前最后一帧一张；每局结束时还存最后一张自己的界面（hud_时间_last.png，校准对局中的区域用）
 - 设置页的"保留全部截图"开关：每局结束时看一眼，改了从下一局开始生效（见 collect 里的 round_end）
@@ -344,7 +344,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         return screenshots.keep_all() if keep_all is None else keep_all
 
     keep = keep_now()
-    tidied = {"deleted": 0, "freed": 0}  # 这次记录识别完删掉的截图
+    tidied = {"deleted": 0, "converted": 0, "freed": 0}  # 这次记录识别完删掉的截图、转成 JPG 的总结页截图
     protect = set()  # 中途关掉"保留全部截图"时，关之前存下的截图：不删（以前存下的不自动删）
 
     def round_end():
@@ -360,11 +360,13 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 log(f"           设置页关掉了\"保留全部截图\"：从下一局开始识别完就删，之前存下的 {len(protect)} 张不删")
         if keep:
             return
-        deleted, freed = screenshots.tidy(conn, run_dir, protect)
-        if deleted:
-            tidied["deleted"] += deleted
-            tidied["freed"] += freed
-            log(f"           识别完删掉 {deleted} 张截图（{freed / 2 ** 20:.0f} MB）")
+        done = screenshots.tidy(conn, run_dir, protect)
+        if done.deleted or done.converted:
+            tidied["deleted"] += done.deleted
+            tidied["converted"] += done.converted
+            tidied["freed"] += done.freed
+            log(f"           识别完删掉 {done.deleted} 张截图，总结页截图 {done.converted} 张转成 JPG"
+                f"（腾出 {done.freed / 2 ** 20:.0f} MB）")
 
     name_cfg = load_config("player_name.json")
     post = PostMatch(conn, log=log, name_slip=name_cfg["slip_similarity"], on_round_end=round_end)
@@ -478,8 +480,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         aspect.reset()
         camera.release()
         conn.close()
-        left = len(list(run_dir.glob("*.png")))
-        if not left:
+        left = sum(1 for p in run_dir.iterdir() if p.suffix.lower() in (".png", ".jpg"))
+        if not any(run_dir.iterdir()):
             run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
         saved = total()
         log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
@@ -487,9 +489,10 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
             f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
             f"玩家名 {post.player_name or '没认出'}；大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
             f"{usage.total()}，内存峰值 {memory_mb()[1]:.0f} MB")
-        kinds = "保留全部" if keep else "待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
-        log(f"截图：留下 {left} 张（{kinds}）" + (f"，识别完删掉 {tidied['deleted']} 张（{tidied['freed'] / 2 ** 20:.0f} MB）"
-                                              if tidied["deleted"] or not keep else ""))
+        kinds = "保留全部" if keep else "总结页截图、待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
+        log(f"截图：留下 {left} 张（{kinds}）"
+            + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
+               f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
         del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:

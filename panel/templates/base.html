@@ -158,8 +158,8 @@
 {# 第一次打开时问一次：要不要开机自动启动（默认关；回答了"自动检查新版本"以后才问，一次只问一件事；见 autostart.py） #}
 <section class="card ask-card" aria-labelledby="h-ask-autostart">
   <div class="ask-text">
-    <h2 id="h-ask-autostart">要不要开机自动启动 Evo？</h2>
-    <p class="setting-desc">开启后，开机时 Evo 会在托盘里自动运行（不弹出窗口），打游戏时自动记录，不会因为忘了打开 Evo 而漏记。火绒、360 等安全软件问是否允许时，请选"允许"。以后可以在"设置"里随时更改。</p>
+    <h2 id="h-ask-autostart">是否在开机时自动启动 Evo？</h2>
+    <p class="setting-desc">此功能主要是为了防止你忘记在玩APEX之前打开Evo。火绒、360 等安全软件问是否允许时，请选"允许"。以后可以在"设置"里随时更改。</p>
   </div>
   <div class="ask-actions">
     <form method="post" action="{{ url_for('autostart_setting') }}">

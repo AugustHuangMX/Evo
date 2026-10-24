@@ -124,11 +124,11 @@
           <div class="evidence">
             <div class="evidence-title">识别依据（本局结算截图）</div>
             {% if r.has_evidence %}
-            <a href="{{ url_for('evidence', match_id=r.id) }}" target="_blank" title="点击查看原图">
+            <a href="{{ url_for('evidence', match_id=r.id) }}" target="_blank" title="点击查看大图">
               <img src="{{ url_for('evidence', match_id=r.id) }}" alt="第 {{ r.id }} 号对局的总结页截图">
             </a>
             {% else %}
-            <div class="evidence-empty">没有截图：识别完、确认过的局不保留截图</div>
+            <div class="evidence-empty">没有截图：这一局没进总结页（识别完、确认过就不留截图），或者截图在以前的版本里识别完删掉了</div>
             {% endif %}
             {% if r.review_note %}<div class="note">{{ r.review_note }}</div>{% endif %}
             <div class="note">玩家名 {{ r.player_name }} · 老板分 {{ r.participation }} · 小队总击杀 {{ r.squad_kills }} · 急救 {{ r.revives }} · 重生 {{ r.respawns }}{% if r.rp_source %} · RP 来自{{ r.rp_source }}{% endif %}</div>
@@ -157,8 +157,8 @@
                 {{ '确认无误' if r.needs_review else '保存修改' }}
               </button>
             </div>
-            {% if r.evidence_recorded and not keep_shots %}
-            <p class="action-hint">{{ '确认' if r.needs_review else '保存' }}后，这一局的截图会删除（确认过的局不再需要它）</p>
+            {% if r.evidence_recorded and not keep_shots and not r.evidence_summary %}
+            <p class="action-hint">{{ '确认' if r.needs_review else '保存' }}后，这一局的截图会删除（确认过的局不再需要它；总结页截图才会一直留着）</p>
             {% endif %}
           </div>
         </div>

@@ -306,7 +306,7 @@
           <div class="setting-name" id="keep-shots-name">保留全部截图</div>
           <div class="setting-desc">
             {%- if shots_locked %}用源码运行时总是保留全部：项目里的 <code>captures/</code> 是测试集
-            {%- else %}关着时，识别完就删，只留待确认的局要用的截图（确认后也删）。打开后每局的截图都留着，每局约 30–40 MB。改了从下一局开始生效
+            {%- else %}关着时，识别完就删，只留总结页截图（转成 JPG，每局约 0.5 MB）和待确认的局要用的截图。打开后每局的截图都留着（原图），每局约 30–40 MB。改了从下一局开始生效
             {%- endif %}
           </div>
         </div>
@@ -326,15 +326,22 @@
           <div class="setting-name">删除已识别完的截图</div>
           <div class="setting-desc">
             {%- if shots_locked %}用源码运行时不删截图
-            {%- elif clean_count %}可以腾出 <span class="num">{{ clean_size }}</span>（<span class="num">{{ clean_count }}</span> 张）。待确认的局要用的截图{% if recording %}、正在记录的这一次{% endif %}不删
-            {%- else %}没有可以删的截图{% if shot_count %}：剩下的是待确认的局要用的{% if recording %}，或者正在记录{% endif %}{% endif %}
+            {%- elif clean_count or clean_convert %}可以腾出约 <span class="num">{{ clean_size }}</span>（
+              {%- if clean_count %}删掉 <span class="num">{{ clean_count }}</span> 张{% endif %}
+              {%- if clean_count and clean_convert %}，{% endif %}
+              {%- if clean_convert %}<span class="num">{{ clean_convert }}</span> 张总结页截图转成 JPG{% endif %}）。
+              {%- if clean_convert %}总结页截图转成 JPG 留着，{% else %}总结页截图、{% endif %}待确认的局要用的截图{% if recording %}、正在记录的这一次{% endif %}不删
+            {%- else %}没有可以删的截图{% if shot_count %}：剩下的是总结页截图、待确认的局要用的{% if recording %}，或者正在记录{% endif %}{% endif %}
             {%- endif %}
           </div>
         </div>
+        {% set clean_what = ('删除 %d 张已识别完的截图' % clean_count if clean_count else '')
+                            ~ ('、' if clean_count and clean_convert else '')
+                            ~ ('把 %d 张总结页截图转成 JPG' % clean_convert if clean_convert else '') %}
         <form method="post" action="{{ url_for('clean_shots') }}" id="clean-form"
-              onsubmit="return confirm('确定删除 {{ clean_count }} 张已识别完的截图吗？可以腾出 {{ clean_size }}。\n待确认的局要用的截图会留着；已确认的局在战绩页就看不到识别截图了。\n删除后无法恢复。')">
+              onsubmit="return confirm('确定{{ clean_what }}吗？大约可以腾出 {{ clean_size }}。\n总结页截图会留着（转成 JPG），战绩页照样能看；待确认的局要用的截图也留着。\n删除后无法恢复。')">
           <input type="hidden" name="token" value="{{ token }}">
-          <button type="submit" class="btn btn-danger" id="clean-btn" {{ 'disabled' if shots_locked or not clean_count }}>删除截图</button>
+          <button type="submit" class="btn btn-danger" id="clean-btn" {{ 'disabled' if shots_locked or not (clean_count or clean_convert) }}>删除截图</button>
         </form>
       </div>
       <div class="setting danger-zone">

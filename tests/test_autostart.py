@@ -118,7 +118,7 @@ def panel_checks():
     panel_app.app.config["DB"] = str(Path(tempfile.mkdtemp(prefix="evo-autostart-")) / "panel.db")
     storage.connect(panel_app.app.config["DB"]).close()
     client, token = panel_app.app.test_client(), panel_app.app.config["TOKEN"]
-    ask = "要不要开机自动启动 Evo？"
+    ask = "是否在开机时自动启动 Evo？"  # 2026-10-22 用户改的说法（0.4.0 起）
 
     def flat(html):  # 模板里属性分几行写：空白合成一个空格再比
         return " ".join(html.split())
