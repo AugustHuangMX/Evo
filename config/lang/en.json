@@ -17,6 +17,7 @@
                        "_说明": "'SQUAD ELIMINATED / PLACED #3'，位置和简体的'全军覆没 / 排名第 X'一样"},
         "champion": {"_说明": "还没截到英文的冠军横幅：照用简体的参照图和关键字，所以英文的冠军横幅现在认不出（总结页、经验值页的名次照样能记第 1 名）"},
         "squad_out": {"roi": [1490, 1022, 220, 50], "keywords": ["Return to Lobby"], "template_box": [1514, 1033, 164, 30]},
+        "lobby_pubs": {"keywords": ["UNRANKED"], "_说明": "英文不用这一项：匹配大厅'UNRANKED'由上面的 lobby 认（关键字 RANKED 也在里面）。这里换掉关键字，只是不继承简体的'未上榜'（不然简体的匹配大厅英文也对得上，认不出是哪种语言）；参照图回落到简体的，样子也不像，不会多跑识别"},
         "match_start_trios": {"as": "match_start", "label": "开局画面（匹配三人）", "anchor": "top",
                               "roi": [110, 78, 300, 110], "keywords": ["TRIOS"], "upscale": 1,
                               "template_box": [134, 91, 238, 64],

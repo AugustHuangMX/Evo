@@ -157,6 +157,13 @@
 
 ### 2026-10-24
 
+- **认出简体中文的匹配局**（2026-10-24 用户截了一局简体匹配三人赛：`captures/frames/20261024_165228`，317 张，2560×1440、游戏 16:10 拉伸）：
+  - 先按 16:9 认，以为总结页、淘汰画面都认不出；用户提醒"繁体、英文的匹配局不都没问题吗"，一查是比例用错了（Apex 视频设置全屏 2560×1600）。按 16:10 认，总结页、淘汰画面都认得出、读得对；真正缺的只有两样，和繁体当初加的一样
+  - 开局横幅"三人赛"：`config/screens.json` 加 `match_start_trios`（`as` 开局画面，参照图 `config/templates/match_start_trios.png`），`config/match_start.json` 的 `modes` 加"三人赛""双人赛"（后者是猜的）→ 匹配
+  - 匹配大厅：没有段位那一栏，原来靠"排位点数"认不出。加 `lobby_pubs`（左下角卡片的"未上榜"，`as` 大厅，参照图 `lobby_pubs.png`）；`config/lobby.json` 加 `give_up_blank_reads: 2`（繁体、英文本来就有），读 2 次读不到段位就不读。`config/lang/en.json` 的 `lobby_pubs` 换掉关键字：英文不继承简体的"未上榜"（不然简体的匹配大厅两种语言都对得上，认不出语言）
+  - 文档：`docs/识别经验.md` 加"简体中文匹配局"一节（含教训：看截图前先确认游戏比例）、`docs/对局全流程图.md`、`docs/模型流程.drawio`
+  - 验证：`tests/test_simplified_pubs.py`（新，12 项，已加进 `run_all.py`）：整局重放记成匹配、奥林匹斯、罗芭、第 19 名、小队 1 杀、0/0/0、伤害 36、生存 0:51，两名队友的传奇和数据和总结页一致，名次和淘汰画面核对一致；第一张匹配大厅就认定简体；英文不会对上；桌面、对局中不会认错
+
 - **微信小程序的内容不上传 GitHub**（2026-10-24 用户决定"永远都不要上传 github"；范围用户选的：小程序本身 + Evo 里绑定、上传战绩的部分，别的文档照常上传）。当时 GitHub 上的 main 还是 0.3.8（`e61a85a`），小程序的东西都没推过：
   - 改写还没推送的 23 个本机提交，拿掉 `miniprogram/`、`docs/小程序.md`、`code/cloud_sync.py`、`code/panel_cloud.py`、`code/qr.py`、`panel/templates/_cloud.html`、`tests/test_cloud_sync.py`、`tools/cloud_ping.py`（只用 Git 内部命令重建提交，作者、时间、说明不变，不碰工作区：另一个会话正在工作，它没提交的 18 个文件原样没动）；只改了小程序页面的那一个提交（"小程序页面……"）跳过。核对：新的每个提交里都没有这些文件，最后的内容 = 原来的去掉这些文件。原来的提交在本机分支 `local/miniprogram-history`（不推送），文件本身留在本机、写进 `.gitignore`
   - GitHub 上的 Evo 没有这些文件也能运行：`evo_app.py`、`panel_app.py` 找不到就不同步、不显示"微信小程序"一栏（`settings.html` 有 `cloud_view` 才 include）；`run_all.py` 有 `test_cloud_sync` 才跑；`tools/evo.spec` 加 `WITH_CLOUD = False`：小程序上线前安装包里不带这几个模块和 `_cloud.html`
