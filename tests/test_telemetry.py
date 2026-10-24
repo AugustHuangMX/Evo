@@ -2,7 +2,8 @@
 
 - 没回答、点了"不了"、关掉以后：一个请求都不发
 - 只发同意以后结束、已经结束 1 小时的局；只发说好的那几项（游戏名、ID、队友名字、备注、截图位置都不发）
-- 日活一天只发一次；发过的局不重发，改过（战绩页修正）的局再发一次，带上改了哪几项
+- 日活一天只发一次，没发出去的日子下次连上时补发（最多 30 天）；发过的局不重发，改过（战绩页修正）的局再发一次，
+  带上改了哪几项
 - 一次最多 100 局，多的分几次；连不上、服务器拒绝时不算发过，下次再发
 - 面板：前两个提问回答了才问这一个，两个按钮一样的样式；设置页只有开关和一句说明（2026-10-24 起不显示发送状态、
   发送内容的原样，没有"关闭并删除已发送的数据"）
@@ -28,7 +29,8 @@ import storage
 import telemetry
 
 os.environ["no_proxy"] = "127.0.0.1,localhost"  # 电脑上设了代理时，本机的测试服务器也直接连
-KEYS = (telemetry.CONSENT_KEY, telemetry.SINCE_KEY, telemetry.ID_KEY, telemetry.PING_KEY, telemetry.LAST_KEY)
+KEYS = (telemetry.CONSENT_KEY, telemetry.SINCE_KEY, telemetry.ID_KEY, telemetry.PING_KEY, telemetry.LAST_KEY,
+        telemetry.MISSED_KEY)
 BODY_KEYS = {"id", "version", "matches", "ping"}
 PING_KEYS = {"day", "screen", "game_res", "game_mode", "aspect"}
 MATCH_KEYS = {"k", "day", "version", "mode", "map", "legend", "mates", "mate_stats", "placement", "kills", "assists",
@@ -173,7 +175,28 @@ def send_checks(conn):
     result = telemetry.send(now=later + timedelta(days=1))
     sizes = [len(body["matches"]) for _, body, _ in Handler.requests]
     out["又连上了：250 局分 3 次发（100、100、50）"] = result["ok"] and result["matches"] == 250 and sizes == [100, 100, 50]
-    for match_id in [before, first, second, recent, *many]:
+
+    # 日活没发出去：记着这一天，下次连上时补发（2026-10-24 用户决定）
+    day3, day4 = later + timedelta(days=2), later + timedelta(days=3)
+    telemetry.STATS_URL = "http://127.0.0.1:9"
+    telemetry.send(now=day3)
+    telemetry.STATS_URL = url
+    out["日活没发出去：记下这一天"] = app_settings.get(telemetry.MISSED_KEY) == ["2026-10-23"]
+    Handler.requests.clear()
+    last = add_match(conn, "2026-10-23 20:00:00")
+    result = telemetry.send(now=day4)
+    days = [(body.get("ping", {}).get("day"), len(body["matches"])) for _, body, _ in Handler.requests]
+    out["第二天连上了：先补发前一天的日活（和没发的局一起），再发今天的，一个请求一天"] = (
+        result["ok"] and result["matches"] == 1 and days == [("2026-10-23", 1), ("2026-10-24", 0)]
+        and app_settings.get(telemetry.MISSED_KEY) is None and app_settings.get(telemetry.PING_KEY) == "2026-10-24")
+    Handler.requests.clear()
+    out["补发完：再发一次不联网"] = not telemetry.send(now=day4)["ping"] and not Handler.requests
+    app_settings.set_value(telemetry.MISSED_KEY, [f"2026-09-{d:02d}" for d in range(1, 31)] + ["2026-08-31", "坏的", 5])
+    out["最多补 30 天（更早的不补），格式不对的去掉"] = (
+        telemetry._ping_days("2026-10-24") == [f"2026-09-{d:02d}" for d in range(1, 31)])
+    telemetry.set_consent(True)
+    out["重新打开匿名统计：以前没发出去的日活不补"] = app_settings.get(telemetry.MISSED_KEY) is None
+    for match_id in [before, first, second, recent, last, *many]:
         storage.delete_match(conn, match_id)
     return out
 

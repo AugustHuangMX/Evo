@@ -7,7 +7,8 @@
 - 只发同意以后结束的局（同意的时间记在 telemetry_since；关掉再打开，从重新打开时算起）
 - 发给 https://stats.evotracker.cn（Cloudflare Worker + D1 数据库，代码在 server/stats/）。托盘程序启动 1 分钟后
   发一次，之后每小时一次（evo_app.start_telemetry；没有新的局、今天的日活也发过了就不联网）；在设置页同意时马上发一次。连不上就等下一次，不提示
-- 日活：每天第一次发送时带上一份"今天在用"（ping），一天只算一次
+- 日活：每天第一次发送时带上一份"今天在用"（ping），一天只算一次。那天没发出去（连不上）就记着，下次连上时补发
+  （2026-10-24 用户决定；最多补 MAX_PING_DAYS 天，补发的日活带的画面设置是补发时的）
 - 每局结束 SETTLE_MINUTES 分钟以后才发（大厅校准、用户修正多半已经做完）。发过的局记下摘要（data/telemetry_sent.json），
   之后这一局又变了（大厅校准、用户在战绩页改了）就再发一次，服务器上覆盖原来的那一行
 
@@ -27,6 +28,7 @@
 - telemetry_since：同意的时间（只发这之后结束的局）
 - telemetry_id：匿名编号（随机生成，和游戏账号、电脑都无关）
 - telemetry_ping_day：上次发送日活的日期
+- telemetry_ping_missed：用了 Evo、日活还没发出去的日期（从早到晚）
 - telemetry_last：上次发送的时间和结果（只记下来，排查问题用）
 
 测试时把 STATS_URL 换成本机的测试地址（或者设环境变量 EVO_STATS_URL）。
@@ -52,6 +54,9 @@ from paths import DB_PATH
 STATS_URL = os.environ.get("EVO_STATS_URL", "https://stats.evotracker.cn").rstrip("/")
 CONSENT_KEY, SINCE_KEY, ID_KEY = "telemetry_consent", "telemetry_since", "telemetry_id"
 PING_KEY, LAST_KEY = "telemetry_ping_day", "telemetry_last"
+MISSED_KEY = "telemetry_ping_missed"
+MAX_PING_DAYS = 30  # 没发出去的日活最多补这么多天（更早的不补）
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 SENT_PATH = DB_PATH.parent / "telemetry_sent.json"  # 发过的局：{对局编号: 摘要}。和数据库放在一起，搬数据文件夹时一起搬
 SETTLE_MINUTES = 60  # 一局结束这么久以后才发
 BATCH = 100  # 一次请求最多带几局（服务器也只收这么多）
@@ -92,8 +97,9 @@ def install_id():
 
 
 def set_consent(on):
-    """页面顶部的提问、设置页的开关。打开时从现在算起：之前结束的局不发。"""
+    """页面顶部的提问、设置页的开关。打开时从现在算起：之前结束的局、之前没发出去的日活都不发。"""
     app_settings.set_value(CONSENT_KEY, bool(on))
+    app_settings.set_value(MISSED_KEY, None)
     if on:
         install_id()
         app_settings.set_value(SINCE_KEY, now_text())
@@ -198,6 +204,26 @@ def _post(path, body, timeout=TIMEOUT):
     return reply
 
 
+def _ping_days(today):
+    """要发日活的日期（从早到晚）：以前没发出去的，加上今天（今天还没发过时）。联网之前先记下，连不上也不丢。"""
+    stored = app_settings.get(MISSED_KEY)
+    days = [d for d in stored if isinstance(d, str) and DAY.fullmatch(d)] if isinstance(stored, list) else []
+    if app_settings.get(PING_KEY) != today:
+        days.append(today)
+    days = sorted(set(days))[-MAX_PING_DAYS:]
+    if days != stored and (days or stored is not None):
+        app_settings.set_value(MISSED_KEY, days or None)
+    return days
+
+
+def _ping_sent(day):
+    days = [d for d in app_settings.get(MISSED_KEY) or [] if d != day]
+    app_settings.set_value(MISSED_KEY, days or None)
+    last = app_settings.get(PING_KEY)
+    if not isinstance(last, str) or day > last:
+        app_settings.set_value(PING_KEY, day)
+
+
 def send(db_path=DB_PATH, now=None):
     """发送一次：今天还没发过日活就带上，加上没发过、或发过以后又变了的局。没同意时什么都不做，返回 None。
     没有要发的也不联网。返回 {"ok", "matches"（发了几局）, "ping"（发了日活没有）, "error", "at"}，有联网时记进设置。"""
@@ -212,23 +238,25 @@ def send(db_path=DB_PATH, now=None):
             todo = pending(conn, install, sent, now)
         finally:
             conn.close()
-        ping = ping_payload(today) if app_settings.get(PING_KEY) != today else None
+        days = _ping_days(today)
         result = {"ok": True, "matches": 0, "ping": False, "error": None, "at": now.strftime("%Y-%m-%d %H:%M")}
-        if ping is None and not todo:
+        if not days and not todo:
             return result
+        batches = [todo[start:start + BATCH] for start in range(0, len(todo), BATCH)]
+        batches += [[]] * (len(days) - len(batches))  # 每个请求带一天的日活，日活比局多时多出来的单独发
+        ping = ping_payload(today) if days else None
         try:
-            for start in range(0, max(len(todo), 1), BATCH):
-                batch = todo[start:start + BATCH]
+            for i, batch in enumerate(batches):
                 body = {"id": install, "version": storage.APP_VERSION, "matches": [p for _, p in batch]}
-                if ping is not None and start == 0:
-                    body["ping"] = ping
+                if i < len(days):
+                    body["ping"] = {**ping, "day": days[i]}
                 _post("/v1/report", body)
                 for digest, payload in batch:
                     sent[payload["k"]] = digest
                 _save_sent(sent)
                 result["matches"] += len(batch)
                 if "ping" in body:
-                    app_settings.set_value(PING_KEY, today)
+                    _ping_sent(days[i])
                     result["ping"] = True
         except SendError as e:
             result.update(ok=False, error=str(e))
