@@ -417,6 +417,13 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .combos-table { min-width: 560px; }
 .combos-table thead th + th { width: 130px; }
 .combo { display: inline-flex; flex-wrap: wrap; gap: 4px 18px; }  /* 一个组合的三个传奇排成一行，窄了就换行 */
+.weapons-table { min-width: 560px; }
+.weapons-table thead th + th { width: 150px; }
+.weapons-table .share-col { width: 34%; }
+.share { display: flex; align-items: center; gap: 12px; }  /* 最常用武器的占比：横条 + 百分比 */
+.share .bar { flex: 1; min-width: 100px; }
+.share .num { flex: none; min-width: 36px; text-align: right; }
+.share-fill { height: 100%; border-radius: 999px; background: var(--accent); }
 .legends-table { min-width: 860px; }
 .stats-table th, .stats-table td { padding: 11px 12px; text-align: left; white-space: nowrap; }
 .stats-table th:first-child, .stats-table td:first-child { padding-left: 0; }
@@ -677,6 +684,7 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .legend-item:nth-child(3) .bar { animation-delay: 290ms; }
 .legend-item:nth-child(4) .bar { animation-delay: 360ms; }
 .legends-table tbody tr:nth-child(n+3) .bar { animation-delay: 220ms; }  /* 数据页：第一个传奇先长出来，其余跟上 */
+.share .bar { animation: evo-wipe 700ms cubic-bezier(0.4, 0, 0.2, 1) 150ms backwards; }  /* 最常用武器的横条也从左往右长出来 */
 .pick-bar > span, .beat-track > span { animation: evo-wipe 700ms cubic-bezier(0.4, 0, 0.2, 1) 150ms backwards; }  /* 全体玩家：横条长出来 */
 .more-card[open] .tier-list { animation: evo-drop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 [data-count] { font-variant-numeric: tabular-nums; }  /* 数字滚动时宽度不乱跳 */

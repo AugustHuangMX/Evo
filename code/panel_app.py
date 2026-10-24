@@ -626,6 +626,46 @@ def combo_table(rows, mates):
     return table, known
 
 
+WEAPONS = game_lang.load("weapons.json")  # 武器名单、"只算第一次拿到武器多少秒以后"（见 weapons.py）
+
+
+def duration_text(seconds):
+    """拿在手上的时间：如"2 小时 5 分"、"12 分 30 秒"、"40 秒"。"""
+    s = int(round(seconds))
+    if s >= 3600:
+        return f"{s // 3600} 小时 {s % 3600 // 60} 分"
+    if s >= 60:
+        return f"{s // 60} 分 {s % 60} 秒"
+    return f"{s} 秒"
+
+
+def weapon_table(rows, holds):
+    """最常用武器（2026-10-24 用户决定）：每把武器拿在手上多久，按时间从多到少；局数 = 拿过它的局。
+    只算每一局第一次拿到武器 count_after_seconds 秒以后的（不算落地后随手捡的；页面上不写这条规则，用户决定）。
+    rows：要统计的局；holds：weapon_holds 表的行（多了不要紧）。返回 (列表, 合计)；这个范围里没记下武器返回 ([], None)。"""
+    after = WEAPONS["count_after_seconds"]
+    games = {r["match_id"] for r in rows}
+    seconds, played = {}, {}
+    for h in holds:
+        counted = h["end_s"] - max(h["start_s"], after)
+        if h["match_id"] not in games or counted <= 0:
+            continue
+        seconds[h["weapon"]] = seconds.get(h["weapon"], 0) + counted
+        played.setdefault(h["weapon"], set()).add(h["match_id"])
+    total = sum(seconds.values())
+    if not total:
+        return [], None
+    top = max(seconds.values())
+    table = [{
+        "name": WEAPONS["weapons"].get(key, {}).get("zh", key),
+        "time": duration_text(s),
+        "share": "<1%" if s / total < 0.005 else f"{s / total:.0%}",
+        "bar": round(s / top * 100, 1),  # 横条长短：和拿得最久的那把比
+        "games": len(played[key]),
+    } for key, s in sorted(seconds.items(), key=lambda kv: -kv[1])]
+    return table, {"time": duration_text(total), "games": len(set().union(*played.values()))}
+
+
 def legend_table(rows):
     """传奇表现（详细版）：用过的每个传奇一行，按局数从多到少；名次分布的横条按这个传奇自己的局数算比例。
     返回 (列表, 没认出传奇的局数)。"""
@@ -860,7 +900,7 @@ def matches():
 
 @app.route("/stats")
 def stats():
-    """数据页：常一起玩的队友、传奇表现（详细版）。范围按钮和总览页一样（近 30 局 / 全部）。
+    """数据页：最常用武器、常一起玩的队友、传奇表现（详细版）、传奇组合。范围按钮和总览页一样（近 30 局 / 全部）。
     顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
     if request.args.get("view") == "all":
         return stats_everyone()
@@ -872,6 +912,7 @@ def stats():
     mates = teammate_table(in_range, all_mates)
     legends, no_legend = legend_table(in_range)
     combos, combo_known = combo_table(in_range, all_mates)
+    weapons, weapon_all = weapon_table(in_range, storage.all_weapon_holds(db(), names))
     return render_template(
         "stats.html",
         range_key=range_key,
@@ -885,6 +926,8 @@ def stats():
         combos=combos,
         combo_all=group_numbers(combo_known) if combo_known else None,  # 参照：全队传奇都认出的局
         min_combo_games=MIN_COMBO_GAMES,
+        weapons=weapons,
+        weapon_all=weapon_all,
         buckets=PLACE_BUCKETS,
         review_count=storage.count_review(db(), names),
     )

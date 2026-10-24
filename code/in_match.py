@@ -7,6 +7,7 @@
   - 还不知道自己的玩家名时，把头像旁边的名字裁下来先留着（最多 max_hud_reads 块）
   - 右上角那一块存在内存里：内容变了才存，只留最近的 keep 块（一局结束时每块要读约 0.2 秒）
   - 自己那一行变红 = 倒地；看到"观战"标签 = 成盒；成盒后又看到自己的界面 = 被复活
+  - 没倒地时看右下角手上那把武器（weapons.py：图标变了才和参照图比），记下每一段拿在手上的时间（2026-10-24）
 - 交火时一律不用识别引擎（原则 3）。一局结束时（淘汰画面、冠军横幅、总结页、经验值页、返回大厅按钮、回到大厅、下一局开局、停止记录）
   才读：右上角从最新的一块往回读，每一项取最后一次读到的值；击杀、助攻、老板分、伤害从没显示过就是 0
   （前提是这几块确实是右上角：剩余小队数或 RP 至少读到过一次，否则全部当作没读到）
@@ -17,6 +18,7 @@
 from collections import deque
 
 from hud import TOP_FIELDS, TOP_LABELS
+from weapons import WeaponDetector, WeaponTimer
 
 END_SCREENS = ("eliminated", "champion", "summary", "xp", "squad_out")  # 这一局打完了（squad_out：右下角"返回大厅"）
 ZERO_IF_HIDDEN = ("kills", "assists", "participation", "damage")  # 右上角没显示 = 0
@@ -28,10 +30,12 @@ AFTER_END_SECONDS = 60  # 结算以后这么久之内又看到自己的界面（
 class InMatchWatcher:
     VOTES = 2  # 同一个传奇认出这么多次才算数
 
-    def __init__(self, hud, post, log, name_cfg, save=None, keep_all=lambda: False):
+    def __init__(self, hud, post, log, name_cfg, save=None, keep_all=lambda: False, weapons=None):
         """save(截图, 文件名)：存一张截图（记录程序的截图文件夹）；keep_all()：现在是不是"保留全部截图"。
-        保留全部截图时（用源码运行时永远是），一局结束时存下最后一张自己的界面（hud_时间_last.png），用来校准对局中的区域。"""
+        保留全部截图时（用源码运行时永远是），一局结束时存下最后一张自己的界面（hud_时间_last.png），用来校准对局中的区域。
+        weapons：武器识别（weapons.WeaponDetector，不给就新建一个：读 config/weapons.json 和参照图）。"""
         self.hud, self.post, self.log = hud, post, log
+        self.weapons = WeaponTimer(weapons or WeaponDetector())
         self.save, self.keep_all = save, keep_all
         self.last_frame = None  # 保留全部截图时：最近一张右上角有变化的自己的界面（整张）
         self.name_place = name_cfg["places"]["hud"]  # 头像旁边的名字（roi、anchor）
@@ -56,6 +60,7 @@ class InMatchWatcher:
         self.mate_names = [[], []]  # 两名队友的名字那一条（最多 3 块）
         self.own_names = []  # 自己的名字那一条
         self.tops = deque(maxlen=self.keep)  # 右上角
+        self.weapons.reset()  # 每一段拿在手上的武器
         self.last_frame = None
         self.done = False  # 这一局已经交给 PostMatch 了
         self.done_at = None
@@ -109,6 +114,8 @@ class InMatchWatcher:
             self.dead_at, self.spectated = None, {}
             self.log(f"[{now:%H:%M:%S}] 对局中：被复活了，继续记录")
         self._set_state(STATE_KNOCKED if self.hud.knocked(frame) else STATE_ALIVE, now)
+        if self.state == STATE_ALIVE:  # 倒地时拿不了武器
+            self.weapons.update(frame, now)
         self._vote_own(own, now)
         self._vote_mates(frame)
         if self.post.player_name is None and len(self.own_names) < self.max_names:
@@ -207,8 +214,9 @@ class InMatchWatcher:
             end = "requeue"  # 成盒以后直接进了下一局（队长重新匹配）：这一局已经打完了，不是掉线
         top = "，".join(f"{TOP_LABELS[k]} {'-' if values[k] is None else values[k]}" for k in TOP_FIELDS)
         mate_text = "、".join(f"{m['name'] or '名字没读到'}（{m['legend'] or '传奇认不出'}）" for m in mates) or "没认出"
+        weapons = self.weapons.result()
         self.log(f"[{now:%H:%M:%S}] 对局结束（{_END_TEXT.get(end, end)}）：右上角最后读到 {top}；"
-                 f"自己最后是{self.state or '-'}；队友 {mate_text}")
+                 f"自己最后是{self.state or '-'}；队友 {mate_text}；武器 {self._weapon_text(weapons)}")
         if last_one:
             watched = "、".join(self.hud.legends.name(k) for k in self.spectated)
             self.log(f"           成盒以后观战的是 {watched}，不是队友：自己是小队最后一个被淘汰的，右上角最后的名次、RP 就是最终的")
@@ -216,6 +224,7 @@ class InMatchWatcher:
             "started": self.started, "ended": now, "end": end, "saw_start": self.saw_start,
             "own_dead": own_dead and not last_one, "values": values, "mates": mates,
             "legend": self.hud.legends.name(self.legend) if self.legend else None,
+            "weapons": weapons,
         })
         if self.last_frame is not None:
             name = f"hud_{now:%H%M%S}_last.png"
@@ -223,6 +232,17 @@ class InMatchWatcher:
             self.log(f"           保留全部截图：存下最后一张自己的界面（{name}），用来核对右上角、队友的区域")
         self.tops.clear()  # 读完就放掉，省内存
         self.own_names, self.mate_names, self.last_frame = [], [[], []], None
+
+
+    def _weapon_text(self, holds):
+        """日志里的武器：每把拿了多久（拿得最久的在前），如"R-301 3:12、辅助手枪 0:45"。"""
+        total = {}
+        for key, start, end in holds:
+            total[key] = total.get(key, 0) + end - start
+        if not total:
+            return "没认出"
+        return "、".join(f"{self.weapons.detector.name(k)} {int(s // 60)}:{int(s % 60):02d}"
+                        for k, s in sorted(total.items(), key=lambda kv: -kv[1]))
 
 
 _END_TEXT = {"eliminated": "淘汰画面", "champion": "冠军横幅", "summary": "总结页", "xp": "经验值页",

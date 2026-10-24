@@ -3,7 +3,7 @@
 数据库文件在数据文件夹的 data/evo.db（位置见 paths.py；在项目里时已被 .gitignore 排除，不会上传）。
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
 另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节；一张队友表 teammates（每局最多两行）；
-一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）；一张大厅读数表 lobby_readings（每次回大厅读到的段位，总分以它为准）。
+一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）；一张大厅读数表 lobby_readings（每次回大厅读到的段位，总分以它为准）；一张武器表 weapon_holds（每一段拿在手上的武器）。
 
 查看最近的记录：python code/storage.py
 导出成 CSV：    python code/storage.py --export data/matches.csv
@@ -18,7 +18,7 @@ from pathlib import Path
 from paths import DB_PATH
 
 APP_VERSION = "0.4.0"
-SCHEMA_VERSION = 7  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+SCHEMA_VERSION = 8  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -105,6 +105,18 @@ LOBBY_TABLE = """CREATE TABLE IF NOT EXISTS lobby_readings (
   score INTEGER  -- 换算成的总分（见 ranks.score），如 14868
 )"""
 
+# 武器：一局里每一段拿在手上的武器（对局中右下角的图标认的，见 weapons.py），一段一行（2026-10-24 用户决定）。
+# 时间从这一局第一次拿到武器算起（秒）。数据页"最常用武器"只算第一次拿到武器多少秒以后的（config/weapons.json 的
+# count_after_seconds）：每一段都存着，这个规则以后改了，旧的局也能直接重算。
+# Stata 类比：长格式数据（每局 × 每一段一行），按 match_id merge m:1 到每一局
+WEAPON_TABLE = """CREATE TABLE IF NOT EXISTS weapon_holds (
+  match_id INTEGER NOT NULL,  -- 哪一局（matches.match_id）
+  weapon TEXT NOT NULL,  -- 武器编号（config/weapons.json，如 r301、vantage_sniper）
+  start_s REAL NOT NULL,  -- 这一段从第几秒开始拿在手上（从这一局第一次拿到武器算起）
+  end_s REAL NOT NULL,  -- 到第几秒
+  PRIMARY KEY (match_id, start_s)
+)"""
+
 # 旧数据库怎么升级：版本号 → 升到这个版本要做的事（SQL，或者 ("加列", 表, 列, 类型)）。只加列、加表，已有的数据不动
 # （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）。加列时已经有这一列就跳过
 MIGRATIONS = {
@@ -116,6 +128,7 @@ MIGRATIONS = {
         ("加列", "teammates", "legend", "TEXT"),  # 队友的传奇
         LOBBY_TABLE],  # 大厅读数
     7: [("加列", "matches", "edited", "TEXT")],  # 2026-10-22 0.3.7：用户改过哪几项（匿名统计里的"识别情况"用）
+    8: [WEAPON_TABLE],  # 2026-10-24 武器：每一段拿在手上的武器（数据页"最常用武器"）
 }
 
 
@@ -145,6 +158,7 @@ def _upgrade(conn):
             conn.execute(MATE_TABLE)
             conn.execute(READING_TABLE)
             conn.execute(LOBBY_TABLE)
+            conn.execute(WEAPON_TABLE)
         else:
             for v in range(version + 1, SCHEMA_VERSION + 1):
                 for step in MIGRATIONS[v]:
@@ -259,6 +273,7 @@ def delete_match(conn, match_id):
     conn.execute("DELETE FROM matches WHERE match_id = ?", (match_id,))
     conn.execute("DELETE FROM teammates WHERE match_id = ?", (match_id,))
     conn.execute("DELETE FROM readings WHERE match_id = ?", (match_id,))
+    conn.execute("DELETE FROM weapon_holds WHERE match_id = ?", (match_id,))
     conn.commit()
 
 
@@ -286,6 +301,21 @@ def update_teammate(conn, match_id, slot, fields):
     sets = ", ".join(f"{k} = ?" for k in data)
     conn.execute(f"UPDATE teammates SET {sets} WHERE match_id = ? AND slot = ?", [*data.values(), match_id, slot])
     conn.commit()
+
+
+def save_weapon_holds(conn, match_id, holds):
+    """存一局拿过的武器（覆盖这一局原来的）。holds：[(武器编号, 开始秒, 结束秒)]（见 weapons.WeaponTimer.result）。"""
+    conn.execute("DELETE FROM weapon_holds WHERE match_id = ?", (match_id,))
+    conn.executemany("INSERT OR REPLACE INTO weapon_holds (match_id, weapon, start_s, end_s) VALUES (?, ?, ?, ?)",
+                     [(match_id, weapon, start, end) for weapon, start, end in holds])
+    conn.commit()
+
+
+def all_weapon_holds(conn, names=None):
+    """所有对局拿过的武器（names：只要这几个玩家名的局），按对局、时间先后（数据页"最常用武器"用）。"""
+    where, params = _where(names=names)
+    return conn.execute(f"SELECT weapon_holds.* FROM weapon_holds JOIN matches USING (match_id){where} "
+                        "ORDER BY ended_at, match_id, start_s", params).fetchall()
 
 
 # ---------- 大厅读数（见 lobby.py、calibration.py） ----------
@@ -340,6 +370,7 @@ def delete_all_matches(conn):
     n = conn.execute("DELETE FROM matches").rowcount
     conn.execute("DELETE FROM teammates")
     conn.execute("DELETE FROM readings")
+    conn.execute("DELETE FROM weapon_holds")
     conn.execute("DELETE FROM lobby_readings")  # 段位卡片、走势图也要跟着清空
     conn.commit()
     return n

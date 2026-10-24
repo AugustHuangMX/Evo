@@ -330,7 +330,7 @@ class PostMatch:
         """对局中最后的读数（一局结束时，见 in_match.InMatchWatcher._finish）：
         started、ended（时间）、end（怎么结束的：eliminated / champion / summary / xp / lobby / next / stop）、
         saw_start（看到了这一局的开局画面）、own_dead（结束时自己已经成盒）、values（右上角各项，没有的为 None）、
-        mates（[{slot, name, legend}]）。"""
+        mates（[{slot, name, legend}]）、weapons（每一段拿在手上的武器 [(编号, 开始秒, 结束秒)]，见 weapons.WeaponTimer）。"""
         if self._late(hud["started"]):
             self.finish()  # 这些数据比上一局的结算画面还晚：是新的一局
         self.hud = hud
@@ -452,7 +452,7 @@ class PostMatch:
                               f"{self.champion:%Y-%m-%d %H:%M:%S}")
 
     def _save_hud(self, match_id):
-        """对局中最后的读数记进 readings 表。自己先成盒的局（队友后被淘汰），RP 和剩余小队数不是最终的：
+        """对局中最后的读数记进 readings 表，拿过的武器记进 weapon_holds 表。自己先成盒的局（队友后被淘汰），RP 和剩余小队数不是最终的：
         RP 另记成 rp_at_death（只留着以后核对，不采用），剩余小队数不记。end_screen：这一局怎么结束的（settle 写说明用）。"""
         h = self.hud
         values = {k: h["values"].get(k) for k in HUD_FIELDS}
@@ -466,6 +466,8 @@ class PostMatch:
             values["placement"] = 1 if h["end"] == "champion" else h["values"].get("squads_left")
         values["end_screen"] = h["end"]
         storage.save_readings(self.conn, match_id, SOURCE_HUD, values, f"{h['ended']:%Y-%m-%d %H:%M:%S}")
+        if h.get("weapons"):
+            storage.save_weapon_holds(self.conn, match_id, h["weapons"])  # 数据页"最常用武器"
 
     def _merge_mates(self, match_id):
         """对局中认出的队友（名字、传奇）和总结页上的队友（名字、ID、数据）按名字对上。
