@@ -50,6 +50,17 @@ def load_template(name, lang=None):
     return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
 
 
+def compact(text):
+    """比关键字前：去掉空格、换成小写。"""
+    return text.replace(" ", "").lower()
+
+
+def screen_of(cfg, name):
+    """配置里这一项是哪个画面：有 "as" 的是同一个画面的另一种样子（如匹配局的开局横幅 "TRIOS"，当作开局画面），
+    各有各的参照图和关键字，认出来以后一样处理。"""
+    return cfg["screens"][name].get("as", name)
+
+
 def shrunk(gray, factor):
     """缩小到 factor 倍（1 = 不变）。"""
     return gray if factor == 1 else cv2.resize(gray, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
@@ -96,10 +107,10 @@ class ScreenDetector:
         return score is None or score >= spec.get("min_similarity", self.cfg["min_similarity"])
 
     def has_keywords(self, frame, name):
-        """第 2 步：用识别引擎读检查区域，关键字是不是全都在。"""
+        """第 2 步：用识别引擎读检查区域，关键字是不是全都在（不管空格和大小写：英文常读成"SQUADELIMINATED"）。"""
         spec = self.cfg["screens"][name]
-        text = "".join(t for t, _ in read_lines(self.engine, frame, spec["roi"], {**self.cfg, **spec}))
-        return all(k in text for k in spec["keywords"])
+        text = compact("".join(t for t, _ in read_lines(self.engine, frame, spec["roi"], {**self.cfg, **spec})))
+        return all(compact(k) in text for k in spec["keywords"])
 
     def check(self, frame, name):
         """这一帧是不是这个画面：外观像了，再读关键字。"""
@@ -111,7 +122,7 @@ class ScreenDetector:
     def detect(self, frame):
         for name in self.cfg["screens"]:
             if self.check(frame, name):
-                return name
+                return screen_of(self.cfg, name)
         return None
 
 
@@ -165,15 +176,17 @@ class GameScreens:
         if self.locked:
             return self.detectors[self.lang].detect(frame)
         order = [self.lang] + [lang for lang in self.detectors if lang != self.lang]
-        for name in self.cfg["screens"]:
-            matched = [lang for lang in order if self.detectors[lang].check(frame, name)]
+        names = dict.fromkeys(name for lang in order for name in self.detectors[lang].cfg["screens"])  # 有的语言多几项
+        for name in names:
+            matched = [lang for lang in order if name in self.detectors[lang].cfg["screens"]
+                       and self.detectors[lang].check(frame, name)]
             if not matched:
                 continue
             self.lang = matched[0]
             if len(matched) == 1:
                 self.locked = True
                 self.log(f"游戏语言：{game_lang.label(self.lang)}（从{self.cfg['screens'][name]['label']}认出）")
-            return name
+            return screen_of(self.cfg, name)
         return None
 
 

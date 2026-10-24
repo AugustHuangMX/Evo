@@ -469,21 +469,21 @@ class PanelServer:
 # ---------- 自检 ----------
 
 def check_images(paths, log):
-    """识别几张截图，把结果写进日志。打包后用来确认识别模型和配置都在；以后排查问题也能用。"""
+    """识别几张截图，把结果写进日志。打包后用来确认识别模型和配置都在；以后排查问题也能用。
+    每张图各认一次游戏语言（screens.GameScreens），按认出的语言读（英文截图也能自检）。"""
+    import game_lang
     from eliminated import read_eliminated
     from hud import TOP_FIELDS, TOP_LABELS, Hud
     from lobby import LobbyReader, describe
     from match_start import read_match_start
     from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image
     from player_name import PlayerNameReader
-    from screens import ScreenDetector
+    from screens import GameScreens
     from summary_page import is_champion, read_summary, show
     from xp_page import read_xp
 
-    cfg, xp_cfg, start_cfg, elim_cfg = (load_config(n) for n in ("summary.json", "xp.json", "match_start.json",
-                                                                  "eliminated.json"))
     engine = create_engine(SMALL_CROP_PARAMS)
-    detector = ScreenDetector(engine)
+    detector = GameScreens(engine)
     hud = Hud(engine)
     if detector.missing or hud.missing:
         log(f"自检：这些画面没有参照图（config/templates/）：{'、'.join(detector.missing + hud.missing)}")
@@ -493,28 +493,34 @@ def check_images(paths, log):
         except ValueError:
             log(f"自检 {path}：打不开这张图片")
             continue
-        screen = detector.detect(img)
+        detector = GameScreens(engine)  # 每张图重新认语言（几张图可能是不同语言的）
+        screen, lang = detector.detect(img), detector.lang
+        cfg = load_config("summary.json", lang)
+        if hud.lang != lang:
+            hud.use_language(lang)
         problems = []
+        if len(detector.detectors) > 1 and screen is not None:
+            log(f"自检 {Path(path).name}：游戏语言 {game_lang.label(lang)}")
         if screen == "summary":
             results, problems = read_summary(engine, img, cfg)
             v = {k: show(r["value"]) for k, r in results.items()}
-            name = PlayerNameReader(engine).read(img, "summary")
+            name = PlayerNameReader(engine, load_config("player_name.json", lang)).read(img, "summary")
             text = (f"总结页 第 {v['placement']} 名，击杀/助攻/击倒 {v['kda']}，伤害 {v['damage']}，生存 {v['survival_time']}，"
                     f"玩家名 {name[0] if name else '没读到'}{'，捍卫者（冠军）' if is_champion(engine, img, cfg) else ''}")
         elif screen == "xp":
-            r, problems = read_xp(engine, img, xp_cfg)
+            r, problems = read_xp(engine, img, load_config("xp.json", lang))
             text = f"经验值页 RP {r['rp_delta']}，第 {r['placement']} 名，段位 {r['rank_tier']} {r['rank_division']} {r['rank_progress']}"
         elif screen == "match_start":
-            r = read_match_start(engine, img, start_cfg)
+            r = read_match_start(engine, img, load_config("match_start.json", lang))
             text = f"开局画面 模式 {r['mode']}，地图 {r['map']}"
         elif screen == "eliminated":
-            text = f"淘汰画面 第 {read_eliminated(engine, img, elim_cfg)['placement']} 名"
+            text = f"淘汰画面 第 {read_eliminated(engine, img, load_config('eliminated.json', lang))['placement']} 名"
         elif screen == "champion":
             text = "冠军横幅（捍卫者）"
         elif screen == "squad_out":
             text = "返回大厅按钮（小队已淘汰）"
         elif screen == "lobby":
-            text = f"大厅 {describe(LobbyReader(engine).read(img))}"
+            text = f"大厅 {describe(LobbyReader(engine, load_config('lobby.json', lang)).read(img))}"
         elif hud.own_legend(img) is not None:
             values, _, _ = hud.read_top(hud.top_snip(img))
             mates = [hud.legends.name(k) if k else "-" for k in hud.mate_legends(img)]

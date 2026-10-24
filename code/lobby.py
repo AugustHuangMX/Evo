@@ -104,7 +104,7 @@ class LobbyWatcher:
         self._leave()
 
     def _leave(self):
-        self.last, self.tries, self.done = None, 0, False
+        self.last, self.tries, self.done, self.blank = None, 0, False, 0
 
     def update(self, screen, frame, now):
         if screen != "lobby":
@@ -116,6 +116,13 @@ class LobbyWatcher:
         r = self.reader.read(frame)
         self.reads += 1
         self.tries += 1
+        # 选的不是排位（英文按左下角的模式框认大厅，匹配时也认得出）：段位那一栏不在，连续几次什么都没读到就不读了
+        self.blank = self.blank + 1 if r["tier"] is None and r["progress"] is None else 0
+        give_up = self.reader.cfg.get("give_up_blank_reads")
+        if give_up and self.blank >= give_up:
+            self.done = True
+            self.log(f"[{now:%H:%M:%S}] 大厅：左下角没有段位（选的不是排位），这次不读")
+            return
         key = (r["tier"], r["division"], r["progress"]) if r["score"] is not None else None
         if key is not None and self.last is not None and key == self.last[0]:
             self.done = True

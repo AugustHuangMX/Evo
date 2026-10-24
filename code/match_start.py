@@ -46,8 +46,9 @@ def read_match_start(engine, img, cfg):
     raw_mode = read_text(engine, img, cfg["fields"]["mode"], cfg)
     raw_map = read_text(engine, img, cfg["fields"]["map"], cfg)
     mode_name = re.split(r"\s*[-－—–]\s*", raw_mode.replace(" ", ""))[0]
+    modes = {name.replace(" ", "").lower(): mode for name, mode in cfg["modes"].items()}  # 不管空格和大小写
     return {
-        "mode": cfg["modes"].get(mode_name),
+        "mode": modes.get(mode_name.lower()),
         "map": closest_map(raw_map, cfg),
         "raw_mode": mode_name,
         "raw_map": raw_map,

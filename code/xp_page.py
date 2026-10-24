@@ -16,7 +16,7 @@ from pathlib import Path
 
 import game_lang
 import ranks
-from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image, read_lines
+from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image, read_lines
 
 CONFIG_NAME = "xp.json"
 ROMAN = {"Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "1": "I", "l": "I", "|": "I"}
@@ -27,7 +27,14 @@ def normalize(text):
 
 
 def read_text(engine, img, spec, cfg):
-    """识别一个小块，返回 (文字, 置信度)。小块里有几行时取置信度最高的一行。"""
+    """识别一个小块，返回 (文字, 置信度)。小块里有几段时取置信度最高的一段；
+    配置里 join_lines 为真时（英文：次数和分数、"#9"和"10 RP"隔得远，会读成几段）从左到右拼起来，置信度取最低的。"""
+    if cfg.get("join_lines"):
+        result = engine(crop(img, spec["roi"], cfg, spec.get("anchor")))
+        if not result.txts:
+            return "", None
+        parts = sorted(zip(result.boxes, result.txts, result.scores), key=lambda p: float(p[0][:, 0].min()))
+        return normalize(" ".join(t for _, t, _ in parts)), min(s for _, _, s in parts)
     lines = read_lines(engine, img, spec["roi"], cfg, spec.get("anchor"))
     if not lines:
         return "", None
@@ -80,8 +87,12 @@ def read_xp(engine, img, cfg):
     raw = {}
     for name, spec in cfg["fields"].items():
         text, score = read_text(engine, img, spec, cfg)
+        if name != "next_rank":  # 数字那几行修正常见误读（英文把"0 RP"读成"O RP"）；段位名不改（"BRONZE"里有 O）
+            for wrong, right in cfg.get("replace", {}).items():
+                text = text.replace(wrong, right)
         raw[name] = text if score is not None and score >= cfg["min_score"] else ""
     patterns = cfg["patterns"]
+    glued = cfg.get("split_glued", True)  # 次数和分数连在一起时（"00排位点数"）去拆；英文中间隔得远，不会连在一起，不拆
 
     def points(name):
         m = re.match(patterns["points"], raw[name])
@@ -91,7 +102,9 @@ def read_xp(engine, img, cfg):
         m = re.match(patterns["count_points"], raw[name])
         if not m:
             return None
-        return (int(m[1]), int(m[2])) if m[2] else split_count_points(m[1])
+        if m[2]:
+            return int(m[1]), int(m[2])
+        return split_count_points(m[1]) if glued else None
 
     combat, bonus, placement_total = points("combat_total"), points("bonus_total"), points("placement_total")
     fee = points("entry_fee")
@@ -104,7 +117,7 @@ def read_xp(engine, img, cfg):
     m = re.match(patterns["placement_points"], raw["placement"])
     if m and m[2]:
         placement, placement_points = int(m[1]), int(m[2])
-    elif m and placement_total is not None and fee is not None:
+    elif m and glued and placement_total is not None and fee is not None:
         expected = str(placement_total - fee)
         if m[1].endswith(expected) and len(m[1]) > len(expected):
             placement, placement_points = int(m[1][:-len(expected)]), int(expected)
