@@ -436,6 +436,82 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .stats-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; border: 1px dashed var(--dashed); border-radius: 6px; }
 .legend-key .label { font-size: 12px; }
 
+/* 数据页最上面："我的 / 全体玩家"切换；看全体玩家时右边是人数、更新时间和刷新按钮 */
+.stats-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.stats-tabs a { padding: 9px 22px; font-weight: 500; }
+.everyone-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; color: var(--muted); font-size: 12px; }
+.everyone-meta .num { color: var(--text); font-weight: 500; }
+.everyone-status:empty { display: none; }
+.refresh-btn { margin-left: 0; }
+.refresh-btn:focus-visible, .more-btn:focus-visible, .stats-tabs a:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.refresh-btn[aria-busy="true"] { cursor: progress; }
+.refresh-btn[aria-busy="true"] svg { animation: evo-spin 0.9s linear infinite; }
+@keyframes evo-spin { to { transform: rotate(360deg); } }
+
+/* 全体玩家的表格：选用率是一条横条（最多的那个占满）；最后一列"你"和全体比，好的绿色、差的红色（旁边有箭头，不只靠颜色） */
+.everyone-table { min-width: 940px; }
+.everyone-combos { min-width: 640px; }
+.stats-table .pick-col { width: 22%; min-width: 180px; }
+.pick { display: flex; align-items: center; gap: 10px; }
+.pick-bar { flex: 1; min-width: 80px; }
+.pick-bar > span, .tier-bar > span, .beat-track > span { display: block; height: 100%; border-radius: inherit; background: var(--p3-bg); }
+.pick .num { min-width: 48px; text-align: right; }
+.stats-table .you-col { border-left: 1px solid var(--row-border); padding-left: 16px; min-width: 92px; }
+.you-value { display: inline-flex; align-items: center; gap: 4px; }
+.you-better { color: var(--good); }
+.you-worse { color: var(--bad); }
+.you-games { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.you-none { color: var(--muted); }
+.vs-mark { flex: none; }
+.more-btn { display: block; margin: 14px auto 0; min-height: 36px; padding: 8px 16px; }
+
+/* 你在 Evo 玩家中：四个小格，横条是"超过多少玩家" */
+.beat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.beat-tile { padding: 16px 18px; border: 1px solid var(--row-border); border-radius: 6px; background: var(--inset); min-width: 0; }
+.beat-value { font-size: 28px; line-height: 1.3; margin-top: 2px; }
+.beat-track { height: 6px; margin: 12px 0 8px; border-radius: 999px; background: var(--row-border); overflow: hidden; }
+.beat-track > span { background: var(--accent); }
+.beat-text { color: var(--muted); font-size: 12px; }
+.beat-text .num { color: var(--text); }
+
+/* 更多：段位分布（收起来的卡片，点标题展开） */
+.more-card summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; cursor: pointer; list-style: none; }
+.more-card summary::-webkit-details-marker { display: none; }
+.more-card summary h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.more-card summary:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 4px; border-radius: 4px; }
+.more-card .chevron { flex: none; color: var(--muted); transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.more-card[open] .chevron { transform: rotate(180deg); }
+.tier-list { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tier-list li { display: grid; grid-template-columns: 130px minmax(0, 1fr) 130px; align-items: center; gap: 14px; }
+.tier-bar { height: 10px; }
+.tier-list li.you .tier-name { font-weight: 600; }
+.tier-list li.you .tier-bar > span { background: var(--accent); }
+.tier-count { text-align: right; color: var(--muted); white-space: nowrap; }
+.tier-count .num { color: var(--text); }
+.you-tag { margin-left: 8px; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* 没开匿名统计：后面是看不清的示意（几条灰块，不是真数据），上面盖一张卡片：锁、说明、开启按钮 */
+.everyone-locked { display: grid; }
+.everyone-locked > * { grid-area: 1 / 1; }  /* 两层叠在同一格里 */
+.locked-preview { position: relative; min-height: 440px; filter: blur(3px); opacity: 0.6; user-select: none; pointer-events: none; overflow: hidden; }
+.locked-preview::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 20%, var(--bg)); }
+.ghost-row { display: grid; grid-template-columns: 18px 88px minmax(0, 1fr) 44px 44px 44px; align-items: center; gap: 18px; padding: 13px 0; border-top: 1px solid var(--row-border); }
+.ghost-dot { width: 18px; height: 18px; border-radius: 50%; background: var(--border); }
+.ghost-name, .ghost-num { height: 10px; border-radius: 4px; background: var(--border); }
+.ghost-bar { width: var(--w); height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--p3-bg) 55%, transparent); }
+.locked-panel { place-self: center; position: relative; max-width: 480px; margin: 32px 16px; padding: 28px 32px; display: flex; flex-direction: column;
+  align-items: center; gap: 12px; text-align: center; box-shadow: 0 16px 48px rgb(0 0 0 / 0.45); }
+[data-theme="light"] .locked-panel { box-shadow: 0 16px 40px rgb(0 0 0 / 0.12); }
+.locked-icon { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  color: var(--text); background: var(--nav-on-bg); border: 1px solid var(--border); }
+.locked-panel h2 { margin: 4px 0 0; font-size: 18px; font-weight: 600; line-height: 1.4; }
+.locked-text { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+.locked-panel form { margin: 6px 0 0; }
+.locked-panel .btn-primary { min-height: 40px; }
+.locked-panel .btn-primary:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.locked-foot { margin: 0; color: var(--muted); font-size: 12px; }
+
 /* ---------- 设置页 ---------- */
 .settings-layout { display: grid; grid-template-columns: 1fr minmax(280px, 350px); gap: 20px; align-items: start; }
 .settings-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
@@ -601,6 +677,8 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .legend-item:nth-child(3) .bar { animation-delay: 290ms; }
 .legend-item:nth-child(4) .bar { animation-delay: 360ms; }
 .legends-table tbody tr:nth-child(n+3) .bar { animation-delay: 220ms; }  /* 数据页：第一个传奇先长出来，其余跟上 */
+.pick-bar > span, .beat-track > span { animation: evo-wipe 700ms cubic-bezier(0.4, 0, 0.2, 1) 150ms backwards; }  /* 全体玩家：横条长出来 */
+.more-card[open] .tier-list { animation: evo-drop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 [data-count] { font-variant-numeric: tabular-nums; }  /* 数字滚动时宽度不乱跳 */
 
 @keyframes evo-fade-in { from { opacity: 0; } }
@@ -618,6 +696,7 @@ table.stats-table { width: 100%; border-collapse: collapse; }
   .settings-layout { grid-template-columns: 1fr; }
   .ov-top, .ov-bottom { grid-template-columns: 1fr; }
   .stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .beat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 560px) {
   .wrap { padding: 16px 16px 40px; }

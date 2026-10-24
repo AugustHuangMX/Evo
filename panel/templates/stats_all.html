@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+{% from "_legend.html" import legend_icon %}
+{% block title %}数据 · Evo{% endblock %}
+
+{# 数据页"全体玩家"（global_stats.py，2026-10-24 用户决定）：开了匿名统计的所有 Evo 玩家的汇总，和自己的比。
+   没开匿名统计：锁住的样子（后面是看不清的示意，不是真数据），不下载。前三张卡片是重点，段位分布收起来；
+   长的表格先列几行，点"展开全部"再看其余 #}
+
+{# 你和全体比：好的绿色、差的红色，旁边有箭头和读屏文字（不只靠颜色） #}
+{% macro versus(vs) -%}
+{%- if vs == 'better' -%}
+<svg class="vs-mark" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1.5 L9 7.5 L1 7.5 Z" fill="currentColor"/></svg><span class="sr-only">（比全体好）</span>
+{%- elif vs == 'worse' -%}
+<svg class="vs-mark" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 8.5 L9 2.5 L1 2.5 Z" fill="currentColor"/></svg><span class="sr-only">（比全体差）</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro you_cell(row) -%}
+<td class="right you-col">
+  {%- if row.you_games -%}
+  <span class="you-value you-{{ row.you_vs or 'same' }}"><span class="num">{{ row.you_place }}</span>{{ versus(row.you_vs) }}</span><span class="you-games">{{ row.you_games }} 局</span>
+  {%- else -%}
+  <span class="you-none">—</span>
+  {%- endif -%}
+</td>
+{%- endmacro %}
+
+{% block content %}
+
+{% if review_count %}
+<a class="banner-warn" href="{{ url_for('matches', review='1') }}">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 L22 20 L2 20 Z"></path><path d="M12 10 L12 14"></path><path d="M12 17 L12 17.5"></path></svg>
+  <span class="grow">有 {{ review_count }} 局识别结果不确定，需要你确认</span>
+  <span class="strong">去确认 →</span>
+</a>
+{% endif %}
+
+<div class="stats-top">
+  {% with everyone=True %}{% include "_stats_tabs.html" %}{% endwith %}
+  {% if allowed %}
+  <div class="everyone-meta">
+    {% if view %}<span><span class="num">{{ view.players }}</span> 名玩家 · <span class="num">{{ '{:,}'.format(view.matches) }}</span> 局 · 更新于 {{ view.updated }}</span>{% endif %}
+    <span class="everyone-status" id="everyone-status" role="status" aria-live="polite"></span>
+    <button type="button" class="icon-btn refresh-btn" id="everyone-refresh" aria-label="刷新全体玩家的数据" title="刷新">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+{% if not allowed %}
+{# 没开匿名统计：蒙版 + 锁 + 开启按钮。后面的示意只是几条灰块（读屏软件跳过、点不到），不下载任何数据 #}
+<section class="everyone-locked" aria-labelledby="h-locked">
+  <div class="card stats-card locked-preview" aria-hidden="true" inert>
+    <div class="card-head"><h2>传奇热度</h2></div>
+    {% for w in (92, 74, 61, 50, 43, 37, 30) %}
+    <div class="ghost-row"><span class="ghost-dot"></span><span class="ghost-name"></span><span class="ghost-bar" style="--w: {{ w }}%"></span><span class="ghost-num"></span><span class="ghost-num"></span><span class="ghost-num"></span></div>
+    {% endfor %}
+  </div>
+  <div class="card locked-panel">
+    <span class="locked-icon" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 15v2.5"/></svg>
+    </span>
+    <h2 id="h-locked">开启匿名统计后可以查看全体玩家的数据</h2>
+    <p class="locked-text">看看大家最常用哪些传奇、哪些组合，以及你的数据在 Evo 玩家中排在哪里。数据来自开启了匿名统计的玩家：Evo 会把你以后每一局的传奇、名次、击杀、伤害等（队友的也一样）匿名发给开发者，不发送游戏名、ID 和截图。</p>
+    <form method="post" action="{{ url_for('telemetry_setting') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="on" value="1">
+      <input type="hidden" name="next" value="{{ url_for('stats', view='all') }}">
+      <button type="submit" class="btn btn-primary">开启匿名统计</button>
+    </form>
+    <p class="locked-foot">以后随时可以在<a class="text-link" href="{{ url_for('settings') }}#stats">设置页</a>关闭</p>
+  </div>
+</section>
+
+{% elif not view %}
+{# 开了，但还没下载过：页面打开后脚本马上下载，好了重新打开页面 #}
+<div class="card empty-card" id="everyone-loading" role="status" aria-live="polite">正在下载全体玩家的数据…</div>
+
+{% else %}
+
+<div class="filters">
+  <div class="filter">
+    <span class="label">统计范围</span>
+    <div class="seg" role="group" aria-label="统计范围">
+      {% for key, label in ranges.items() %}
+      <a href="{{ url_for('stats', view='all', range=key, mode=mode, tier=tier) }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="filter">
+    <span class="label">模式</span>
+    <div class="seg" role="group" aria-label="模式">
+      {% for key, label in modes.items() %}
+      <a href="{{ url_for('stats', view='all', range=range_key, mode=key) }}" class="{{ 'on' if mode == key }}"{% if mode == key %} aria-current="true"{% endif %}{% if key == 'pubs' %} title="不是排位的局，包括没认出模式的局"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% if mode == 'ranked' %}
+  <div class="filter">
+    <span class="label">段位</span>
+    <div class="seg" role="group" aria-label="段位">
+      {% for key, label in tiers.items() %}
+      <a href="{{ url_for('stats', view='all', range=range_key, mode=mode, tier=key) }}" class="{{ 'on' if tier == key }}"{% if tier == key %} aria-current="true"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# 1. 传奇热度：全队三个人都算（队友多半是随机匹配到的）。先列 show_legends 个，其余点"展开全部" #}
+<section class="card stats-card" aria-labelledby="h-hot">
+  <div class="card-head"><h2 id="h-hot">传奇热度</h2></div>
+  {% if view.legends %}
+  <div class="table-wrap">
+    <table class="stats-table everyone-table">
+      <thead>
+        <tr>
+          <th scope="col">传奇</th>
+          <th scope="col" class="right" title="这个传奇出场了几次（每队三个人都算）">出场</th>
+          <th scope="col" class="pick-col" title="所有出场的传奇里（每队三个人都算），这个传奇占多少">选用率</th>
+          <th scope="col" class="right">胜率</th>
+          <th scope="col" class="right">前五率</th>
+          <th scope="col" class="right">场均名次</th>
+          <th scope="col" class="right">场均击杀</th>
+          <th scope="col" class="right">场均伤害</th>
+          <th scope="col" class="right you-col" title="你用这个传奇的场均名次和局数（同样的范围、模式、段位）">你</th>
+        </tr>
+      </thead>
+      {% for chunk in [view.legends[:view.show_legends], view.legends[view.show_legends:]] if chunk %}
+      <tbody{% if loop.index == 2 %} id="legends-more" hidden{% endif %}>
+        {% for l in chunk %}
+        <tr>
+          <th scope="row"><span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span></th>
+          <td class="right num">{{ '{:,}'.format(l.games) }}</td>
+          <td class="pick-col">
+            <span class="pick"><span class="bar pick-bar"><span style="width: {{ l.pick_width }}%"></span></span><span class="num">{{ l.pick }}</span></span>
+          </td>
+          <td class="right num">{{ l.win }}</td>
+          <td class="right num">{{ l.top5 }}</td>
+          <td class="right num">{{ l.place }}</td>
+          <td class="right num">{{ l.kills }}</td>
+          <td class="right num">{{ l.damage }}</td>
+          {{ you_cell(l) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+  {% if view.legends|length > view.show_legends %}
+  <button type="button" class="btn-text more-btn" aria-expanded="false" aria-controls="legends-more"
+          data-more="展开全部 {{ view.legends|length }} 个传奇" data-less="收起">展开全部 {{ view.legends|length }} 个传奇</button>
+  {% endif %}
+  {% else %}
+  <div class="stats-empty">这个范围里还没有数据</div>
+  {% endif %}
+</section>
+
+{# 2. 热门组合：全队三个传奇（不管谁用的哪个） #}
+<section class="card stats-card" aria-labelledby="h-combos">
+  <div class="card-head"><h2 id="h-combos">热门组合</h2></div>
+  {% if view.combos %}
+  <div class="table-wrap">
+    <table class="stats-table combos-table everyone-combos">
+      <thead>
+        <tr>
+          <th scope="col">组合</th>
+          <th scope="col" class="right">局数</th>
+          <th scope="col" class="right" title="这个组合的局数 ÷ 全队传奇都认出的局数">选取率</th>
+          <th scope="col" class="right">场均名次</th>
+          <th scope="col" class="right you-col" title="你们队用这个组合的场均名次和局数（同样的范围、模式、段位）">你</th>
+        </tr>
+      </thead>
+      {% for chunk in [view.combos[:view.show_combos], view.combos[view.show_combos:]] if chunk %}
+      <tbody{% if loop.index == 2 %} id="combos-more" hidden{% endif %}>
+        {% for c in chunk %}
+        <tr>
+          <th scope="row"><span class="combo">{% for l in c.legends %}<span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span>{% endfor %}</span></th>
+          <td class="right num">{{ c.games }}</td>
+          <td class="right num">{{ c.rate }}</td>
+          <td class="right num">{{ c.place }}</td>
+          {{ you_cell(c) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+  {% if view.combos|length > view.show_combos %}
+  <button type="button" class="btn-text more-btn" aria-expanded="false" aria-controls="combos-more"
+          data-more="展开全部 {{ view.combos|length }} 个组合" data-less="收起">展开全部 {{ view.combos|length }} 个组合</button>
+  {% endif %}
+  {% else %}
+  <div class="stats-empty">这个范围里还没有认出全队传奇的对局</div>
+  {% endif %}
+</section>
+
+{# 3. 你在 Evo 玩家中：你的场均数字，超过了多少玩家（打了 3 局以上的玩家，按每人的场均比） #}
+<section class="card stats-card" aria-labelledby="h-you">
+  <div class="card-head"><h2 id="h-you">你在 Evo 玩家中</h2></div>
+  <div class="beat-row">
+    {% for t in view.tiles %}
+    <div class="beat-tile">
+      <div class="label">{{ t.label }}</div>
+      <div class="beat-value num">{{ t.value }}</div>
+      {% if t.beat is not none %}
+      <div class="beat-track" role="img" aria-label="超过 {{ t.beat }}% 的玩家"><span style="width: {{ t.beat }}%"></span></div>
+      <div class="beat-text">超过 <span class="num">{{ t.beat }}%</span> 的玩家</div>
+      {% else %}
+      <div class="beat-track" aria-hidden="true"></div>
+      <div class="beat-text">{{ '这个范围里你还没有对局' if not view.you_games else '还没有可以比的数据' }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{# 4. 段位分布（收起来，点开看）：每名玩家按最近一局排位的段位算 #}
+{% if view.tiers %}
+<details class="card stats-card more-card">
+  <summary><h2>更多：段位分布</h2><svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+  <ul class="tier-list">
+    {% for t in view.tiers %}
+    <li class="{{ 'you' if t.you }}">
+      <span class="tier-name">{{ t.name }}{% if t.you %}<span class="you-tag">你</span>{% endif %}</span>
+      <span class="bar tier-bar"><span style="width: {{ t.width }}%"></span></span>
+      <span class="tier-count"><span class="num">{{ t.count }}</span> 人<span class="stats-rate num">{{ t.share }}</span></span>
+    </li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 展开全部 / 收起（传奇热度、热门组合）
+document.querySelectorAll(".more-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const more = document.getElementById(btn.getAttribute("aria-controls"));
+    const open = more.hidden;
+    more.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    btn.textContent = open ? btn.dataset.less : btn.dataset.more;
+  });
+});
+
+// 刷新：下载一次汇总（POST /stats/everyone/refresh），好了重新打开页面；没下载到就写在按钮旁边。
+// 还没下载过、或者下载了 24 小时以上时，打开页面就自动下载一次（fetch_now）
+(() => {
+  const btn = document.getElementById("everyone-refresh");
+  if (!btn) return;
+  const status = document.getElementById("everyone-status");
+  const loading = document.getElementById("everyone-loading");
+  const say = (text) => { status.textContent = text; if (loading) loading.textContent = text; };
+  async function refresh() {
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    say("正在下载…");
+    try {
+      const body = new FormData();
+      body.append("token", "{{ token }}");
+      const reply = await fetch("{{ url_for('refresh_everyone') }}", { method: "POST", body });
+      const result = await reply.json();
+      if (result.ok) { location.reload(); return; }
+      say(`没下载到：${result.error}。稍后点右上角的刷新再试`);
+    } catch (e) {
+      say("没下载到，稍后点右上角的刷新再试");
+    }
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+  }
+  btn.addEventListener("click", refresh);
+  {% if fetch_now %}refresh();{% endif %}
+})();
+</script>
+{% endblock %}

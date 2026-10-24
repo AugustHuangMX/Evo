@@ -1,6 +1,6 @@
 """运行全部测试：python tests/run_all.py（约 5 分钟）
 
-什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、诊断工具（evo_diag.py、tools/diag_report.py）
+什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、数据页"全体玩家"（global_stats.py）、诊断工具（evo_diag.py、tools/diag_report.py）
 或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；
@@ -20,6 +20,7 @@ import test_eliminated
 import test_follow
 import test_english
 import test_game_lang
+import test_global_stats
 import test_in_match
 import test_legend_icons
 import test_legends
@@ -56,6 +57,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "提示音（声音文件、开关、什么时候响、记录程序、设置页）": test_sounds,
          "分享战绩（三种卡片、不写队友名字、对话框、保存图片）": test_share,
          "数据页（常一起玩的队友、传奇表现）": test_stats_page,
+         "数据页\"全体玩家\"（开了匿名统计才能看、下载汇总、和自己比、筛选、连不上）": test_global_stats,
          "总览页\"关注我\"（B 站、小黑盒）": test_follow,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
          "云同步（二维码、绑定、上传、重传、删除、连不上、手机上解绑、设置页）": test_cloud_sync,

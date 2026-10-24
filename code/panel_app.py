@@ -30,6 +30,7 @@ import autostart
 import data_move
 import game_aspect
 import game_lang
+import global_stats
 import ranks
 import screenshots
 import sounds
@@ -855,7 +856,10 @@ def matches():
 
 @app.route("/stats")
 def stats():
-    """数据页：常一起玩的队友、传奇表现（详细版）。范围按钮和总览页一样（近 30 局 / 全部）。"""
+    """数据页：常一起玩的队友、传奇表现（详细版）。范围按钮和总览页一样（近 30 局 / 全部）。
+    顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
+    if request.args.get("view") == "all":
+        return stats_everyone()
     range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
@@ -880,6 +884,37 @@ def stats():
         buckets=PLACE_BUCKETS,
         review_count=storage.count_review(db(), names),
     )
+
+
+def stats_everyone():
+    """数据页"全体玩家"（global_stats.py，2026-10-24 用户决定）：开了匿名统计的所有 Evo 玩家的汇总，和自己的比。
+    没开匿名统计：锁住的样子（蒙版 + 锁 + 开启按钮），不下载。开了：用存着的汇总；没有或超过 24 小时，
+    页面打开后脚本马上下载（POST /stats/everyone/refresh），下载好重新打开页面。"""
+    range_key, mode, tier = global_stats.choose(request.args)
+    allowed = global_stats.allowed()
+    cache = global_stats.cached() if allowed else None
+    view = None
+    if cache is not None:
+        names = account_view()["names"]
+        rows = storage.all_matches(db(), names)
+        rank = latest_rank(rows, storage.lobby_readings(db(), names))
+        view = global_stats.page(cache["summary"], rows, storage.all_teammates(db(), names), range_key, mode, tier,
+                                 your_tier=rank[0] if rank else None, icons=LEGEND_ICONS)
+    return render_template(
+        "stats_all.html",
+        allowed=allowed,
+        view=view,
+        fetch_now=allowed and global_stats.stale(cache),
+        range_key=range_key, mode=mode, tier=tier,
+        ranges=global_stats.RANGES, modes=global_stats.MODES, tiers=global_stats.TIERS,
+        review_count=storage.count_review(db(), account_view()["names"]),
+    )
+
+
+@app.post("/stats/everyone/refresh")
+def refresh_everyone():
+    """"全体玩家"右上角的刷新按钮（和页面打开时的自动下载）：现在下载一次汇总。回 {"ok", "error"}。"""
+    return jsonify(global_stats.fetch())
 
 
 def back_to_list(**changes):

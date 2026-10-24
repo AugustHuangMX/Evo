@@ -183,7 +183,7 @@
 <section class="card ask-card" aria-labelledby="h-ask-stats">
   <div class="ask-text">
     <h2 id="h-ask-stats">愿意发送匿名的对局数据，帮助改进 Evo 吗？</h2>
-    <p class="setting-desc">同意后，Evo 会把你以后每一局的传奇、队友用的传奇、名次、击杀、伤害、RP、段位和识别情况，连同一个随机编号发给开发者，用来统计有多少人在用、改进识别。不发送游戏名、ID、截图和日志。以后随时可以在<a class="text-link" href="{{ url_for('settings') }}#stats">设置页</a>里关闭。</p>
+    <p class="setting-desc">同意后，Evo 会把你以后每一局的传奇、名次、击杀、伤害、RP、段位和识别情况（队友的传奇、击杀、伤害也一样），连同一个随机编号发给开发者，用来统计有多少人在用、改进识别；汇总以后你可以在数据页"全体玩家"里看到。不发送游戏名、ID、截图和日志。以后随时可以在<a class="text-link" href="{{ url_for('settings') }}#stats">设置页</a>里关闭。</p>
   </div>
   <div class="ask-actions">
     <form method="post" action="{{ url_for('telemetry_setting') }}">

@@ -16,7 +16,9 @@
 - 日活：日期、屏幕分辨率、Apex 视频设置里的分辨率和显示模式（全屏 / 无边框 / 窗口）、设置页选的游戏画面比例
 - 每局：对局编号（由匿名编号和本机的局号算出来的一串乱码，只用来覆盖同一局）、日期、记这一局的 Evo 版本号、
   模式、地图、自己的传奇、两名队友的传奇、名次、击杀/助攻/击倒、伤害、RP 变化、段位（只有大段，如"钻石"）、
-  RP 从哪个画面来、是否待确认、用户在战绩页改过哪几项（不发改成了什么）。没读出来的项是空的（null）
+  RP 从哪个画面来、是否待确认、用户在战绩页改过哪几项（不发改成了什么）；0.3.8 之后的版本还有两名队友这一局的
+  击杀/助攻/击倒、伤害（mate_stats，和 mates 一一对应；总结页上读的，没有总结页的局是空的。2026-10-24 用户决定：
+  数据页"全体玩家"按全队三个人算，用过的人不用重新问）。没读出来的项是空的（null）
 不发：游戏名、ID、队友的名字和 ID、截图、日志、备注（可能有用户自己写的字）、文件路径、电脑信息。
 服务器不存 IP 地址（Cloudflare 本身能看到，见隐私政策）。
 
@@ -56,6 +58,7 @@ BATCH = 100  # 一次请求最多带几局（服务器也只收这么多）
 TIMEOUT = 15  # 秒：和检查新版本一样，国内有的网络到 Cloudflare 绕得远
 MAX_REPLY = 64 * 1024
 MATCH_FIELDS = ("placement", "kills", "assists", "knockdowns", "damage", "rp_delta")
+MATE_FIELDS = ("kills", "assists", "knockdowns", "damage")  # 队友每局发的数字（没有名字和 ID）
 _lock = threading.Lock()  # 托盘的定时发送和设置页的按钮可能同时来，一次只让一个发
 
 
@@ -130,10 +133,12 @@ def match_key(install, row):
 
 def match_payload(conn, row, install):
     """一局要发的内容（只有这些项）。"""
-    mates = [m["legend"] for m in storage.teammates_of(conn, row["match_id"])][:2]
+    mates = storage.teammates_of(conn, row["match_id"])[:2]
     edited = sorted({f for f in (row["edited"] or "").split(",") if f})
     return {"k": match_key(install, row), "day": (row["ended_at"] or "")[:10] or None, "version": row["app_version"],
-            "mode": row["mode"], "map": row["map"], "legend": row["legend"], "mates": mates,
+            "mode": row["mode"], "map": row["map"], "legend": row["legend"], "mates": [m["legend"] for m in mates],
+            # 队友的数据单独放一项：老的统计服务器不认识它，照样收下这一局（mates 的格式不变）
+            "mate_stats": [{f: m[f] for f in MATE_FIELDS} for m in mates],
             **{f: row[f] for f in MATCH_FIELDS},
             "tier": row["rank_tier"], "rp_source": row["rp_source"], "review": bool(row["needs_review"]),
             "edited": edited}

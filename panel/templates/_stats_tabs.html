@@ -1,0 +1,5 @@
+{# 数据页最上面的切换："我的"（stats.html）/ "全体玩家"（stats_all.html，见 global_stats.py）。everyone：现在看的是不是全体玩家 #}
+<nav class="seg stats-tabs" aria-label="看谁的数据">
+  <a href="{{ url_for('stats') }}" class="{{ 'on' if not everyone }}"{% if not everyone %} aria-current="page"{% endif %}>我的</a>
+  <a href="{{ url_for('stats', view='all') }}" class="{{ 'on' if everyone }}"{% if everyone %} aria-current="page"{% endif %}>全体玩家</a>
+</nav>

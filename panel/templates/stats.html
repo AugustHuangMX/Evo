@@ -12,6 +12,10 @@
 </a>
 {% endif %}
 
+<div class="stats-top">
+  {% with everyone=False %}{% include "_stats_tabs.html" %}{% endwith %}
+</div>
+
 {% if not total %}
 <div class="card empty-card">
   Evo 当前还没有任何对局记录。

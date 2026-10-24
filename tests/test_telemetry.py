@@ -31,8 +31,8 @@ os.environ["no_proxy"] = "127.0.0.1,localhost"  # 电脑上设了代理时，本
 KEYS = (telemetry.CONSENT_KEY, telemetry.SINCE_KEY, telemetry.ID_KEY, telemetry.PING_KEY, telemetry.LAST_KEY)
 BODY_KEYS = {"id", "version", "matches", "ping"}
 PING_KEYS = {"day", "screen", "game_res", "game_mode", "aspect"}
-MATCH_KEYS = {"k", "day", "version", "mode", "map", "legend", "mates", "placement", "kills", "assists", "knockdowns",
-              "damage", "rp_delta", "tier", "rp_source", "review", "edited"}
+MATCH_KEYS = {"k", "day", "version", "mode", "map", "legend", "mates", "mate_stats", "placement", "kills", "assists",
+              "knockdowns", "damage", "rp_delta", "tier", "rp_source", "review", "edited"}
 SECRETS = ("测试玩家甲", "队友名字乙", "0123456789", "秘密备注", "captures/live")  # 这些一个字都不能发出去
 SINCE = "2026-10-20 12:00:00"
 NOW = datetime(2026, 10, 21, 10, 0)
@@ -69,7 +69,8 @@ def add_match(conn, ended_at, **extra):
              "needs_review": 1, "review_note": "名次对不上：秘密备注", "evidence_path": "captures/live/x/01.png", **extra}
     match_id = storage.insert_match(conn, match)
     storage.save_teammates(conn, match_id, [
-        {"slot": "hud1", "name": "队友名字乙", "player_id": "0123456789", "legend": "命脉", "kills": 2},
+        {"slot": "hud1", "name": "队友名字乙", "player_id": "0123456789", "legend": "命脉", "kills": 2, "assists": 1,
+         "knockdowns": 3, "damage": 640, "revives": 1},
         {"slot": "hud2", "name": "另一个队友", "player_id": "987", "legend": None}])
     return match_id
 
@@ -117,6 +118,9 @@ def send_checks(conn):
         one["mates"] == ["命脉", None] and one["placement"] == 3 and one["kills"] == 4 and one["damage"] == 1234
         and one["rp_delta"] == 56 and one["tier"] == "钻石" and one["review"] is True and one["day"] == "2026-10-20"
         and one["edited"] == [])
+    out["队友：传奇和这一局的击杀/助攻/击倒、伤害一一对应，别的项（救人、名字、ID）不发"] = (
+        one["mate_stats"] == [{"kills": 2, "assists": 1, "knockdowns": 3, "damage": 640},
+                              {"kills": None, "assists": None, "knockdowns": None, "damage": None}])
     out["没读出来的项发 null（不当作 0）"] = any(m["legend"] is None and m["damage"] is None for m in body["matches"])
     out["日活：日期、Apex 视频设置里的分辨率和显示模式、画面比例设置"] = (
         body["ping"]["day"] == "2026-10-21" and body["ping"]["game_res"] == "2560x1600"

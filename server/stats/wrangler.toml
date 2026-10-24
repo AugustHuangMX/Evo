@@ -9,6 +9,9 @@ routes = [
   { pattern = "stats.evotracker.cn", custom_domain = true },
 ]
 
+[triggers]
+crons = ["7 * * * *"]  # 每小时第 7 分钟重算全体玩家的汇总（worker.js 的 scheduled；没有新数据、没换天就不算）
+
 [[d1_databases]]
 binding = "DB"
 database_name = "evo-stats"
