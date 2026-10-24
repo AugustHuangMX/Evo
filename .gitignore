@@ -23,6 +23,12 @@ installed_data_location.txt
 # 新版本宣传图（tools/feature_cards.py 随时能重新生成，见 release/做图流程.md）
 release/*截图/
 
+# ===== 小程序（微信开发者工具，见 docs/小程序.md）=====
+# 开发者工具在项目里存的个人设置（每台电脑不一样）
+miniprogram/project.private.config.json
+# 云函数的依赖（上传时在云端安装）
+miniprogram/cloud/*/node_modules/
+
 # ===== Python 自动生成的文件 =====
 __pycache__/
 *.pyc
