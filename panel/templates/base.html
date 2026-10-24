@@ -353,6 +353,10 @@
             document.querySelectorAll("[data-progress-text]").forEach(function (el) {
               el.textContent = s.percent + "% · " + s.done_mb + " / " + s.total_mb + " MB";
             });
+            document.querySelectorAll("[data-progress-line]").forEach(function (el) {
+              var line = s.mirror ? "备用线路" : "";  // 换了线路才改，读屏软件只念一次
+              if (el.textContent !== line) el.textContent = line;
+            });
           }
           setTimeout(tick, 500);
         })

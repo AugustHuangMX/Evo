@@ -8,12 +8,15 @@
 <input type="hidden" name="next" value="{{ next }}">
 {%- endmacro %}
 
-{% macro progress(job) -%}
+{# 主线路（dl.evotracker.cn）太慢或断了、换到备用线路时，进度后面写"备用线路"（job.mirror，脚本跟着改）。
+   live：顶部提示条里那一份是状态消息，读屏软件在换线路时念一次；设置页那一份不念，免得同一件事念两遍 #}
+{% macro progress(job, live=false) -%}
 {% if job.phase == 'downloading' %}
 <div class="update-progress">
   <div class="progress" role="progressbar" aria-label="下载进度" aria-valuemin="0" aria-valuemax="100"
        aria-valuenow="{{ job.percent }}" data-progress><span class="progress-bar" style="width: {{ job.percent }}%"></span></div>
   <span class="progress-text num" data-progress-text>{{ job.percent }}% · {{ job.done_mb }} / {{ job.total_mb }} MB</span>
+  <span class="progress-text" data-progress-line{% if live %} role="status" aria-atomic="true"{% endif %}>{{ '备用线路' if job.mirror }}</span>
 </div>
 {% else %}
 {# 解压：不知道还要多久，横条来回走；关了"动画效果"时停在中间（style.css） #}
@@ -62,7 +65,7 @@
   {{ download_button(job, next) }}
   {% elif job.phase == 'downloading' %}
   <span>正在下载 Evo <span class="num">{{ offer.version }}</span></span>
-  {{ progress(job) }}
+  {{ progress(job, live=true) }}
   {{ cancel_button(next) }}
   {% elif job.phase == 'extracting' %}
   <span>正在解压 Evo <span class="num">{{ offer.version }}</span>…</span>

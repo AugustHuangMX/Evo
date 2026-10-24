@@ -1,8 +1,14 @@
 """一键更新（updater.py、update_check.safe_download、面板上的按钮）。不用截图，不联网：安装包由本机的小服务器提供。
 
-- latest.json 里的安装包信息：只接受 dl.evotracker.cn 的 https；SHA-256、大小格式不对就当作没有（只能去官网下载）
+- latest.json 里的安装包信息：只接受 dl.evotracker.cn 的 https；SHA-256、大小格式不对就当作没有（只能去官网下载）；
+  备用线路只接受 COS 存储桶里最外层的 zip，不对的去掉、不影响主线路；补丁包的规矩一样，不对的去掉
+- latest.json 从 dl.evotracker.cn 读不到（或格式不对）时改读 COS 上的
 - 下载：下载好、核对、解压后显示"已下载好"；SHA-256 对不上、服务器上没有（404）、压缩包里的路径往外跑、
   没有 Evo.exe 都报错并删掉下了一半的文件；下载中可以取消；不是打包版、没接上托盘、没有安装包信息时只能去官网
+- 备用线路：主线路 404、中途断了、太慢都换到备用线路，从断的地方接着下（那边不支持接着下就从头下）；
+  只有主线路时断了等一下再接着下；都不行才报错；下载的经过写进日志
+- 补丁包：有自己这个版本的就只下补丁包，拼出来的和完整安装包一样；本机的文件对不上、服务器上没有、补丁包是别的
+  版本的、清单里的路径往外跑，都改下完整的安装包；补丁包的 SHA-256 对不上就报错
 - 安装（换文件）：新的换进去，data_location.txt 和不认识的文件不动，旧的挪进 _old_version；
   中途出错就恢复原来的版本；新版本的 Evo.exe 带 --apply-update 时写结果、重新打开 Evo；等进程退出
 - 装好以后：新打开的 Evo 读结果（装上了 / 没装上），面板顶部只说一次；清理装过的版本、留着更新的
@@ -13,6 +19,7 @@
 
 import hashlib
 import http.server
+import io
 import json
 import os
 import shutil
@@ -31,6 +38,7 @@ import app_settings
 import panel_app
 import storage
 import update_check
+import update_patch
 import updater
 
 FOLDER = Path(tempfile.mkdtemp(prefix="evo-updater-", dir=storage.DB_PATH.parent.parent))  # 在测试的临时数据文件夹里
@@ -42,20 +50,37 @@ GOOD_SHA = "a" * 64
 
 class Handler(http.server.BaseHTTPRequestHandler):
     files = {}  # 网址路径 → 内容
-    slow = set()  # 这些路径慢慢发（测试"取消"）
+    slow = set()  # 这些路径慢慢发（测试"取消"、"太慢就换线路"），约 1.3 MB/s
+    cut = {}  # 路径 → 发到文件的第几个字节就断开（测试"中途断了"）
+    cut_once = set()  # 这些路径只断一次，再来就正常发
+    no_range = set()  # 这些路径不支持接着下：不管 Range，总是发整个文件
+    requests = []  # 收到的请求：(路径, Range)
 
     def do_GET(self):  # noqa: N802
         data = self.files.get(self.path)
+        wanted = self.headers.get("Range")
+        self.requests.append((self.path, wanted))
         if data is None:
             self.send_error(404)
             return
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(data)))
+        start = 0
+        if wanted and self.path not in self.no_range:
+            start = int(wanted.removeprefix("bytes=").rstrip("-"))
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{len(data) - 1}/{len(data)}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Length", str(len(data) - start))
         self.end_headers()
-        step = 64 * 1024 if self.path in self.slow else len(data)
-        for i in range(0, len(data), step):
+        end = len(data)
+        if self.path in self.cut:
+            end = max(start, self.cut[self.path])
+            if self.path in self.cut_once:
+                del self.cut[self.path]
+        step = 64 * 1024 if self.path in self.slow else end - start
+        for i in range(start, end, max(step, 1)):
             try:
-                self.wfile.write(data[i:i + step])
+                self.wfile.write(data[i:min(i + step, end)])
             except OSError:
                 return
             if self.path in self.slow:
@@ -84,10 +109,12 @@ GOOD_FILES = {"Evo/Evo.exe": b"new exe", "Evo/_internal/new.txt": b"new", "Evo/L
               "Evo/licenses/README.txt": b"licenses", "Evo/使用说明（先看这个）.txt": "说明".encode("utf-8")}
 
 
-def latest_for(base, path, data, version, sha=None):
+def latest_for(base, path, data, version, sha=None, mirrors=()):
+    """mirrors：备用线路的路径（内容要另外放进 Handler.files，不放就是 404）。"""
     Handler.files[path] = data
     return {"version": version, "date": "2026-10-19", "page": "https://evotracker.cn/#download", "notes": ["测试"],
-            "download": {"url": base + path, "sha256": sha or hashlib.sha256(data).hexdigest(), "size": len(data)}}
+            "download": {"url": base + path, "sha256": sha or hashlib.sha256(data).hexdigest(), "size": len(data),
+                         "mirrors": [base + m for m in mirrors]}}
 
 
 def wait_done(latest, timeout=30):
@@ -108,13 +135,14 @@ class App:
         self.dir.mkdir()
         self.game = False
         self.quit_called = threading.Event()
+        self.logs = []
         self.patches = [mock.patch.multiple(updater, FROZEN=True, EXE_DIR=self.dir, UPDATE_DIR=self.dir / "_update"),
                         mock.patch.object(update_check, "TEST_HOST", "127.0.0.1")]
 
     def __enter__(self):
         for p in self.patches:
             p.start()
-        updater.connect(game_running=lambda: self.game, quit_app=self.quit_called.set)
+        updater.connect(game_running=lambda: self.game, quit_app=self.quit_called.set, log=self.logs.append)
         return self
 
     def __exit__(self, *_exc):
@@ -129,15 +157,75 @@ class App:
 
 def download_info_checks():
     ok = {"url": "https://dl.evotracker.cn/Evo-0.3.3-win64.zip", "sha256": GOOD_SHA, "size": 1000}
+    plain = {**ok, "mirrors": [], "patches": {}}
     check = update_check.safe_download
-    return {
-        "安装包信息：dl.evotracker.cn 的 https 地址才接受": check(ok) == ok,
+    cos = "evo-dl-1250000000.cos.ap-shanghai.myqcloud.com"
+    good_mirrors = [f"https://{cos}/Evo-0.4.1-win64.zip", f"https://{cos}/Evo-0.4.1-patch-from-0.4.0.zip"]
+    bad_mirrors = [f"http://{cos}/a.zip", f"https://evil{cos}/a.zip", f"https://{cos}.evil.com/a.zip",
+                   f"https://{cos}:8443/a.zip", f"https://{cos}:abc/a.zip", f"https://{cos}/sub/a.zip",
+                   f"https://{cos}/../a.zip", f"https://{cos}/a.zip?x=1", f"https://{cos}/a.zip#x", f"https://{cos}/a.exe",
+                   f"https://{cos}/%2e%2e.zip", "https://dl.evotracker.cn/a.zip",
+                   "https://gh-proxy.com/https://github.com/AugustHuangMX/Evo/releases/download/v0.3.7/a.zip", 42, None]
+    patch = {"url": "https://dl.evotracker.cn/Evo-0.4.1-patch-from-0.4.0.zip", "sha256": GOOD_SHA, "size": 10,
+             "mirrors": good_mirrors[1:]}
+    out = {
+        "安装包信息：dl.evotracker.cn 的 https 地址才接受": check(ok) == plain,
         "http、别的网站、SHA-256 不对、大小不对、没有这一项：都当作没有（只能去官网）": all(check(x) is None for x in [
             {**ok, "url": "http://dl.evotracker.cn/a.zip"}, {**ok, "url": "https://evil.example.com/a.zip"},
             {**ok, "url": "https://evotracker.cn.evil.com/a.zip"}, {**ok, "sha256": "abc"}, {**ok, "sha256": "A" * 64},
             {**ok, "size": 0}, {**ok, "size": True}, {**ok, "size": 2 * 1024 ** 3}, {**ok, "size": "1000"}, None, "x"]),
         "没设测试地址时，本机地址也不接受": check({**ok, "url": "http://127.0.0.1:8000/a.zip"}) is None,
+        "设好的 COS 存储桶上的 zip 接受（别的存储桶不行）":
+            check({**ok, "mirrors": [f"{update_check.COS_BASE}/Evo-0.4.1-win64.zip", *good_mirrors]})["mirrors"]
+            == [f"{update_check.COS_BASE}/Evo-0.4.1-win64.zip"],
     }
+    with mock.patch.object(update_check, "MIRROR_HOSTS", set()):
+        out["没有 COS 存储桶时：备用线路一条都不接受"] = check({**ok, "mirrors": good_mirrors}) == plain
+    with mock.patch.object(update_check, "MIRROR_HOSTS", {cos}):
+        out.update({
+            "备用线路：COS 存储桶里最外层的 zip 才接受，最多 3 条":
+                check({**ok, "mirrors": good_mirrors * 2})["mirrors"] == (good_mirrors * 2)[:3],
+            "备用线路不对的（http、别的网站、端口、子文件夹、..、参数、不是 zip、gh-proxy……）去掉，主线路照样能用":
+                check({**ok, "mirrors": bad_mirrors + good_mirrors[:1]}) == {**plain, "mirrors": good_mirrors[:1]},
+            "备用线路不是列表：当作没有": check({**ok, "mirrors": good_mirrors[0]}) == plain,
+            "主线路不对时，备用线路对也不行（只能去官网）":
+                check({**ok, "url": "https://evil.example.com/a.zip", "mirrors": good_mirrors}) is None,
+            "补丁包：规矩和安装包一样，不对的（别的网站、版本号不对、不是字典）去掉，对的留着":
+                check({**ok, "patches": {"0.4.0": patch, "0.3.9": {**patch, "url": "https://evil.example.com/p.zip"},
+                                         "x.y": patch, "0.3.8": "junk"}})["patches"] == {"0.4.0": patch},
+            "补丁包的备用线路不对的也去掉":
+                check({**ok, "patches": {"0.4.0": {**patch, "mirrors": bad_mirrors}}})["patches"]["0.4.0"]["mirrors"] == [],
+            "patches 不是字典：当作没有": check({**ok, "patches": [patch]}) == plain,
+            "补丁包最多看 5 个": len(check({**ok, "patches": {f"0.3.{i}": patch for i in range(9)}})["patches"]) == 5,
+        })
+    return out
+
+
+def latest_checks(base):
+    """latest.json 先读 dl.evotracker.cn，读不到（或格式不对）再读 COS 上的。"""
+    good = {"version": "9.6.1", "date": "2026-10-24", "notes": ["测试"], "download": None}
+    Handler.files["/latest-good.json"] = json.dumps(good).encode("utf-8")
+    Handler.files["/latest-junk.json"] = b"<html>not json</html>"
+    out = {}
+
+    def fetch(*paths):
+        with mock.patch.object(update_check, "LATEST_URLS", [base + p for p in paths]):
+            try:
+                return update_check.fetch_latest(timeout=5)
+            except update_check.UpdateError as e:
+                return str(e)
+
+    out["主地址 404：改读备用地址的 latest.json"] = fetch("/latest-missing.json", "/latest-good.json")["version"] == "9.6.1"
+    out["主地址回的不是版本信息：改读备用地址的"] = fetch("/latest-junk.json", "/latest-good.json")["version"] == "9.6.1"
+    out["都读不到：说第一个的原因"] = "连不上" in fetch("/latest-missing.json", "/latest-junk.json")
+    Handler.requests.clear()
+    fetch("/latest-good.json", "/latest-junk.json")
+    out["主地址读到了：不再读备用地址"] = [r[0] for r in Handler.requests] == ["/latest-good.json"]
+    urls = update_check.LATEST_URLS
+    out["先读 dl.evotracker.cn，备用的只有 COS 存储桶上的"] = (
+        urls[0] == update_check.UPDATE_URL and len(urls) <= 2
+        and all(update_check.COS_BASE and u == f"{update_check.COS_BASE}/latest.json" for u in urls[1:]))
+    return out
 
 
 def download_checks(base):
@@ -206,6 +294,187 @@ def download_checks(base):
         updater._hooks = None
         out["没接上托盘程序（单独运行面板）：只能去官网"] = updater.state(good)["phase"] == "manual"
     out["没有新版本：不显示"] = updater.state(None) is None
+    return out
+
+
+def mirror_checks(base):
+    """备用线路：用本机服务器的不同路径当作主线路和备用线路。"""
+    out = {}
+    big = package({**GOOD_FILES, "Evo/big.bin": os.urandom(2 * 2**20)}, stored=True)  # 约 2 MB，慢慢发要 1.6 秒
+    half = 2**20
+
+    def run(version, main, mirrors, files=(), **setup):
+        """准备好主线路 main 和备用线路 mirrors（files 里的路径放上安装包，其余 404），下载到结束。
+        返回 (结束时的状态, 这次收到的请求, 日志)。"""
+        Handler.requests.clear()
+        for path in files:
+            Handler.files[path] = big
+        for key, value in setup.items():
+            getattr(Handler, key).update(value)
+        latest = latest_for(base, main, big, version, mirrors=mirrors)
+        if main not in files:
+            del Handler.files[main]
+        with App(f"mirror-{version}") as app:
+            updater.start_download(latest)
+            state = wait_done(latest)
+            folder_ok = state["phase"] != "ready" or (
+                (app.dir / "_update" / version / "Evo" / "big.bin").stat().st_size == 2 * 2**20)
+            return state, list(Handler.requests), app.logs, folder_ok
+
+    state, reqs, logs, ok = run("9.8.1", "/m1-main.zip", ["/m1-mirror.zip"], files=["/m1-mirror.zip"])
+    out["主线路 404：换到备用线路下完，日志里写着换线路"] = (
+        state["phase"] == "ready" and ok and reqs == [("/m1-main.zip", None), ("/m1-mirror.zip", None)]
+        and any("换到 127.0.0.1" in m for m in logs) and any("下载好了" in m for m in logs))
+
+    state, reqs, logs, ok = run("9.8.2", "/m2-main.zip", ["/m2-mirror.zip"], files=["/m2-main.zip", "/m2-mirror.zip"],
+                                cut={"/m2-main.zip": half})
+    out["主线路中途断了：备用线路从断的地方接着下"] = (
+        state["phase"] == "ready" and ok and reqs == [("/m2-main.zip", None), ("/m2-mirror.zip", f"bytes={half}-")])
+
+    state, reqs, logs, ok = run("9.8.3", "/m3-main.zip", ["/m3-mirror.zip"], files=["/m3-main.zip", "/m3-mirror.zip"],
+                                cut={"/m3-main.zip": half}, no_range={"/m3-mirror.zip"})
+    out["备用线路不支持接着下：从头下，照样下好"] = (
+        state["phase"] == "ready" and ok and reqs[-1] == ("/m3-mirror.zip", f"bytes={half}-")
+        and any("不支持接着下" in m for m in logs))
+
+    with mock.patch.multiple(updater, SPEED_WINDOW=0.2, MIN_SPEED=4 * 2**20):
+        state, reqs, logs, ok = run("9.8.4", "/m4-main.zip", ["/m4-mirror.zip"],
+                                    files=["/m4-main.zip", "/m4-mirror.zip"], slow={"/m4-main.zip"})
+    resumed_at = int((reqs[-1][1] or "bytes=0-").removeprefix("bytes=").rstrip("-")) if reqs else 0
+    out["主线路太慢：换到备用线路，从已经下到的地方接着下"] = (
+        state["phase"] == "ready" and ok and [r[0] for r in reqs] == ["/m4-main.zip", "/m4-mirror.zip"]
+        and 0 < resumed_at < len(big) and any("太慢" in m for m in logs))
+
+    with mock.patch.object(updater, "RETRY_PAUSE", 0.05):
+        state, reqs, logs, ok = run("9.8.5", "/m5-main.zip", [], files=["/m5-main.zip"],
+                                    cut={"/m5-main.zip": half}, cut_once={"/m5-main.zip"})
+    out["没有备用线路、中途断了一次：等一下再从断的地方接着下"] = (
+        state["phase"] == "ready" and ok and reqs == [("/m5-main.zip", None), ("/m5-main.zip", f"bytes={half}-")]
+        and any("等一下再试" in m for m in logs))
+
+    state, reqs, logs, ok = run("9.8.6", "/m6-main.zip", ["/m6-a.zip", "/m6-b.zip"])
+    out["主线路和备用线路都 404：每条只试一次，报错，什么也不留"] = (
+        state["phase"] == "failed" and "HTTP 404" in state["error"] and len(reqs) == 3
+        and not list(FOLDER.glob("mirror-9.8.6/_update/*.part")) and any("没下载好" in m for m in logs))
+
+    with mock.patch.object(updater, "RETRY_PAUSE", 0.05):
+        state, reqs, logs, ok = run("9.8.7", "/m7-main.zip", ["/m7-mirror.zip"], files=["/m7-main.zip", "/m7-mirror.zip"],
+                                    cut={"/m7-main.zip": half, "/m7-mirror.zip": half})
+    out["每条线路都断在同一处：各试两次后报错，说下载中途断了"] = (
+        state["phase"] == "failed" and "中途断了" in state["error"] and len(reqs) == 4)
+
+    # 用备用线路时进度里有 mirror（页面上显示"备用线路"）
+    Handler.files["/m8-mirror.zip"] = big
+    Handler.slow.add("/m8-mirror.zip")
+    latest = latest_for(base, "/m8-main.zip", big, "9.8.8", mirrors=["/m8-mirror.zip"])
+    del Handler.files["/m8-main.zip"]
+    with App("mirror-9.8.8"):
+        updater.start_download(latest)
+        end, seen = time.monotonic() + 10, {}
+        while time.monotonic() < end and not seen.get("done"):
+            seen = updater.state(latest)
+            time.sleep(0.02)
+        wait_done(latest)
+    out["下载中：用的是备用线路时，进度里写着"] = seen.get("phase") == "downloading" and seen.get("mirror") is True
+    return out
+
+
+SAME = os.urandom(3 * 2**20)  # 新旧版本都有、没变的大文件（像 cv2.pyd）：补丁包里不该有它
+OLD_FILES = {"Evo/Evo.exe": b"old exe", "Evo/_internal/same.bin": SAME, "Evo/_internal/old.txt": b"old",
+             "Evo/LICENSE.txt": b"AGPL"}
+NEW_FILES = {"Evo/Evo.exe": b"new exe", "Evo/_internal/same.bin": SAME, "Evo/_internal/new.txt": b"new",
+             "Evo/LICENSE.txt": b"AGPL"}
+
+
+def tree(root):
+    """文件夹里的文件：{"Evo/相对路径": 内容}（和安装包里的路径一样）。"""
+    return {"/".join(("Evo", *p.relative_to(root).parts)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+
+def patch_checks(base):
+    out = {}
+    old_zip, new_zip = FOLDER / "p-old.zip", FOLDER / "p-new.zip"
+    old_zip.write_bytes(package(OLD_FILES, stored=True))
+    new_zip.write_bytes(package(NEW_FILES, stored=True))
+
+    def make_patch(version, frm=storage.APP_VERSION):
+        target = FOLDER / f"patch-{version}-{time.monotonic_ns()}.zip"
+        took = update_patch.make(old_zip, new_zip, target, frm, version)
+        return target.read_bytes(), took
+
+    data, took = make_patch("9.7.0")
+    names = set(zipfile.ZipFile(io.BytesIO(data)).namelist())
+    out["做补丁包：只放变了和新加的文件（不放没变的大文件），清单里有新版本的每个文件"] = (
+        took == (2, 4) and names == {"patch.json", "Evo/Evo.exe", "Evo/_internal/new.txt"}
+        and len(data) < len(SAME) // 2)
+
+    def run(version, patch_data=None, sha=None, key=storage.APP_VERSION, current=OLD_FILES, extra=None):
+        """程序文件夹里装着 current；latest.json 有完整安装包和 key 版本的补丁包（patch_data 为 None 时服务器上没有）。
+        下载到结束，返回 (结束时的状态, 下载前显示的状态, 这次请求了哪些路径, 日志, 拼好的新版本里的文件)。"""
+        Handler.requests.clear()
+        latest = latest_for(base, f"/{version}-full.zip", new_zip.read_bytes(), version)
+        if patch_data is not None:
+            Handler.files[f"/{version}-patch.zip"] = patch_data
+        size = len(patch_data) if patch_data is not None else 1000
+        latest["download"]["patches"] = {key: {"url": f"{base}/{version}-patch.zip", "size": size, "mirrors": [],
+                                               "sha256": sha or hashlib.sha256(patch_data or b"").hexdigest()}}
+        with App(f"patch-{version}") as app:
+            make_tree(app.dir, {name.removeprefix("Evo/"): body for name, body in {**current, **(extra or {})}.items()})
+            before = updater.state(latest)
+            updater.start_download(latest)
+            state = wait_done(latest)
+            new = app.dir / "_update" / version / "Evo"
+            leftovers = list((app.dir / "_update").glob("*.part")) + list((app.dir / "_update").glob("*.tmp"))
+            return (state, before, [r[0] for r in Handler.requests], app.logs,
+                    tree(new) if new.is_dir() and not leftovers else None)
+
+    data, _ = make_patch("9.7.1")
+    state, before, reqs, logs, files = run("9.7.1", data, extra={"data_location.txt": b"E:\\data"})
+    out['有自己这个版本的补丁包：显示的大小是补丁包的（"立即更新 · 1 MB"，完整的是 3 MB）'] = before["size_mb"] == 1
+    out["只下载补丁包，拼出来的新版本和完整安装包里的一模一样（不认识的文件不带过去），没留下载了一半的文件"] = (
+        state["phase"] == "ready" and reqs == ["/9.7.1-patch.zip"] and files == NEW_FILES)
+    out["日志里写着用补丁包、拼好了几个文件"] = (any("补丁包" in m and "开始下载" in m for m in logs)
+                                    and any("拼好了" in m for m in logs))
+
+    changed = {**OLD_FILES, "Evo/_internal/same.bin": SAME[:-1] + b"x"}
+    state, _, reqs, logs, files = run("9.7.2", make_patch("9.7.2")[0], current=changed)
+    out["本机的文件被改过（大小一样、内容不一样）：改下完整的安装包，照样装好"] = (
+        state["phase"] == "ready" and reqs == ["/9.7.2-patch.zip", "/9.7.2-full.zip"] and files == NEW_FILES
+        and any("补丁包用不了" in m and "same.bin" in m for m in logs))
+
+    missing = {k: v for k, v in OLD_FILES.items() if k != "Evo/LICENSE.txt"}
+    state, _, reqs, _, files = run("9.7.3", make_patch("9.7.3")[0], current=missing)
+    out["本机少了文件：改下完整的安装包"] = state["phase"] == "ready" and reqs[-1] == "/9.7.3-full.zip" and files == NEW_FILES
+
+    state, _, reqs, logs, files = run("9.7.4", None)
+    out["服务器上没有补丁包（404）：改下完整的安装包"] = (
+        state["phase"] == "ready" and reqs == ["/9.7.4-patch.zip", "/9.7.4-full.zip"] and files == NEW_FILES)
+
+    state, _, reqs, _, _ = run("9.7.5", make_patch("9.7.5")[0], sha=GOOD_SHA)
+    out["补丁包的 SHA-256 对不上：报错（不改下完整的，可能是网络的问题），什么也不留"] = (
+        state["phase"] == "failed" and "SHA-256" in state["error"] and reqs == ["/9.7.5-patch.zip"])
+
+    state, before, reqs, _, files = run("9.7.6", make_patch("9.7.6")[0], key="0.0.1")
+    out["只有别的版本的补丁包：直接下完整的安装包，显示完整的大小"] = (
+        state["phase"] == "ready" and reqs == ["/9.7.6-full.zip"] and before["size_mb"] == 3)
+
+    state, _, reqs, _, files = run("9.7.7", make_patch("9.7.7", frm="0.0.1")[0])
+    out["补丁包里写的不是从现在的版本升：改下完整的安装包"] = state["phase"] == "ready" and reqs[-1] == "/9.7.7-full.zip"
+
+    evil = package({"patch.json": json.dumps({"from": storage.APP_VERSION, "to": "9.7.8", "files": {
+        "Evo/Evo.exe": [3, hashlib.sha256(b"bad").hexdigest()], "Evo/../evil.txt": [3, hashlib.sha256(b"bad").hexdigest()]}}),
+        "Evo/Evo.exe": b"bad", "Evo/../evil.txt": b"bad"})
+    state, _, reqs, _, files = run("9.7.8", evil)
+    out["补丁包的清单里有往外跑的路径（../）：不用它，改下完整的安装包，外面没多出文件"] = (
+        state["phase"] == "ready" and reqs[-1] == "/9.7.8-full.zip" and files == NEW_FILES
+        and not list(FOLDER.rglob("evil.txt")))
+
+    good_list = zipfile.ZipFile(io.BytesIO(make_patch("9.7.9")[0])).read("patch.json")
+    extra = package({"patch.json": good_list, "Evo/Evo.exe": b"new exe", "Evo/_internal/new.txt": b"new",
+                     "Evo/surprise.dll": b"?"})
+    state, _, reqs, _, files = run("9.7.9", extra)
+    out["补丁包里有清单上没有的文件：不用它，改下完整的安装包"] = (
+        state["phase"] == "ready" and reqs[-1] == "/9.7.9-full.zip" and files == NEW_FILES)
     return out
 
 
@@ -332,6 +601,16 @@ def panel_checks(base):
         settings = client.get("/settings").get_data(as_text=True)
         out['有新版本：提示条和设置页都有"立即更新"'] = ">立即更新</button>" in page and "立即更新 · " in settings
 
+        with updater._lock:
+            updater._job.update(phase="downloading", version="9.9.9", done=2**20, total=2 * 2**20, mirror=True)
+        page, settings = client.get("/").get_data(as_text=True), client.get("/settings").get_data(as_text=True)
+        progress = client.get("/update/progress").get_json()
+        out['换到了备用线路：进度旁边写"备用线路"（只有提示条里那一份是状态消息），进度接口也说了'] = (
+            'data-progress-line role="status" aria-atomic="true">备用线路</span>' in page
+            and settings.count('role="status" aria-atomic="true">备用线路') == 1 and progress.get("mirror") is True)
+        with updater._lock:
+            updater._job.clear()
+
         client.post("/update/download", data={"token": token, "next": "/"})
         wait_done(good)
         out["进度接口：下载好以后说 ready"] = client.get("/update/progress").get_json()["phase"] == "ready"
@@ -373,7 +652,10 @@ def main():
     server, base = start_server()
     try:
         checks = download_info_checks()
+        checks.update(latest_checks(base))
         checks.update(download_checks(base))
+        checks.update(mirror_checks(base))
+        checks.update(patch_checks(base))
         checks.update(replace_checks())
         checks.update(after_checks())
         checks.update(panel_checks(base))

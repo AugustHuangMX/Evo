@@ -5,8 +5,15 @@
 
 流程：
 1. 下载（托盘程序里的后台线程，面板每半秒问一次进度）：地址来自 latest.json（只接受 dl.evotracker.cn，见
-   update_check.safe_download），边下边写进程序文件夹里的 _update/，边算 SHA-256，和 latest.json 写的对不上就删掉、报错
-2. 解压到 _update/<版本号>/Evo/，确认里面有 Evo.exe 和 _internal，写 ready.json（"已下载好"，Evo 重新打开后也认得）
+   update_check.safe_download），边下边写进程序文件夹里的 _update/，边算 SHA-256，和 latest.json 写的对不上就删掉、报错。
+   补丁包（0.4.0 起，2026-10-24 用户决定，见 update_patch.py）：latest.json 里有从现在这个版本升上来的补丁包，就先下它
+   （只有变了的文件，一般十几 MB）；补丁包用不了（本机的文件对不上、服务器上没有）才改下完整的安装包。
+   国内备用线路（0.4.0 起，2026-10-24 用户决定）：latest.json 里还写着腾讯云 COS 上同一个文件的地址。
+   先从 dl.evotracker.cn 下；断了、出错，或者每 15 秒算一次速度、低于 300 KB/s（100 MB 要 6 分钟以上），就换下一条线路，
+   从已经下到的地方接着下（HTTP Range；那边不支持就从头下）。每条线路最多用两次：别的都不行时还会回来接着下；
+   都用完了才算失败。SHA-256 只认 latest.json 里的，所以不管从哪条线路下，文件被换掉都会被发现
+2. 解压到 _update/<版本号>/Evo/（用补丁包时：照补丁包里的清单，用补丁包里的文件和现在的程序文件拼出来，每个都核对），
+   确认里面有 Evo.exe 和 _internal，写 ready.json（"已下载好"，Evo 重新打开后也认得）
 3. 点"安装并重新启动"（Apex 开着时不能点，免得丢掉正在记录的那一局）：打开新版本自己的 Evo.exe --apply-update，
    等它写出 _update/started（说明它真的跑起来了，没被杀毒软件拦住），旧的 Evo 才退出
 4. 新版本（在 _update 里运行，apply_update）等旧的 Evo 完全退出，把程序文件夹里要换的东西挪进 _old_version/，
@@ -22,14 +29,17 @@
 
 import ctypes
 import hashlib
+import http.client
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from ctypes import wintypes
@@ -38,13 +48,18 @@ from pathlib import Path, PurePosixPath
 
 import app_settings
 import update_check
+import update_patch
 from paths import EXE_DIR, FROZEN
 from storage import APP_VERSION
 
 UPDATE_DIR = EXE_DIR / "_update"  # 下载、解压、安装记录都在这里
 OLD_DIR = "_old_version"  # 安装时旧文件先挪到这里，装好后删掉；出错就挪回去
 CHUNK = 256 * 1024
-READ_TIMEOUT = 30  # 秒：下载时这么久收不到数据就算断了
+READ_TIMEOUT = 20  # 秒：下载时这么久收不到数据就算这条线路断了（有备用线路时换过去）
+SPEED_WINDOW = 15  # 秒：每隔这么久算一次这段时间的平均速度
+MIN_SPEED = 300 * 1024  # 字节/秒：比这慢、而且还有别的线路可以试，就换线路
+MAX_TURNS = 2  # 每条线路最多用几次
+RETRY_PAUSE = 2  # 秒：只剩同一条线路可以再试时，先等一下
 STARTED_WAIT = 20  # 秒：新版本的 Evo.exe 这么久还没说"已经开始"，就当作没能启动（多半被杀毒软件拦住了）
 QUIT_DELAY = 1.0  # 秒：确认新版本跑起来后，旧的 Evo 等一下再退出，让页面先显示"正在安装"
 OLD_EXIT_WAIT = 120  # 秒：新版本最多等旧的 Evo 退出这么久
@@ -65,16 +80,33 @@ class _Cancelled(Exception):
     pass
 
 
+class _LineFailed(UpdateError):
+    """这条线路这次不行了（中途断了、文件大小不对……），换下一条；没有可换的了，str(e) 给用户看。"""
+
+
+class _TooSlow(Exception):
+    """这条线路太慢，换一条（只在还有别的线路可以试时）。"""
+
+    def __init__(self, speed):
+        super().__init__(speed)
+        self.speed = speed  # 字节/秒
+
+
 _lock = threading.Lock()
-_job = {}  # 正在进行的下载 / 安装：{"phase", "version", "done", "total", "error"}；空 = 没有
+_job = {}  # 正在进行的下载 / 安装：{"phase", "version", "done", "total", "mirror", "error"}；空 = 没有
 _cancel = threading.Event()
-_hooks = None  # 托盘程序接上（connect）：{"game_running": 函数, "quit": 函数}；单独运行面板时没有，不能安装
+_hooks = None  # 托盘程序接上（connect）：{"game_running", "quit", "log"}；单独运行面板时没有，不能安装
 
 
-def connect(game_running, quit_app):
-    """托盘程序（evo_app.py）启动时接上：怎么知道 Apex 在不在运行、怎么让托盘程序退出。"""
+def connect(game_running, quit_app, log=None):
+    """托盘程序（evo_app.py）启动时接上：怎么知道 Apex 在不在运行、怎么让托盘程序退出、下载的经过写进哪个日志。"""
     global _hooks
-    _hooks = {"game_running": game_running, "quit": quit_app}
+    _hooks = {"game_running": game_running, "quit": quit_app, "log": log}
+
+
+def _log(message):
+    if _hooks is not None and _hooks.get("log"):
+        _hooks["log"](f"一键更新：{message}")
 
 
 def version_tuple(text):
@@ -120,8 +152,13 @@ def state(latest):
         return job
     if staged(version):
         return {"phase": "ready", "version": version, "blocked": install_blocker()}
-    return {"phase": "available", "version": version,
-            "size_mb": round(update_check.safe_download(latest["download"])["size"] / 2**20)}
+    info = update_check.safe_download(latest["download"])
+    return {"phase": "available", "version": version, "size_mb": max(1, round((_patch_for(info) or info)["size"] / 2**20))}
+
+
+def _patch_for(info):
+    """从现在这个版本升上来的补丁包（latest.json 的 download.patches 里）；没有返回 None。"""
+    return info.get("patches", {}).get(APP_VERSION)
 
 
 def take_result():
@@ -146,7 +183,7 @@ def start_download(latest):
         if _job.get("phase") in ("downloading", "extracting", "installing") or staged(version):
             return
         _job.clear()
-        _job.update(phase="downloading", version=version, done=0, total=info["size"])
+        _job.update(phase="downloading", version=version, done=0, total=(_patch_for(info) or info)["size"], mirror=False)
         _cancel.clear()
     threading.Thread(target=_download, args=(version, info), name="update-download", daemon=True).start()
 
@@ -171,35 +208,199 @@ def _end_job(error=None):
 
 
 def _download(version, info):
-    part = UPDATE_DIR / f"Evo-{version}.zip.part"
+    part, patch_part = UPDATE_DIR / f"Evo-{version}.zip.part", UPDATE_DIR / f"Evo-{version}-patch.zip.part"
     try:
         check_folder(info["size"])
         UPDATE_DIR.mkdir(exist_ok=True)
-        digest, done = hashlib.sha256(), 0
-        request = urllib.request.Request(info["url"], headers={"User-Agent": f"Evo/{APP_VERSION}"})
-        with urllib.request.urlopen(request, timeout=READ_TIMEOUT) as response, open(part, "wb") as f:
-            while block := response.read(CHUNK):
-                if _cancel.is_set():
-                    raise _Cancelled
-                done += len(block)
-                if done > info["size"]:
-                    raise UpdateError("下载的文件比应有的大，已经停下。请稍后再试，或者去官网下载")
-                f.write(block)
-                digest.update(block)
-                _set_job(done=done)
-        if done != info["size"] or digest.hexdigest() != info["sha256"]:
-            raise UpdateError("下载的文件不完整或被改动过（SHA-256 对不上），请重试")
+        patch = _patch_for(info)
+        if patch:
+            try:
+                _patch_update(version, patch, patch_part, info["size"])
+                _end_job()
+                return
+            except update_patch.Unusable as e:
+                _log(f"补丁包用不了（{e}），改下完整的安装包")
+                _set_job(phase="downloading", done=0, total=info["size"], mirror=False)
+        _get(info, part, f"{version} 的安装包")
         _set_job(phase="extracting")
         extract(part, UPDATE_DIR / version, version)
         _end_job()
     except _Cancelled:
+        _log("下载取消了")
         _end_job()
     except UpdateError as e:
+        _log(f"没下载好：{e}")
         _end_job(str(e))
-    except (OSError, zipfile.BadZipFile) as e:
+    except (OSError, http.client.HTTPException, zipfile.BadZipFile) as e:
+        _log(f"没下载好：{_short(e)}")
         _end_job(_describe(e))
     finally:
         part.unlink(missing_ok=True)
+        patch_part.unlink(missing_ok=True)
+
+
+def _get(info, path, what):
+    """用各条线路（info 的 url 和 mirrors）把这个文件下载到 path，核对大小和 SHA-256。"""
+    started = time.monotonic()
+    urls = [info["url"], *info.get("mirrors", [])]
+    _log(f"开始下载 {what}（{_size_text(info['size'])}），线路：{'、'.join(map(_host, urls))}")
+    with open(path, "wb") as f:
+        progress = _Part(f, info["size"])
+        _fetch(urls, progress)
+    if progress.done != info["size"] or progress.digest.hexdigest() != info["sha256"]:
+        raise UpdateError("下载的文件不完整或被改动过（SHA-256 对不上），请重试")
+    seconds = max(time.monotonic() - started, 0.001)
+    _log(f"{what}下载好了，用时 {seconds:.0f} 秒（平均 {_speed_text(info['size'] / seconds)}）")
+
+
+def _patch_update(version, patch, path, full_size):
+    """用补丁包更新：下载、核对，照补丁包里的清单拼出完整的新版本（_update/<版本号>/Evo/），写 ready.json。
+    补丁包用不了（服务器上没有、本机的文件对不上……）时抛出 update_patch.Unusable，什么也不留。"""
+    _log(f"有从 {APP_VERSION} 升上来的补丁包，只下载变了的文件（完整的安装包是 {_size_text(full_size)}）")
+    try:
+        _get(patch, path, f"{version} 的补丁包")
+    except urllib.error.HTTPError as e:
+        if 400 <= e.code < 500:
+            raise update_patch.Unusable(f"服务器上没有（HTTP {e.code}）") from e
+        raise
+    _set_job(phase="extracting")
+    target = UPDATE_DIR / version
+    tmp = target.with_name(target.name + ".tmp")
+    for folder in (tmp, target):
+        shutil.rmtree(folder, ignore_errors=True)
+    try:
+        took, copied = update_patch.apply(path, EXE_DIR, tmp, APP_VERSION, version)
+        if not (tmp / "Evo" / "Evo.exe").is_file() or not (tmp / "Evo" / "_internal").is_dir():
+            raise update_patch.Unusable("拼出来的新版本里没有 Evo.exe 或 _internal")
+        _write_json(tmp / "ready.json", {"version": version})
+        tmp.rename(target)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    _log(f"用补丁包拼好了 {version}：补丁包里的 {took} 个文件，加上现在的程序里没变的 {copied} 个，都核对过")
+
+
+class _Part:
+    """正在下载的文件：下到哪里了，边写边算 SHA-256。"""
+
+    def __init__(self, f, size):
+        self.f, self.size = f, size
+        self.restart()
+
+    def restart(self):
+        """从头下（那条线路不支持接着下）。"""
+        self.f.seek(0)
+        self.f.truncate()
+        self.digest, self.done = hashlib.sha256(), 0
+        _set_job(done=0)
+
+    def write(self, block):
+        if self.done + len(block) > self.size:
+            raise UpdateError("下载的文件比应有的大，已经停下。请稍后再试，或者去官网下载")
+        self.f.write(block)
+        self.digest.update(block)
+        self.done += len(block)
+        _set_job(done=self.done)
+
+
+def _fetch(urls, part):
+    """用各条线路（第一条是 dl.evotracker.cn，后面是备用线路）下载到下完，换线路时接着下。
+    每条线路最多用 MAX_TURNS 次；都用完了还没下完，抛出最后一次的错误。"""
+    lines = [{"url": u, "host": _host(u), "main": i == 0, "turns": 0, "speed": None} for i, u in enumerate(urls)]
+    line, error = None, None
+    while part.done < part.size:
+        following = _next_line(lines, line)
+        if following is None:
+            raise error
+        if line is not None:
+            why = f"太慢（{_speed_text(error.speed)}）" if isinstance(error, _TooSlow) else f"出错（{_short(error)}）"
+            where = "等一下再试，接着下" if following is line else f"换到 {following['host']} 接着下"
+            _log(f"{line['host']} {why}，已下 {part.done / 2**20:.0f} / {part.size / 2**20:.0f} MB，{where}")
+            if following is line and _cancel.wait(RETRY_PAUSE):
+                raise _Cancelled
+        line = following
+        line["turns"] += 1
+        _set_job(mirror=not line["main"])
+        try:
+            _pull(line, part, lambda: any(other is not line and other["turns"] < MAX_TURNS for other in lines))
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:
+                line["turns"] = MAX_TURNS  # 这条线路上没有这个文件：不用再试它
+            error = e
+        except (OSError, http.client.HTTPException, _LineFailed, _TooSlow) as e:
+            error = e
+
+
+def _next_line(lines, current):
+    """下一次用哪条线路：还没用过的按顺序来；都用过了，挑还能再用的里面上次最快的；没有别的了，才再用这一条。"""
+    left = [line for line in lines if line["turns"] < MAX_TURNS]
+    others = [line for line in left if line is not current]
+    fresh = [line for line in others if line["turns"] == 0]
+    if fresh:
+        return fresh[0]
+    if others:
+        return max(others, key=lambda line: line["speed"] or 0)
+    return current if any(line is current for line in left) else None
+
+
+def _pull(line, part, can_switch):
+    """用这条线路从 part.done 接着下到下完。每 SPEED_WINDOW 秒算一次速度，太慢、而且 can_switch() 时抛出 _TooSlow。"""
+    headers = {"User-Agent": f"Evo/{APP_VERSION}"}
+    if part.done:
+        headers["Range"] = f"bytes={part.done}-"
+    request = urllib.request.Request(line["url"], headers=headers)
+    with urllib.request.urlopen(request, timeout=READ_TIMEOUT) as response:
+        _check_response(line, response, part)
+        window, got = time.monotonic(), 0
+        while block := response.read(CHUNK):
+            if _cancel.is_set():
+                raise _Cancelled
+            part.write(block)
+            got += len(block)
+            elapsed = time.monotonic() - window
+            if elapsed >= SPEED_WINDOW:
+                line["speed"] = got / elapsed
+                if line["speed"] < MIN_SPEED and part.done < part.size and can_switch():
+                    raise _TooSlow(line["speed"])
+                window, got = time.monotonic(), 0
+    if part.done < part.size:
+        raise _LineFailed("下载中途断了，请重试")
+
+
+def _check_response(line, response, part):
+    """服务器回的是不是要的那一段：接着下时应该是 206、从 part.done 开始；回 200 就是整个文件（从头下）。
+    文件的总大小要和 latest.json 写的一样。"""
+    wrong_size = "下载服务器上的安装包大小不对，请稍后再试，或者去官网下载"
+    if response.status == 206:
+        m = re.fullmatch(r"bytes (\d+)-\d+/(\d+)", response.headers.get("Content-Range", "").strip())
+        if not m or int(m.group(1)) != part.done or int(m.group(2)) != part.size:
+            raise _LineFailed(wrong_size)
+    elif response.status == 200:
+        length = response.headers.get("Content-Length", "")
+        if length.isdigit() and int(length) != part.size:
+            raise _LineFailed(wrong_size)
+        if part.done:
+            _log(f"{line['host']} 不支持接着下，从头下")
+            part.restart()
+    else:
+        raise _LineFailed(f"下载服务器的回应不对（HTTP {response.status}），请稍后再试，或者去官网下载")
+
+
+def _host(url):
+    return urllib.parse.urlparse(url).hostname or url
+
+
+def _size_text(size):
+    return f"{size / 2**20:.0f} MB" if size >= 10 * 2**20 else f"{size / 2**20:.1f} MB"
+
+
+def _speed_text(per_second):
+    return f"{per_second / 2**20:.1f} MB/s" if per_second >= 2**20 else f"{per_second / 1024:.0f} KB/s"
+
+
+def _short(e):
+    """写进日志的出错原因（不给用户看）。"""
+    return (str(e) or type(e).__name__)[:150]
 
 
 def _describe(e):
@@ -210,6 +411,8 @@ def _describe(e):
         return "网络太慢或断了（超时），请重试"
     if isinstance(e, urllib.error.URLError):
         return "连不上下载服务器（网络不通，或者服务器暂时不可用），请稍后再试"
+    if isinstance(e, (ConnectionError, http.client.HTTPException)):
+        return "下载中途断了（网络不稳），请重试"
     if isinstance(e, zipfile.BadZipFile):
         return "安装包打不开（文件坏了），请重试"
     return f"写入文件失败（{e.strerror or e}），请重试"

@@ -13,20 +13,24 @@
 
 第一段：
   1. 准备压缩包：dist 里已经有当前提交打的压缩包就直接用，否则运行 release.py
-     （检查提交、测试、打包、自检、压缩、算 SHA-256、写 latest.json）；
+     （检查提交、测试、打包、自检、压缩、算 SHA-256、做补丁包、写 latest.json）；
      然后显示更新日志页要加的这一版（原文），确认过才往下做，没确认就什么都不上传
-  2. 上传压缩包到 R2 存储桶（dl.evotracker.cn）；线上已经是同一个文件就跳过
+  2. 上传压缩包和补丁包到 R2 存储桶（dl.evotracker.cn）；线上已经是同一个文件就跳过
   3. 从 dl.evotracker.cn 下载回来，核对 SHA-256
-  4. 改官网：site/index.html 的下载链接、版本号、大小、SHA-256；
+  4. 上传压缩包和补丁包到腾讯云 COS（国内备用线路，2026-10-24 用户决定；官网的"国内备用下载"和一键更新都用它）；
+     线上已经是同一个文件就跳过
+  5. 从 COS 下载回来，核对 SHA-256
+  6. 改官网：site/index.html 的下载链接、国内备用下载链接、版本号、大小、SHA-256；
      site/changelog.html 最上面加这一版（内容来自 latest.json，也就是 release/更新内容.txt），"最新"标签挪过来
-  5. 上传官网（Cloudflare Pages）；线上已经是新版本就跳过
-  6. 打开 evotracker.cn，确认下载链接和 SHA-256 已经是新的，更新日志页有这一版
+  7. 上传官网（Cloudflare Pages）；线上已经是新版本就跳过
+  8. 打开 evotracker.cn，确认下载链接和 SHA-256 已经是新的，更新日志页有这一版
 第二段（--live）：
-  7. 再核对一次线上的压缩包（比 MD5，不用重新下载）和官网
-  8. 上传 latest.json（CDN 只缓存 5 分钟）
-  9. 下载回来，确认和本机的一样
+  9. 再核对一次线上的压缩包、补丁包（R2 比 MD5，COS 比记下的 SHA-256，不用重新下载）和官网
+  10. 上传 latest.json（R2 和 COS 各一份；Evo 先读 R2 的，读不到再读 COS 的）
+  11. 下载回来，确认和本机的一样
 
-上传用 Wrangler（Cloudflare 的命令行工具，只装在开发电脑上，第一次用要 wrangler login），不用打开 Cloudflare 网站。
+上传 R2 用 Wrangler（Cloudflare 的命令行工具，只装在开发电脑上，第一次用要 wrangler login），不用打开 Cloudflare 网站；
+上传 COS 用 tools/cos.py（密钥在 %USERPROFILE%\\.evo\\cos.json，见 cos.py 开头）。
 任何一步出问题就停下；改好后重新运行，已经做完的步骤会自动跳过。已经发布的版本不能再覆盖，要发就先改版本号。
 """
 
@@ -46,7 +50,9 @@ from datetime import date
 from pathlib import Path
 
 import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
+import cos
 import release
+import update_check
 from release import DIST, README_NAME, Stop, git, sha256
 from storage import APP_VERSION
 
@@ -65,10 +71,14 @@ ZIP = DIST / ZIP_NAME
 ZIP_URL = f"{DL}/{ZIP_NAME}"
 LATEST = DIST / "latest.json"
 LATEST_URL = f"{DL}/latest.json"
+COS = update_check.COS_BASE  # 国内备用线路：腾讯云 COS 的存储桶（还没设时是 None，不能发布）
+MIRROR_URL = f"{COS}/{ZIP_NAME}"
+# 官网下载区"下载慢？尝试备用下载方式"展开后的链接：<a … data-mirror href="COS 上的压缩包">，发版时换成新版本的
+MIRROR_LINK = re.compile(r'(<a\s[^>]*\bdata-mirror\b[^>]*\bhref=")([^"]*)(")')
 
 
 def step(n, text):
-    print(f"\n[{n}/9] {text}", flush=True)
+    print(f"\n[{n}/11] {text}", flush=True)
 
 
 def version_tuple(text):
@@ -121,24 +131,54 @@ def remote_info(url):
         raise
 
 
-def remote_sha256(url):
-    digest = hashlib.sha256()
-    with open_url(url) as r:
-        for block in iter(lambda: r.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def online_version():
     data = remote_bytes(LATEST_URL)
     return json.loads(data.decode("utf-8")).get("version") if data else None
 
 
 def site_is_new(digest):
-    """线上官网的下载链接和 SHA-256 是不是已经是这个压缩包的，更新日志页有没有这一版。"""
+    """线上官网的下载链接、国内备用下载链接和 SHA-256 是不是已经是这个压缩包的，更新日志页有没有这一版。"""
     html, changelog = remote_bytes(SITE_URL), remote_bytes(CHANGELOG_URL)
-    return (html is not None and ZIP_URL in html.decode("utf-8") and digest in html.decode("utf-8")
+    html = html.decode("utf-8") if html is not None else ""
+    return (ZIP_URL in html and MIRROR_URL in html and digest in html
             and changelog is not None and f'id="v{APP_VERSION}"' in changelog.decode("utf-8"))
+
+
+def url_sha256(url, fresh=True):
+    """下载一个文件、算 SHA-256。fresh：地址后面加时间参数绕过 CDN 缓存（R2 要；COS 前面没有 CDN，不加）。"""
+    request = urllib.request.Request(f"{url}?t={int(time.time())}" if fresh else url,
+                                     headers={"User-Agent": f"Evo-publish/{APP_VERSION}", "Cache-Control": "no-cache"})
+    digest = hashlib.sha256()
+    with urllib.request.urlopen(request, timeout=300) as r:
+        for block in iter(lambda: r.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+# ---------- 腾讯云 COS（国内备用线路） ----------
+
+def cos_head(url):
+    """COS 上有这个文件就返回 (大小, 上传时记下的 SHA-256)，没有返回 None。"""
+    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": f"Evo-publish/{APP_VERSION}"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as r:
+            return int(r.headers.get("Content-Length", -1)), r.headers.get("x-cos-meta-sha256", "")
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 404):  # 没有这个文件（COS 对没有的文件可能回 403）
+            return None
+        raise
+
+
+def cos_bytes(url):
+    """下载 COS 上的一个小文件；不存在返回 None。"""
+    request = urllib.request.Request(url, headers={"User-Agent": f"Evo-publish/{APP_VERSION}"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 404):
+            return None
+        raise
 
 
 # ---------- 第一段 ----------
@@ -151,49 +191,88 @@ def zip_commit(path):
     return m.group(1) if m and not m.group(2) else None
 
 
+def packages(latest):
+    """要传到 R2 和 COS 的文件：[(文件名, 本机的文件, SHA-256)]。压缩包在最前面，补丁包来自 latest.json。"""
+    out = [(ZIP_NAME, ZIP, latest["download"]["sha256"])]
+    for patch in latest["download"].get("patches", {}).values():
+        name = patch["url"].rsplit("/", 1)[-1]
+        out.append((name, DIST / name, patch["sha256"]))
+    return out
+
+
 def ready(head):
-    """dist 里的压缩包、SHA-256、latest.json 都是当前提交、当前版本的吗？"""
+    """dist 里的压缩包、SHA-256、补丁包、latest.json 都是当前提交、当前版本的吗？"""
     if not (ZIP.is_file() and LATEST.is_file() and (DIST / f"{ZIP_NAME}.sha256").is_file()):
         return False
     commit = zip_commit(ZIP)
     same_commit = commit is not None and (head.startswith(commit) or commit.startswith(head))
-    return same_commit and json.loads(LATEST.read_text(encoding="utf-8")).get("version") == APP_VERSION
+    latest = json.loads(LATEST.read_text(encoding="utf-8"))
+    if not (same_commit and latest.get("version") == APP_VERSION
+            and latest.get("download", {}).get("mirrors") == release.mirror_urls(ZIP_NAME)):
+        return False
+    return all(path.is_file() and sha256(path) == digest for _, path, digest in packages(latest)[1:])
 
 
 def prepare():
-    """确保 dist 里有当前提交打的压缩包；没有就运行 release.py。返回 (SHA-256, 大小)。"""
+    """确保 dist 里有当前提交打的压缩包和补丁包；没有就运行 release.py。返回 (SHA-256, 大小, latest.json 的内容)。"""
+    if not COS:
+        raise Stop("还没有设国内备用线路的 COS 存储桶（code/update_check.py 的 COS_BASE）：设好、提交以后再发布")
     release.check_clean(False)
     head = git("rev-parse", "--short", "HEAD")
     if ready(head):
         print(f"    dist 里已经有提交 {head} 打的 {ZIP_NAME}，不用重新打包")
     else:
-        print("    运行 release.py（检查提交、测试、打包、自检、压缩，要几分钟）", flush=True)
+        print("    运行 release.py（检查提交、测试、打包、自检、压缩、做补丁包，要几分钟）", flush=True)
         if subprocess.run([sys.executable, "tools/release.py"], cwd=ROOT).returncode != 0:
             raise Stop("release.py 没有做完（原因见上面）")
         if not ready(head):
-            raise Stop("release.py 做完了，但压缩包或 latest.json 和当前提交、版本号对不上")
+            raise Stop("release.py 做完了，但压缩包、补丁包或 latest.json 和当前提交、版本号对不上")
     digest = sha256(ZIP)
     if (DIST / f"{ZIP_NAME}.sha256").read_text(encoding="utf-8").split()[0] != digest:
         raise Stop(f"{ZIP_NAME} 和打包时记下的 SHA-256 不一样，可能被改过：删掉它重新运行")
-    return digest, ZIP.stat().st_size
+    return digest, ZIP.stat().st_size, json.loads(LATEST.read_text(encoding="utf-8"))
 
 
-def upload_zip(size, dry_run):
-    info = remote_info(ZIP_URL)
-    if info == (size, md5(ZIP)):
-        print("    线上已经是这个文件（大小和 MD5 都一样），跳过")
-        return
-    if info:
-        print("    线上有同名的文件但内容不一样，会被覆盖（这个版本还没正式发布，可以覆盖）")
-    if dry_run:
-        print(f"    （试运行）会上传 {ZIP} → R2 {BUCKET}/{ZIP_NAME}")
-        return
-    wrangler("r2", "object", "put", f"{BUCKET}/{ZIP_NAME}", "--file", str(ZIP), "--remote",
-             "--content-type", "application/zip")
+def upload_r2(files, dry_run):
+    for name, path, _ in files:
+        info = remote_info(f"{DL}/{name}")
+        if info == (path.stat().st_size, md5(path)):
+            print(f"    {name}：线上已经是这个文件（大小和 MD5 都一样），跳过")
+            continue
+        if info:
+            print(f"    {name}：线上有同名的文件但内容不一样，会被覆盖（这个版本还没正式发布，可以覆盖）")
+        if dry_run:
+            print(f"    （试运行）会上传 {path} → R2 {BUCKET}/{name}")
+            continue
+        wrangler("r2", "object", "put", f"{BUCKET}/{name}", "--file", str(path), "--remote",
+                 "--content-type", "application/zip")
+
+
+def upload_cos(files, dry_run):
+    for name, path, digest in files:
+        if cos_head(f"{COS}/{name}") == (path.stat().st_size, digest):
+            print(f"    {name}：COS 上已经是这个文件（大小和 SHA-256 都一样），跳过")
+            continue
+        if dry_run:
+            print(f"    （试运行）会上传 {path} → COS {name}")
+            continue
+        print(f"    上传 {name}（{path.stat().st_size / 2**20:.1f} MB）→ COS …", flush=True)
+        cos.upload(path, name, "application/zip", digest)
+
+
+def verify(files, base, fresh):
+    """从线上下载回来核对 SHA-256。"""
+    for name, path, digest in files:
+        url = f"{base}/{name}"
+        print(f"    下载 {url}（{path.stat().st_size / 2**20:.1f} MB）…", flush=True)
+        got = url_sha256(url, fresh)
+        if got != digest:
+            raise Stop(f"线上 {url} 的 SHA-256 是 {got}，和本机的不一样")
+        print("    ✅ 和本机的一样")
 
 
 def update_site(digest, size, dry_run):
-    """改 site/index.html 里的下载链接、版本号、大小、SHA-256。返回有没有改动。"""
+    """改 site/index.html 里的下载链接、国内备用下载链接、版本号、大小、SHA-256。返回有没有改动。"""
     html = INDEX.read_bytes().decode("utf-8")  # 按原样读写，不改换行符
     old_version = re.search(r"dl\.evotracker\.cn/Evo-(\d+\.\d+\.\d+)-win64\.zip", html)
     old_digest = re.search(r"<code>([0-9a-f]{64})</code>", html)
@@ -209,6 +288,11 @@ def update_site(digest, size, dry_run):
         ("下载区标题", f"<h3>Evo {old_version} 预览版</h3>", f"<h3>Evo {APP_VERSION} 预览版</h3>", 1),
         ("SHA-256", f"<code>{old_digest}</code>", f"<code>{digest}</code>", 1),
     ] + [("大小", f"约 {s} MB", f"约 {round(size / 2**20)} MB", sizes.count(s)) for s in sorted(set(sizes))]
+
+    mirrors = MIRROR_LINK.findall(html)  # "下载慢？尝试备用下载方式"展开后的国内备用下载（COS）
+    if len(mirrors) != 1:
+        raise Stop(f"site/index.html 里的国内备用下载链接（带 data-mirror 的 <a>）应该有 1 处，找到 {len(mirrors)} 处：网页的写法可能变了，请手动改")
+    changes.append(("国内备用下载链接", mirrors[0][1], MIRROR_URL, 1))
 
     new = html
     for label, old, replacement, expected in changes:
@@ -324,14 +408,17 @@ def update_changelog(entry, dry_run):
 
 
 def publish(dry_run, changelog_ok):
-    step(1, "准备压缩包")
-    digest, size = prepare()
+    step(1, "准备压缩包和补丁包")
+    digest, size, latest = prepare()
+    files = packages(latest)
     print(f"    {ZIP_NAME}，{size / 2**20:.0f} MB，SHA-256 {digest}")
+    for name, path, _ in files[1:]:
+        print(f"    补丁包 {name}，{path.stat().st_size / 2**20:.1f} MB")
     online = online_version()
     print(f"    线上的 latest.json 现在是 {online or '（没有）'}")
     if online and version_tuple(online) >= version_tuple(APP_VERSION):
         raise Stop(f"线上已经发布了 {online}，不比 {APP_VERSION} 旧：已经发布的版本不能再覆盖，要发新版本先改 storage.py 的 APP_VERSION")
-    text, entry, code = changelog_entry(json.loads(LATEST.read_text(encoding="utf-8")))
+    text, entry, code = changelog_entry(latest)
     print("\n    官网更新日志页最上面会加这一版（原文）：")
     for line in text.splitlines():
         print(f"      {line}")
@@ -341,24 +428,29 @@ def publish(dry_run, changelog_ok):
     else:
         confirm_changelog(code, changelog_ok)
 
-    step(2, "上传压缩包到 R2（dl.evotracker.cn）")
-    upload_zip(size, dry_run)
+    step(2, "上传压缩包和补丁包到 R2（dl.evotracker.cn）")
+    upload_r2(files, dry_run)
 
-    step(3, "下载回来核对 SHA-256")
+    step(3, "从 dl.evotracker.cn 下载回来核对 SHA-256")
     if dry_run:
         print("    （试运行）跳过")
     else:
-        print(f"    下载 {ZIP_URL}（{size / 2**20:.0f} MB）…", flush=True)
-        online_digest = remote_sha256(ZIP_URL)
-        if online_digest != digest:
-            raise Stop(f"线上文件的 SHA-256 是 {online_digest}，和本机的不一样")
-        print("    ✅ 和本机的一样")
+        verify(files, DL, fresh=True)
 
-    step(4, "改官网 site/index.html 和更新日志页 site/changelog.html")
+    step(4, "上传压缩包和补丁包到腾讯云 COS（国内备用线路）")
+    upload_cos(files, dry_run)
+
+    step(5, "从 COS 下载回来核对 SHA-256")
+    if dry_run:
+        print("    （试运行）跳过")
+    else:
+        verify(files, COS, fresh=False)
+
+    step(6, "改官网 site/index.html 和更新日志页 site/changelog.html")
     update_site(digest, size, dry_run)
     update_changelog(entry, dry_run)
 
-    step(5, "上传官网（Cloudflare Pages）")
+    step(7, "上传官网（Cloudflare Pages）")
     if site_is_new(digest):
         print("    线上的官网已经是新版本，跳过")
     elif dry_run:
@@ -366,7 +458,7 @@ def publish(dry_run, changelog_ok):
     else:
         wrangler("pages", "deploy", "site", "--project-name", PAGES_PROJECT, "--branch", "main", "--commit-dirty=true")
 
-    step(6, "确认官网已经是新版本")
+    step(8, "确认官网已经是新版本")
     if dry_run:
         print("    （试运行）跳过")
     else:
@@ -376,31 +468,38 @@ def publish(dry_run, changelog_ok):
             time.sleep(5)
         else:
             raise Stop(f"{SITE_URL} 上还不是新的下载链接和 SHA-256，或者 {CHANGELOG_URL} 还没有这一版，过一会儿重新运行 python tools/publish.py 看看")
-        print(f"    ✅ {SITE_URL} 的下载链接是 {ZIP_NAME}，SHA-256 也对；{CHANGELOG_URL} 有 {APP_VERSION}")
+        print(f"    ✅ {SITE_URL} 的下载链接和国内备用下载链接是 {ZIP_NAME}，SHA-256 也对；{CHANGELOG_URL} 有 {APP_VERSION}")
 
     if dry_run:
         print("\n试运行完成，没有上传任何东西。正式上传：python tools/publish.py")
     else:
-        print(f"\n第一段完成：{APP_VERSION} 的压缩包和官网都已经上线，但还没有任何 Evo 会提醒更新。")
+        print(f"\n第一段完成：{APP_VERSION} 的压缩包、补丁包和官网都已经上线，但还没有任何 Evo 会提醒更新。")
         print("自己从官网下载试一下；确认没问题后，最后一步：python tools/publish.py --live")
 
 
 # ---------- 第二段 ----------
 
 def go_live(yes):
-    step(7, "核对线上的压缩包和官网")
+    step(9, "核对线上的压缩包、补丁包和官网")
     if not (ZIP.is_file() and LATEST.is_file()):
         raise Stop(f"dist 里没有 {ZIP_NAME} 或 latest.json：先运行 python tools/publish.py")
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
     if latest.get("version") != APP_VERSION:
         raise Stop(f"dist/latest.json 写的是 {latest.get('version')}，不是 {APP_VERSION}：先运行 python tools/publish.py")
-    if remote_info(ZIP_URL) != (ZIP.stat().st_size, md5(ZIP)):
-        raise Stop(f"线上的 {ZIP_NAME} 和本机的不一样（或者还没传）：先运行 python tools/publish.py")
+    if not COS or latest.get("download", {}).get("mirrors") != release.mirror_urls(ZIP_NAME):
+        raise Stop("dist/latest.json 里的国内备用线路和 update_check.COS_BASE 不一样：删掉 dist 里的压缩包，重新运行 python tools/publish.py")
+    for name, path, digest in packages(latest):
+        if not path.is_file() or remote_info(f"{DL}/{name}") != (path.stat().st_size, md5(path)):
+            raise Stop(f"R2 上的 {name} 和本机的不一样（或者还没传）：先运行 python tools/publish.py")
+        if cos_head(f"{COS}/{name}") != (path.stat().st_size, digest):
+            raise Stop(f"COS 上的 {name} 和本机的不一样（或者还没传）：先运行 python tools/publish.py")
     if not site_is_new(sha256(ZIP)):
         raise Stop("官网还不是这个版本：先运行 python tools/publish.py")
-    print("    ✅ 压缩包和官网都是这个版本")
-    if remote_bytes(LATEST_URL) == LATEST.read_bytes():
-        print(f"\n线上的 latest.json 已经是 {APP_VERSION}，不用再传")
+    print("    ✅ R2 和 COS 上的压缩包、补丁包，还有官网，都是这个版本")
+    local = LATEST.read_bytes()
+    r2_done, cos_done = remote_bytes(LATEST_URL) == local, cos_bytes(f"{COS}/latest.json") == local
+    if r2_done and cos_done:
+        print(f"\n线上的 latest.json（R2 和 COS）已经是 {APP_VERSION}，不用再传")
         return
     online = online_version()
     if online and version_tuple(online) > version_tuple(APP_VERSION):
@@ -417,14 +516,27 @@ def go_live(yes):
             print("    没有发布")
             return
 
-    step(8, "上传 latest.json")
-    wrangler("r2", "object", "put", f"{BUCKET}/latest.json", "--file", str(LATEST), "--remote",
-             "--cache-control", "max-age=300", "--content-type", "application/json; charset=utf-8")
+    step(10, "上传 latest.json（R2，再 COS）")
+    if r2_done:
+        print("    R2 上的已经是这个，跳过")
+    else:
+        wrangler("r2", "object", "put", f"{BUCKET}/latest.json", "--file", str(LATEST), "--remote",
+                 "--cache-control", "max-age=300", "--content-type", "application/json; charset=utf-8")
+    if cos_done:
+        print("    COS 上的已经是这个，跳过")
+    else:
+        try:
+            cos.upload(LATEST, "latest.json", "application/json; charset=utf-8", sha256(LATEST), cache_control="no-cache")
+        except cos.CosError as e:
+            raise Stop(f"R2 上的 latest.json 已经换成 {APP_VERSION}（Evo 会提醒更新），COS 上的没传上（{e}）："
+                       "重新运行 python tools/publish.py --live --yes 补传") from e
 
-    step(9, "确认线上的 latest.json 和本机的一样")
-    if remote_bytes(LATEST_URL) != LATEST.read_bytes():
+    step(11, "确认线上的 latest.json 和本机的一样")
+    if remote_bytes(LATEST_URL) != local:
         raise Stop(f"{LATEST_URL} 和本机的 dist/latest.json 不一样")
-    print("    ✅ 一样")
+    if cos_bytes(f"{COS}/latest.json") != local:
+        raise Stop(f"{COS}/latest.json 和本机的 dist/latest.json 不一样")
+    print("    ✅ R2 和 COS 上的都一样")
     print(f"\n{APP_VERSION} 已发布。CDN 缓存最多 5 分钟，之后所有 Evo 检查更新都会看到新版本。")
     print("别忘了：在 claude/progress.md 的\"版本\"里记一笔，提交，git push origin main")
 
@@ -448,6 +560,9 @@ def main():
         return 1
     except subprocess.CalledProcessError as e:
         print(f"\n❌ 停下了：{' '.join(map(str, e.cmd))} 出错（返回码 {e.returncode}）")
+        return 1
+    except cos.CosError as e:
+        print(f"\n❌ 停下了：上传到 COS 没成功（{e}）")
         return 1
     except (urllib.error.URLError, OSError) as e:
         print(f"\n❌ 停下了：网络或文件出错（{e}）")

@@ -138,7 +138,7 @@ def start_update_checker(log, notify, stop, first_delay=UPDATE_FIRST_DELAY):
             if app_settings.get("update_auto") is True:
                 import update_check
 
-                result = update_check.check()
+                result = update_check.check(attempts=2)  # 网不好时隔几秒再试一次
                 if not result["ok"]:
                     log(f"检查新版本：没查到（{result['error']}）")
                 elif result["newer"]:
@@ -634,7 +634,7 @@ def main():
 
     # 一键更新：Apex 开着时不能安装；安装时新版本跑起来以后，让托盘程序像点了"退出"一样退出
     updater.connect(game_running=lambda: game_running(recorder.game_names),
-                    quit_app=lambda: shut_down("一键更新：新版本已经开始安装，正在退出……"))
+                    quit_app=lambda: shut_down("一键更新：新版本已经开始安装，正在退出……"), log=log)
     # 搬数据文件夹：Apex 开着时不搬；搬的时候按住记录；搬好后打开新的 Evo，自己像点了"退出"一样退出
     data_move.connect(game_running=lambda: game_running(recorder.game_names), hold=recorder.hold,
                       quit_app=lambda: shut_down("数据文件夹搬好了，正在退出，新位置的 Evo 马上打开……"),

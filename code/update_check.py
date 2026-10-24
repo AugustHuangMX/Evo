@@ -1,14 +1,24 @@
 """检查 Evo 有没有新版本。Evo 会联网的只有这里、一键更新（updater.py，用户点了"立即更新"才下载）和匿名统计
 （telemetry.py，用户同意了才发），都可以关掉。
 
-只做一件事：下载 https://dl.evotracker.cn/latest.json 这个公开的小文件，看里面写的最新版本号。
+只做一件事：下载 https://dl.evotracker.cn/latest.json 这个公开的小文件，看里面写的最新版本号；读不到时改读
+国内备用线路（腾讯云 COS）上的同一个文件。
 请求里只带"Evo/<版本号>"，不发送任何战绩、截图或电脑信息；和打开任何网页一样，服务器能看到访问者的 IP 地址。
 几秒钟连不上、文件格式不对，都当作"这次没查到"，不影响 Evo 的其他功能。
 
-latest.json 由 release.py 在发布时生成，和安装包一起传到 R2：
-    {"version": "0.2.0", "date": "2026-10-20", "page": "https://evotracker.cn/#download", "notes": ["……"],
-     "download": {"url": "https://dl.evotracker.cn/Evo-0.2.0-win64.zip", "sha256": "……", "size": 109332130}}
+latest.json 由 release.py 在发布时生成，和安装包一起传到 R2 和 COS：
+    {"version": "0.4.1", "date": "2026-10-30", "page": "https://evotracker.cn/#download", "notes": ["……"],
+     "download": {"url": "https://dl.evotracker.cn/Evo-0.4.1-win64.zip", "sha256": "……", "size": 111692635,
+                  "mirrors": ["https://<存储桶>.cos.ap-shanghai.myqcloud.com/Evo-0.4.1-win64.zip"],
+                  "patches": {"0.4.0": {"url": "https://dl.evotracker.cn/Evo-0.4.1-patch-from-0.4.0.zip",
+                                        "sha256": "……", "size": 11000000, "mirrors": ["……"]}}}}
 download 是一键更新用的安装包（0.3.3 起才有）：地址只接受 dl.evotracker.cn，没有或格式不对就只能去官网下载。
+mirrors 是国内备用线路（0.4.0 起，2026-10-24 用户决定）：dl.evotracker.cn 在 Cloudflare，国内晚上三家运营商连过去
+都慢、丢包（实测见 docs/底座.md），太慢或连不上时改从腾讯云 COS（上海）下载同一个文件，见 updater.py。
+只接受 COS_BASE 这个存储桶里的 zip。存储桶是自己的，所以 latest.json 从 dl.evotracker.cn 读不到时也可以从它读；
+不管从哪条线路下载，SHA-256 都以 latest.json 为准。
+patches 是补丁包（0.4.0 起，2026-10-24 用户决定，见 update_patch.py）：从这些版本升上来只下载变了的文件。
+地址的规矩和完整安装包一样；Evo 只用自己这个版本的那一个，没有就下完整的。
 
 用到的设置（app_settings，存在数据文件夹的 settings.json）：
 - update_auto：自动检查（True / False；还没问过用户时没有这一项）
@@ -24,6 +34,7 @@ download 是一键更新用的安装包（0.3.3 起才有）：地址只接受 d
 import json
 import os
 import re
+import time
 import urllib.request
 from datetime import datetime
 from urllib.parse import urlparse
@@ -34,11 +45,20 @@ from storage import APP_VERSION
 UPDATE_URL = os.environ.get("EVO_UPDATE_URL", "https://dl.evotracker.cn/latest.json")
 DEFAULT_PAGE = "https://evotracker.cn/#download"
 TRUSTED_HOSTS = {"evotracker.cn", "www.evotracker.cn", "dl.evotracker.cn"}  # 只打开自己网站上的链接
-DOWNLOAD_HOSTS = {"dl.evotracker.cn"}  # 一键更新只从这里下载安装包
-# 用 EVO_UPDATE_URL 换成本机的测试地址时，也接受从同一个地址下载安装包（http 也行），方便不上线就试一键更新
+DOWNLOAD_HOSTS = {"dl.evotracker.cn"}  # 一键更新先从这里下载安装包
+# 国内备用线路：腾讯云 COS（上海）的存储桶，用它自带的地址（不用备案；2024 年起这种地址只是不能在浏览器里预览、
+# 不能下 apk，zip 照常能下）。release.py、publish.py 也用这个。换存储桶要先改这里、发一版
+COS_BASE = "https://evo-dl-1307698527.cos.ap-shanghai.myqcloud.com"  # 2026-10-24 用户建的；None = 没有备用线路
+MIRROR_HOSTS = {urlparse(COS_BASE).hostname} if COS_BASE else set()
+MAX_MIRRORS = 3
+MAX_PATCHES = 5  # latest.json 里最多看几个补丁包（发布时做最近 3 个版本的）
+# 用 EVO_UPDATE_URL 换成本机的测试地址时，也接受从同一个地址下载安装包（http 也行），方便不上线就试一键更新；
+# 这时也不读 COS 上的 latest.json
 TEST_HOST = urlparse(UPDATE_URL).hostname if os.environ.get("EVO_UPDATE_URL") else None
+LATEST_URLS = [UPDATE_URL] + ([f"{COS_BASE}/latest.json"] if COS_BASE and not TEST_HOST else [])
 MAX_PACKAGE = 1024 ** 3  # 安装包现在约 105 MB，超过 1 GB 一定是写错了
-TIMEOUT = 5  # 秒
+TIMEOUT = 15  # 秒：国内移动宽带到 dl.evotracker.cn 绕得远，晚上还可能丢包，5 秒常常不够（0.3.6 及以前是 5 秒）
+RETRY_PAUSE = 5  # 秒：自动检查没查到时，等一下再试一次
 MAX_BYTES = 64 * 1024  # latest.json 只有几百字节，多的不读
 
 
@@ -61,30 +81,82 @@ def safe_page(url):
     return str(url) if parsed.scheme == "https" and parsed.hostname in TRUSTED_HOSTS else DEFAULT_PAGE
 
 
-def safe_download(info):
-    """latest.json 里的安装包信息 {"url", "sha256", "size"}：地址只接受 dl.evotracker.cn 的 https（测试地址除外），
-    SHA-256 和大小的格式要对。没有或不对返回 None（这个版本只能去官网下载）。"""
+def _parse(url):
+    try:
+        return urlparse(str(url))
+    except ValueError:
+        return None
+
+
+def _test_url(parsed):
+    """设了 EVO_UPDATE_URL 时，和它同一个地址的 http / https 都接受（测试用）。"""
+    return TEST_HOST is not None and parsed.scheme in ("http", "https") and parsed.hostname == TEST_HOST
+
+
+def safe_mirror(url):
+    """备用线路的地址：COS 存储桶（MIRROR_HOSTS）的 https，最外层的一个 zip 文件，不带参数、端口。"""
+    parsed = _parse(url)
+    if parsed is None:
+        return False
+    if _test_url(parsed):
+        return True
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    return (parsed.scheme == "https" and parsed.hostname in MIRROR_HOSTS and port is None
+            and not parsed.query and not parsed.fragment and re.fullmatch(r"/[A-Za-z0-9._-]+\.zip", parsed.path) is not None)
+
+
+def _package(info):
+    """一个要下载的文件 {"url", "sha256", "size", "mirrors"}：地址只接受 dl.evotracker.cn 的 https（测试地址除外），
+    SHA-256 和大小的格式要对，不对返回 None。mirrors（备用线路）不对的一条条去掉，不影响主线路；返回的 mirrors 总是列表。"""
     if not isinstance(info, dict):
         return None
     url, digest, size = info.get("url"), info.get("sha256"), info.get("size")
-    try:
-        parsed = urlparse(str(url))
-    except ValueError:
+    parsed = _parse(url)
+    if parsed is None:
         return None
-    host_ok = (parsed.scheme == "https" and parsed.hostname in DOWNLOAD_HOSTS) or \
-              (TEST_HOST is not None and parsed.scheme in ("http", "https") and parsed.hostname == TEST_HOST)
+    host_ok = (parsed.scheme == "https" and parsed.hostname in DOWNLOAD_HOSTS) or _test_url(parsed)
     if not host_ok or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
         return None
     if not isinstance(size, int) or isinstance(size, bool) or not 0 < size <= MAX_PACKAGE:
         return None
-    return {"url": str(url), "sha256": digest, "size": size}
+    mirrors = info.get("mirrors") if isinstance(info.get("mirrors"), list) else []
+    mirrors = [m for m in mirrors if isinstance(m, str) and safe_mirror(m)][:MAX_MIRRORS]
+    return {"url": str(url), "sha256": digest, "size": size, "mirrors": mirrors}
+
+
+def safe_download(info):
+    """latest.json 里的安装包信息：完整的安装包（规矩见 _package），没有或不对返回 None（这个版本只能去官网下载）。
+    加上 patches（补丁包）：{从哪个版本升: 同样格式的文件}，不对的一个个去掉；返回的 patches 总是字典（可能是空的）。"""
+    package = _package(info)
+    if package is None:
+        return None
+    patches = info.get("patches") if isinstance(info.get("patches"), dict) else {}
+    package["patches"] = {}
+    for version, patch in list(patches.items())[:MAX_PATCHES]:
+        checked = _package(patch)
+        if version_tuple(version) is not None and checked is not None:
+            package["patches"][version] = checked
+    return package
 
 
 def fetch_latest(timeout=TIMEOUT):
     """下载并检查 latest.json，返回 {"version", "date", "page", "notes", "download"}（download 没有时为 None）。
-    连不上或格式不对抛出 UpdateError。"""
+    先读 dl.evotracker.cn，读不到（或格式不对）再读 COS 上的；都不行抛出 UpdateError（说的是第一个的原因）。"""
+    first = None
+    for url in LATEST_URLS:
+        try:
+            return _fetch_latest(url, timeout)
+        except UpdateError as e:
+            first = first or e
+    raise first
+
+
+def _fetch_latest(url, timeout):
     request = urllib.request.Request(
-        UPDATE_URL, headers={"User-Agent": f"Evo/{APP_VERSION}", "Cache-Control": "no-cache"})
+        url, headers={"User-Agent": f"Evo/{APP_VERSION}", "Cache-Control": "no-cache"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read(MAX_BYTES)
@@ -106,15 +178,23 @@ def fetch_latest(timeout=TIMEOUT):
     }
 
 
-def check(timeout=TIMEOUT):
-    """检查一次，把结果记进设置（面板据此显示提示条）。返回：
+def check(timeout=TIMEOUT, attempts=1):
+    """检查一次，把结果记进设置（面板据此显示提示条）。attempts：没查到时一共试几次（自动检查试 2 次，
+    中间等 RETRY_PAUSE 秒；设置页的按钮只试 1 次，页面不用等太久）。返回：
     {"ok": True, "latest": {...}, "newer": 是否比现在装的新, "checked_at": 时间}，
     或 {"ok": False, "error": 原因, "checked_at": 时间}。"""
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    try:
-        latest = fetch_latest(timeout)
-    except UpdateError as e:
-        result = {"ok": False, "error": str(e), "checked_at": checked_at}
+    latest, error = None, None
+    for attempt in range(max(1, attempts)):
+        if attempt:
+            time.sleep(RETRY_PAUSE)
+        try:
+            latest = fetch_latest(timeout)
+            break
+        except UpdateError as e:
+            error = e
+    if latest is None:
+        result = {"ok": False, "error": str(error), "checked_at": checked_at}
     else:
         newer = version_tuple(latest["version"]) > version_tuple(APP_VERSION)
         result = {"ok": True, "latest": latest, "newer": newer, "checked_at": checked_at}
@@ -142,7 +222,7 @@ def available():
 
 
 if __name__ == "__main__":
-    print(f"现在的版本：{APP_VERSION}；检查地址：{UPDATE_URL}")
+    print(f"现在的版本：{APP_VERSION}；检查地址：{'，读不到时 '.join(LATEST_URLS)}")
     r = check()
     if not r["ok"]:
         print(f"没查到：{r['error']}")
