@@ -9,7 +9,7 @@
   "min_similarity": 0.5,
   "min_margin": 0.2,
   "_说明_门槛": "2026-10-17 实测：应该认出的（另一次截的 4 个传奇 + 10-16 录像里敌人的侵蚀，1080p 视频、观战位置）相似度最低 0.82，比第二像的至少高 0.59；应该认不出的 123 张（大厅、开局、总结页、经验值页、桌面、Esc 菜单）相似度最高 0.26，前两名最多差 0.05。门槛取中间，两边都留了余量",
-  "_说明_legends": "编号（英文小写，参照图的文件名）→ 中文名（简体中文版官方译名）、英文名、职业。新传奇上线：加一行，再用 python legends.py --save-template <编号> <截图> 生成参照图（截图用 legend_capture.py 在靶场截）",
+  "_说明_legends": "编号（英文小写，参照图的文件名）→ 中文名（简体中文版官方译名）、英文名、职业。新传奇上线：加一行，再用 python code/legends.py --save-template <编号> <截图> 生成参照图（截图用 python tools/legend_capture.py 在靶场截）",
   "classes": {"assault": "突击", "skirmisher": "游击", "recon": "侦察", "support": "支援", "controller": "控制"},
   "legends": {
     "ballistic":  {"zh": "弹道",     "en": "Ballistic",  "class": "assault"},

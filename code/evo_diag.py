@@ -605,7 +605,7 @@ class MonitorThumbs:
         self.sct.close()
 
 
-def open_camera(log):
+def open_camera():
     """和 Evo 的记录程序一样建截屏对象（live_collect.collect：主显示器、BGR、numpy）。
     返回 (dxcam 模块或 None, 截屏对象或 None, 建不起来的原因或 None)。"""
     try:
@@ -850,7 +850,7 @@ def main(argv=None):
     dx_logger.setLevel(logging.WARNING)
 
     log(f"Evo 诊断工具 {VERSION} 开始，先存在：{folder}")
-    dxcam_mod, camera, camera_error = open_camera(log)
+    dxcam_mod, camera, camera_error = open_camera()
     if camera_error:
         log(f"⚠ {camera_error}")
     else:

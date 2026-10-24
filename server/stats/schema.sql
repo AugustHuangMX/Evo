@@ -1,7 +1,7 @@
 -- Evo 匿名统计的数据库（Cloudflare D1，名字 evo-stats）。worker.js 往里写，tools/stats_report.py 读。
 -- 只有用户同意后发来的数据；没有 IP 地址、游戏名、ID。id 是 Evo 里随机生成的匿名编号。
 -- 建表：wrangler d1 execute evo-stats --remote --file schema.sql（已经有的表不动）。
--- 给已有的表加列不能写在这里（CREATE TABLE IF NOT EXISTS 不会加列）：另写一个文件，只运行一次（如 add_mate_stats.sql）
+-- 给已有的表加列不能写在这里（CREATE TABLE IF NOT EXISTS 不会加列）：另写一个只运行一次的文件（ALTER TABLE … ADD COLUMN …），运行完就删掉。2026-10-24 加队友数据的 8 列时用的 add_mate_stats.sql 可以在 git 历史里参考
 
 -- 日活：每个编号每天一行（那天 Evo 开着、联网发过一次）
 CREATE TABLE IF NOT EXISTS pings (
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS matches (
   review INTEGER,  -- 1 = 这一局在 Evo 里标了待确认
   edited TEXT,  -- 用户在战绩页改过哪几项（列名，逗号分隔）
   received_at TEXT NOT NULL,
-  -- 两名队友这一局的数据（总结页上读的；0.3.8 之后的 Evo 才发，2026-10-24 加的列，已有的数据库见 add_mate_stats.sql）
+  -- 两名队友这一局的数据（总结页上读的；0.3.8 之后的 Evo 才发，2026-10-24 加的列）
   mate1_kills INTEGER,
   mate1_assists INTEGER,
   mate1_knockdowns INTEGER,

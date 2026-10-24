@@ -39,7 +39,6 @@ from paths import data_relative
 
 SOURCE_SUMMARY, SOURCE_XP, SOURCE_ELIM = "总结页", "经验值页", "淘汰画面"  # 读数来源（readings 表的 source）
 SOURCE_CHAMPION, SOURCE_HUD, SOURCE_LOBBY = "冠军横幅", "对局中", "大厅校准"
-RP_SOURCE_XP = SOURCE_XP
 PLACEMENT_SOURCES = (SOURCE_SUMMARY, SOURCE_XP, SOURCE_CHAMPION, SOURCE_ELIM)  # 互相核对；对不上时先用排在前面的
 XP_FIELDS = ("rp_delta", "placement", "kills", "assists", "rank_tier", "rank_division", "rank_progress")
 HUD_FIELDS = ("kills", "assists", "participation", "damage")  # 对局中右上角读到就记（成盒以后读不到，用成盒前的）
@@ -60,8 +59,6 @@ MAX_GAP_SECONDS = 600  # 同一局的总结页和经验值页，时间不会相�
 SAME_MATCH_SECONDS = 120  # 总结页、经验值页之后这么久之内看到的淘汰画面等算同一局（新的一局从排队到被淘汰，至少要这么久）
 MODE_LABELS = {"ranked": "排位", "pubs": "匹配", "other": "其他"}
 MATE_SIMILAR = 0.6  # 对局中和总结页的队友名字这么像就算同一个人（名字里有游戏显示不了的字，两边可能读得不一样）
-END_LABELS = {"eliminated": "淘汰画面", "champion": "冠军横幅", "summary": "总结页", "xp": "经验值页",
-              "lobby": "回到大厅", "next": "下一局开局", "stop": "停止记录"}
 
 
 def xp_score(reading, problems):

@@ -29,7 +29,6 @@ APP_DIR = Path(sys._MEIPASS) if FROZEN else Path(__file__).resolve().parent.pare
 EXE_DIR = Path(sys.executable).resolve().parent if FROZEN else APP_DIR  # Evo.exe 所在的文件夹
 DATA_NAME = "Evo Tracker Data"  # 程序旁边的默认位置、设置页里自己选的位置，都叫这个名字（2026-10-20 用户决定）
 POINTER_NAME = "data_location.txt"
-DATA_LOCATION_FILE = EXE_DIR / POINTER_NAME
 LOCAL_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Evo"  # 0.3.4 及以前的默认位置；现在放"指路文件"
 
 
