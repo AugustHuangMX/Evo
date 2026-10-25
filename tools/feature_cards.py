@@ -24,6 +24,8 @@ import tempfile
 import threading
 from pathlib import Path
 
+from PIL import Image
+
 import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 
 ROOT = code_path.ROOT
@@ -218,16 +220,18 @@ def serve_panel(db):
             # 跳到 #某个标题 时，别让标题藏在自绘标题栏下面（Evo 窗口里滚动的是 body）
             extra = "<style>body{scroll-padding-top:36px}</style>"
             html = resp.get_data(as_text=True).replace("</head>", extra + "</head>", 1)
-            if request.args.get("_shot") == "share":  # 打开分享对话框（要在下面量位置的脚本之前，量的时候对话框已经打开）
+            # 关掉动画：截到的、量到的都是播完的样子（走势图从左往右展开，没播完就截会丢曲线）
+            html = html.replace("</head>", "<style>*,*::before,*::after{animation:none!important;transition:none!important}</style></head>", 1)
+            if request.args.get("_shot") in ("share", "share2"):  # 打开分享对话框（要在下面量位置的脚本之前，量的时候对话框已经打开）
                 html = html.replace("</body>", "<script>document.querySelector('[data-share-open]').click()</script></body>", 1)
+            if request.args.get("_shot") == "share2":  # 分享对话框切到第二种卡片（总览页是"近 30 局概况"）
+                html = html.replace("</body>", "<script>(function(){const r=document.querySelectorAll('input[name=share-kind]');"
+                                    "r[1].checked=true;r[1].dispatchEvent(new Event('change'));})()</script></body>", 1)
             if request.args.get("_shot") == "lang":  # 游戏语言的下拉框展开成列表（截图打不开下拉框），选中 English
                 html = html.replace("</body>", "<script>(function(){const s=document.getElementById('language-select');"
                                     "s.size=s.options.length;const en=[...s.options].find(o=>/English/.test(o.text));"
                                     "if(en)s.value=en.value;})()</script></body>", 1)
             if MEASURE["groups"] is not None:
-                # 量位置时关掉动画（打开页面时整页往上浮 10 像素，没播完就量会偏），关掉后就是播完时的样子，和截图一样
-                html = html.replace("</head>", "<style>*,*::before,*::after{animation:none!important;"
-                                    "transition:none!important}</style></head>", 1)
                 html = html.replace("</body>", f"<script>{MEASURE_JS % json.dumps(MEASURE['groups'])}</script></body>", 1)
             resp.set_data(html)
         return resp
@@ -356,9 +360,62 @@ def card_html(card, shot, region, tag_boxes):
         parts.append('<div class="ratios">' + "".join(
             f'<div class="ratio{" new" if new else ""}"><i style="height:{92 / ratio_of(label):.1f}px"></i>{label}</div>'
             for label, new in card["aspect_boxes"]) + "</div>")
-    css = CSS % {"fonts": FONTS, "w": W, "h": H}
+    if card.get("note"):
+        parts.append(f'<div class="note">{card["note"]}</div>')
+    css = CSS % {"fonts": FONTS, "w": W, "h": H} + NOTE_CSS
     return (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>{card["title"]}</title>'
             f'<style>{css}</style></head><body>{"".join(parts)}<script>{LINKS_JS}</script></body></html>')
+
+
+FULL_TOP, FULL_BOTTOM = 150, 700  # "只放截图"：窗口截图放在标题下面这一块，横向居中
+NOTE_CSS = ".note { position: absolute; left: 0; right: 0; bottom: 22px; text-align: center; font-size: 13px; color: var(--muted); }"
+
+
+def page_html(card, parts):
+    title = re.sub(r"\d[\d:.]*", lambda m: f'<span class="num">{m.group(0)}</span>', card["title"])
+    head = (f'<div class="head"><div class="pill"><img src="{ICON}" alt=""><span class="num">EVO {VERSION}</span>{LABEL}</div>'
+            f'<h1>{title}</h1></div>')
+    if card.get("note"):
+        parts.append(f'<div class="note">{card["note"]}</div>')
+    css = CSS % {"fonts": FONTS, "w": W, "h": H} + NOTE_CSS + GALLERY_CSS
+    return (f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>{card["title"]}</title>'
+            f'<style>{css}</style></head><body>{head}{"".join(parts)}</body></html>')
+
+
+def full_html(card, shot, tag_boxes):
+    """只放截图（不放大）：整个窗口放大到标题下面这一块，横向居中；tags 放在窗口右边、对准那一行。"""
+    bottom = FULL_BOTTOM - (34 if card.get("note") else 0)  # 有底部小字时窗口收一点，小字在窗口下面
+    s = min((W - 2 * MARGIN - (TAG_W if tag_boxes else 0)) / VIEW_W, (bottom - FULL_TOP) / VIEW_H)
+    ww, wh = VIEW_W * s, VIEW_H * s
+    wx, wy = (W - ww) / 2, FULL_TOP + (bottom - FULL_TOP - wh) / 2
+    parts = [f'<div class="win" style="left:{wx}px;top:{wy}px;width:{ww}px;height:{wh}px;background-image:url(\'{shot.as_uri()}\')"></div>']
+    for text, (_, by, _, bh) in tag_boxes:
+        parts.append(f'<div class="tag" style="left:{wx + ww + 6}px;top:{wy + (by + bh / 2) * s}px"><span>{text}</span></div>')
+    return page_html(card, parts)
+
+
+GALLERY_CSS = """
+.gal { position: absolute; border-radius: 10px; background-size: 100% 100%;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.09), 0 24px 70px rgb(0 0 0 / 0.55); }
+.gal-label { position: absolute; transform: translateX(-50%); font-size: 15px; font-weight: 600; color: #FFB3B3;
+  background: #1A1114; border: 1px solid rgb(255 90 90 / 0.4); border-radius: 6px; padding: 3px 12px; white-space: nowrap; }
+"""
+
+
+def gallery_html(card, crops):
+    """几张图并排（比如几种分享卡片）：一样高，整排横向居中，每张下面写名字。crops：[(图片路径, 宽, 高, 名字)]"""
+    gap, label_h = 28, 40
+    total_ratio = sum(w / h for _, w, h, _ in crops)
+    h = min(380, (W - 2 * MARGIN - gap * (len(crops) - 1)) / total_ratio)
+    x = (W - (h * total_ratio + gap * (len(crops) - 1))) / 2
+    y = FULL_TOP + (FULL_BOTTOM - FULL_TOP - h - label_h) / 2
+    parts = []
+    for path, w0, h0, label in crops:
+        w = h * w0 / h0
+        parts.append(f'<div class="gal" style="left:{x}px;top:{y}px;width:{w}px;height:{h}px;background-image:url(\'{path.as_uri()}\')"></div>')
+        parts.append(f'<div class="gal-label" style="left:{x + w / 2}px;top:{y + h + 14}px">{label}</div>')
+        x += w + gap
+    return page_html(card, parts)
 
 
 def ratio_of(label):
@@ -392,9 +449,37 @@ def main():
     out_dir.mkdir(exist_ok=True)
     try:
         for i, card in enumerate(spec["cards"], 1):
+            png = out_dir / f'{i:02d}-{card["file"]}.png'
+            if card.get("gallery"):  # 几张图并排：每张从各自的页面里裁出来（窗口放大 4 倍截，裁出来也清楚）
+                crops = []
+                for k, item in enumerate(card["gallery"]):
+                    url = base + item["page"].replace("{latest}", str(latest))
+                    raw = tmp / f"{i:02d}-{k}-raw.png"
+                    edge(tmp, [f"--screenshot={raw}", url])
+                    found = measure(tmp, url, [as_list(item["on"])])[0]
+                    if not found:
+                        sys.exit(f"第 {i} 张：页面上找不到 {item['on']}（{url}）")
+                    bx, by, bw, bh = found[0]
+                    crop = tmp / f"{i:02d}-{k}.png"
+                    Image.open(raw).crop(tuple(round(v * SHOT_SCALE) for v in (bx, by, bx + bw, by + bh))).save(crop)
+                    crops.append((crop, bw, bh, item["label"]))
+                page = tmp / f"{i:02d}-card.html"
+                page.write_text(gallery_html(card, crops), encoding="utf-8")
+                edge(tmp, [f"--screenshot={png}", page.as_uri()], size=(W, H), scale=OUT_SCALE, ua=False)
+                print(f"{png.relative_to(ROOT)}  （{len(crops)} 张并排）")
+                continue
             url = base + card["page"].replace("{latest}", str(latest))
             shot = tmp / f"{i:02d}-shot.png"
             edge(tmp, [f"--screenshot={shot}", url])
+            if card.get("layout") == "full":  # 只放截图，不放大
+                tags = card.get("tags", [])
+                boxes = measure(tmp, url, [as_list(t["on"]) for t in tags]) if tags else []
+                tag_boxes = [(t["text"], b) for t, found in zip(tags, boxes) for b in found]
+                page = tmp / f"{i:02d}-card.html"
+                page.write_text(full_html(card, shot, tag_boxes), encoding="utf-8")
+                edge(tmp, [f"--screenshot={png}", page.as_uri()], size=(W, H), scale=OUT_SCALE, ua=False)
+                print(f"{png.relative_to(ROOT)}  （只放截图）")
+                continue
             tags = card.get("tags", [])
             boxes = measure(tmp, url, [as_list(card["zoom_on"])] + [as_list(t["on"]) for t in tags])
             for sel, found in zip([card["zoom_on"]] + [t["on"] for t in tags], boxes):
@@ -404,7 +489,6 @@ def main():
             tag_boxes = [(t["text"], b) for t, found in zip(tags, boxes[1:]) for b in found]
             page = tmp / f"{i:02d}-card.html"
             page.write_text(card_html(card, shot, region, tag_boxes), encoding="utf-8")
-            png = out_dir / f'{i:02d}-{card["file"]}.png'
             edge(tmp, [f"--screenshot={png}", page.as_uri()], size=(W, H), scale=OUT_SCALE, ua=False)
             print(f"{png.relative_to(ROOT)}  （放大区域 {', '.join(f'{v:.0f}' for v in region)}）")
     finally:

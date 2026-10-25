@@ -1,5 +1,5 @@
 {
-  "_说明": "这一版的宣传图，python tools/feature_cards.py 读它，输出到 release/<版本号>截图/。发新版本前改成这一版的内容；每一项怎么写见 release/做图流程.md。0.4.0（2026-10-25 开发者定的）：9 张 = 4 张新功能 + 5 张主打的特色功能，左上角小标签只写版本号（label 空）",
+  "_说明": "这一版的宣传图，python tools/feature_cards.py 读它，输出到 release/<版本号>截图/。发新版本前改成这一版的内容；每一项怎么写见 release/做图流程.md。0.4.0（2026-10-25 开发者定的）：9 张 = 4 张新功能 + 5 张主打的特色功能，左上角小标签只写版本号（label 空）；武器识别、全体玩家、上分好搭子只放截图（layout: full），分享战绩是三种卡片并排（gallery）",
   "label": "",
   "cards": [
     {
@@ -7,31 +7,34 @@
       "title": "支持匹配模式",
       "page": "/matches?mode=pubs",
       "zoom_on": "tbody tr.row:nth-child(-n+4) td:nth-child(-n+5)",
-      "pad": [12, 6],
+      "pad": [
+        12,
+        6
+      ],
       "caption": "战绩页 › 匹配"
     },
     {
       "file": "武器识别",
       "title": "武器识别",
       "page": "/stats",
-      "zoom_on": ".weapons-table tbody tr:nth-child(-n+6) > :nth-child(-n+3)",
-      "pad": [12, 6],
-      "caption": "数据页 › 最常用武器"
+      "layout": "full"
     },
     {
       "file": "全体玩家",
       "title": "全体玩家数据",
-      "page": "/stats?view=all#h-you",
-      "zoom_on": ".beat-row .beat-tile:nth-child(-n+2)",
-      "pad": [10, 10],
-      "caption": "数据页 › 全体玩家"
+      "page": "/stats?view=all",
+      "layout": "full",
+      "note": "数据基于所有 Evo 玩家"
     },
     {
       "file": "游戏语言",
-      "title": "支持英文、繁体中文",
+      "title": "现已支持繁体中文、英文",
       "page": "/settings?_shot=lang#h-rec",
       "zoom_on": ".setting:has(#language-select)",
-      "pad": [12, 4],
+      "pad": [
+        12,
+        4
+      ],
       "caption": "设置 › 识别"
     },
     {
@@ -39,43 +42,79 @@
       "title": "上分趋势",
       "page": "/",
       "zoom_on": ".chart-card",
-      "pad": [6, 6],
+      "pad": [
+        6,
+        6
+      ],
       "caption": "总览"
     },
     {
       "file": "自动记录战绩",
       "title": "自动记录战绩",
       "page": "/matches?open={latest}",
-      "zoom_on": ["tr.row.open td:nth-child(-n+5)", "tr.mate-row td:nth-child(-n+3)"],
-      "pad": [12, 6],
+      "zoom_on": [
+        "tr.row.open td:nth-child(-n+5)",
+        "tr.mate-row td:nth-child(-n+3)"
+      ],
+      "pad": [
+        12,
+        6
+      ],
       "caption": "战绩页",
-      "tags": [{"on": "tr.row.open .legend-label", "text": "自己"}, {"on": "tr.mate-row .legend-label", "text": "队友"}]
+      "tags": [
+        {
+          "on": "tr.row.open .legend-label",
+          "text": "自己"
+        },
+        {
+          "on": "tr.mate-row .legend-label",
+          "text": "队友"
+        }
+      ]
     },
     {
       "file": "上分好搭子",
       "title": "上分好搭子",
       "page": "/stats#h-mates",
-      "zoom_on": ".mates-table tbody tr",
-      "pad": [12, 6],
-      "caption": "数据页 › 常一起玩的队友",
-      "tags": [{"on": ".mates-table tr:has([title=\"ID 1082736451\"])", "text": "好搭子"}]
+      "tags": [
+        {
+          "on": ".mates-table tr:has([title=\"ID 1082736451\"])",
+          "text": "好搭子"
+        }
+      ],
+      "layout": "full"
     },
     {
       "file": "传奇表现",
       "title": "传奇表现",
       "page": "/stats#h-legends",
       "zoom_on": ".legends-table tbody tr:nth-child(-n+5) > :nth-child(-n+3)",
-      "pad": [12, 6],
+      "pad": [
+        12,
+        6
+      ],
       "caption": "数据页 › 传奇表现"
     },
     {
       "file": "分享战绩",
       "title": "一键分享战绩",
-      "page": "/matches?open={latest}&_shot=share",
-      "zoom_on": ".share-preview img",
-      "pad": [8, 8],
-      "caption": "战绩页 › 分享这局",
-      "window": 0.5
+      "gallery": [
+        {
+          "page": "/matches?open={latest}&_shot=share",
+          "on": ".share-preview img",
+          "label": "单局"
+        },
+        {
+          "page": "/?_shot=share",
+          "on": ".share-preview img",
+          "label": "今日战绩"
+        },
+        {
+          "page": "/?_shot=share2",
+          "on": ".share-preview img",
+          "label": "近 30 局概况"
+        }
+      ]
     }
   ]
 }
