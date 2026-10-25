@@ -48,7 +48,14 @@ TAG_W = 84  # 放大框右边的小标签（"自己""队友"）占的宽度
 MY_LEGENDS = ["恶灵", "恶灵", "寻血猎犬", "动力小子", "罗芭", "地平线", "希尔", "艾许", "万蒂奇"]
 MATE_LEGENDS = ["直布罗陀", "命脉", "探路者", "班加罗尔", "幻象", "瓦尔基里", "纽卡斯尔", "卡特莉丝", "密客", "沃特森"]
 MY_NAME = "EvoPlayer"  # 自己的游戏名（编的；分享卡片右上角会显示）
-MATE_NAMES = [("夜航灯塔", "1082736451"), ("SilverFox_77", "2093847561")]
+# 队友（编的）：每局从这三个人里挑两个；名次好的局多半有夜航灯塔，数据页"常一起玩的队友"里才看得出谁是上分好搭子
+MATE_POOL = [("夜航灯塔", "1082736451"), ("SilverFox_77", "2093847561"), ("咕咕鸽", "3048571926")]
+MATE_WEIGHTS = {"good": [6, 2, 1], "bad": [1, 3, 3]}  # 名次 1–5 的局 / 其余的局，挑到这三个人的权重
+WIN_RATE = 0.11  # 随机出来的名次几乎没有第 1 名，"冠军"一列会全是 0：大约每 9 局改一局成冠军（RP 按演示数据的算法重算）
+# 武器（0.4.0 起记录）：每局拿过 3–7 段，按权重挑（编号见 config/weapons.json）
+WEAPONS = [("r301", 10), ("r99", 7), ("wingman", 6), ("eva8", 5), ("flatline", 4), ("nemesis", 3), ("car", 3),
+           ("peacekeeper", 2), ("longbow", 1)]
+STATS_URL = "http://127.0.0.1:9"  # 全体玩家：开了匿名统计才能看；地址指到本机一个没人听的端口，保证不联网
 VIDEOCONFIG = ('"VideoConfig"\n{\n\t"setting.defaultres"\t\t"2560"\n\t"setting.defaultresheight"\t\t"1600"\n'
                '\t"setting.fullscreen"\t\t"1"\n}\n')  # 假的 Apex 视频设置：全屏 2560×1600，自动检测结果是 16:10
 SHOWN_DATA_DIR = r"E:\Evo Tracker Data"  # 设置页上显示的数据文件夹（免得截到临时文件夹和 Windows 用户名）
@@ -56,6 +63,7 @@ MOVE_CHECK = {"chosen": r"D:\Games", "target": r"D:\Games\Evo Tracker Data", "pr
               "size_mb": 86, "free_gb": 412}  # 页面地址带 _shot=move 时："更改数据位置"展开、显示"能搬"的检查结果
 
 VERSION = None  # 图上写的版本号（main 里定：宣传图.json 的 version，没写就用程序的版本号）
+LABEL = "新功能"  # 左上角小标签版本号后面的字（宣传图.json 的 label；0.4.0 起写成空的，只有版本号：新功能和特色功能放在一起介绍）
 MEASURE = {"groups": None}  # 量元素位置时，面板在网页里加一段脚本（见 serve_panel）
 
 MEASURE_JS = """
@@ -101,22 +109,83 @@ def make_demo_data():
 
     demo_data.LEGENDS = MY_LEGENDS
     demo_data.DEMO_DB = storage.DB_PATH
+    original, win_rng = demo_data.fake_match, random.Random(3)
+
+    def fake_match(rng, ended_at):  # 偶尔改成冠军，RP 按演示数据同样的算法重算（段位在后面累加，前后对得上）
+        m = original(rng, ended_at)
+        if win_rng.random() < WIN_RATE:
+            m["placement"] = 1
+            if m["rp_delta"] is not None:
+                m["rp_delta"] = demo_data.PLACEMENT_RP[1] + min(m["kills"] + m["assists"] // 2, 6) * 14 - demo_data.ENTRY_COST
+        return m
+
+    demo_data.fake_match = fake_match
     demo_data.main()
+    demo_data.fake_match = original
     rng = random.Random(7)
     with sqlite3.connect(storage.DB_PATH) as conn:
-        for (match_id,) in conn.execute("SELECT match_id FROM matches").fetchall():
+        for match_id, placement in conn.execute("SELECT match_id, placement FROM matches").fetchall():
+            weights = MATE_WEIGHTS["good" if placement and placement <= 5 else "bad"]
+            first = rng.choices(range(3), weights)[0]
+            second = rng.choices([i for i in range(3) if i != first], [w for i, w in enumerate(weights) if i != first])[0]
             mates = []
-            for slot, (name, pid), legend in zip(("left", "right"), MATE_NAMES, rng.sample(MATE_LEGENDS, 2)):
+            for slot, (name, pid), legend in zip(("left", "right"), (MATE_POOL[first], MATE_POOL[second]), rng.sample(MATE_LEGENDS, 2)):
                 k = rng.randint(0, 6)
                 mates.append({"slot": slot, "name": name, "player_id": pid, "legend": legend, "kills": k,
                               "assists": rng.randint(0, 5), "knockdowns": k + rng.randint(0, 2),
                               "damage": 150 + k * 240 + rng.randint(0, 300), "survival_time": rng.randint(600, 1400),
                               "revives": rng.randint(0, 2), "respawns": rng.choice([0, 0, 1])})
             storage.save_teammates(conn, match_id, mates)
+            t, holds = 0, []
+            for _ in range(rng.randint(3, 7)):
+                d = rng.randint(40, 260)
+                holds.append((rng.choices([w for w, _ in WEAPONS], [k for _, k in WEAPONS])[0], t, t + d))
+                t += d + rng.randint(0, 20)
+            storage.save_weapon_holds(conn, match_id, holds)
         conn.execute("UPDATE matches SET player_name = ?", (MY_NAME,))
         conn.execute("UPDATE matches SET needs_review = 0, review_note = NULL")  # 宣传图里不要"待确认"提示条
         latest = conn.execute("SELECT MAX(match_id) FROM matches").fetchone()[0]
+    write_everyone(storage.DB_PATH.parent)
     return storage.DB_PATH, latest
+
+
+def write_everyone(folder):
+    """全体玩家的汇总（编的数字，格式和统计服务器一样，见 code/global_stats.py），存成刚下载过的样子，页面不会去下载。"""
+    from datetime import datetime, timedelta
+
+    rng = random.Random(11)
+    names = list(dict.fromkeys(["恶灵", "罗芭", "命脉", "探路者", "万蒂奇", "地平线", "寻血猎犬", "动力小子", "直布罗陀",
+                                "班加罗尔", "希尔", "艾许"]))
+    total = 41730 * 3
+
+    def legends(scale):
+        out, n = [], 7600 * scale
+        for i, name in enumerate(names):
+            out.append({"name": name, "n": int(n), "pick": round(n / (total * scale), 4), "win": round(0.05 + rng.random() * 0.04, 4),
+                        "top5": round(0.26 + rng.random() * 0.1, 4), "place": round(8.4 + i * 0.18 + rng.random() * 0.5, 2),
+                        "kills": round(1.3 + rng.random() * 0.7, 2), "damage": int(620 + rng.random() * 260)})
+            n *= 0.82
+        return out
+
+    combos = [{"legends": c, "n": n, "rate": round(n / 41730, 4), "place": p} for c, n, p in [
+        (["命脉", "恶灵", "罗芭"], 1834, 8.6), (["万蒂奇", "探路者", "罗芭"], 1502, 8.9), (["导线管", "探路者", "班加罗尔"], 1217, 9.1),
+        (["希尔", "恶灵", "直布罗陀"], 1033, 9.3), (["命脉", "万蒂奇", "地平线"], 921, 9.4)]]
+    people = {"place": [6.4, 7.6, 8.8, 10.2, 12.6], "win": [0.0, 0.03, 0.06, 0.1, 0.16],
+              "kills": [1.4, 2.2, 2.9, 3.5, 4.4], "damage": [560, 760, 960, 1180, 1420]}
+
+    def part(players, matches, scale=1.0):
+        return {"players": players, "matches": matches, "legends": legends(scale), "combos": combos, "people": people}
+
+    now = datetime.now()
+    summary = {"v": 1, "made_at": (now - timedelta(minutes=53)).strftime("%Y-%m-%dT%H:%M:00Z"),
+               "recent_from": (now - timedelta(days=7)).strftime("%Y-%m-%d"),
+               "slices": {"all.ranked.all": part(1286, 41730), "7d.ranked.all": part(512, 9120, 0.22),
+                          "all.ranked.low": part(610, 18800, 0.45), "all.ranked.diamond": part(402, 14300, 0.34),
+                          "all.ranked.master": part(96, 3100, 0.08), "all.pubs.all": part(733, 12900, 0.31)},
+               "tiers": {"all": {"players": 1286, "counts": {"大师": 61, "钻石": 402, "白金": 455, "黄金": 280, "白银": 88}},
+                         "7d": {"players": 512, "counts": {"大师": 30, "钻石": 190, "白金": 180, "黄金": 112}}}}
+    (folder / "global_stats.json").write_text(json.dumps({"fetched_at": now.strftime("%Y-%m-%d %H:%M:%S"), "summary": summary},
+                                                         ensure_ascii=False), encoding="utf-8")
 
 
 def serve_panel(db):
@@ -151,6 +220,10 @@ def serve_panel(db):
             html = resp.get_data(as_text=True).replace("</head>", extra + "</head>", 1)
             if request.args.get("_shot") == "share":  # 打开分享对话框（要在下面量位置的脚本之前，量的时候对话框已经打开）
                 html = html.replace("</body>", "<script>document.querySelector('[data-share-open]').click()</script></body>", 1)
+            if request.args.get("_shot") == "lang":  # 游戏语言的下拉框展开成列表（截图打不开下拉框），选中 English
+                html = html.replace("</body>", "<script>(function(){const s=document.getElementById('language-select');"
+                                    "s.size=s.options.length;const en=[...s.options].find(o=>/English/.test(o.text));"
+                                    "if(en)s.value=en.value;})()</script></body>", 1)
             if MEASURE["groups"] is not None:
                 # 量位置时关掉动画（打开页面时整页往上浮 10 像素，没播完就量会偏），关掉后就是播完时的样子，和截图一样
                 html = html.replace("</head>", "<style>*,*::before,*::after{animation:none!important;"
@@ -267,7 +340,7 @@ def card_html(card, shot, region, tag_boxes):
     img = shot.as_uri()
     title = re.sub(r"\d[\d:.]*", lambda m: f'<span class="num">{m.group(0)}</span>', card["title"])
     parts = [
-        f'<div class="head"><div class="pill"><img src="{ICON}" alt=""><span class="num">EVO {VERSION}</span>新功能</div>'
+        f'<div class="head"><div class="pill"><img src="{ICON}" alt=""><span class="num">EVO {VERSION}</span>{LABEL}</div>'
         f'<h1>{title}</h1></div>',
         f'<div class="win" style="left:{wx}px;top:{wy}px;width:{VIEW_W * ws}px;height:{VIEW_H * ws}px;'
         f'background-image:url(\'{img}\')"><div class="hl" style="left:{rx * ws}px;top:{ry * ws}px;'
@@ -294,7 +367,7 @@ def ratio_of(label):
 
 
 def main():
-    global VERSION
+    global VERSION, LABEL
     parser = argparse.ArgumentParser(description="做新版本的宣传图（release/宣传图.json → release/<版本号>截图/）")
     parser.add_argument("--keep", action="store_true", help="留下临时文件夹（原图、合成用的网页）")
     args = parser.parse_args()
@@ -306,11 +379,13 @@ def main():
     os.environ["EVO_DATA_DIR"] = str(data)  # 在 import 程序代码之前设好：演示数据、设置都在临时文件夹里
     os.environ["EVO_VIDEOCONFIG"] = str(tmp / "videoconfig.txt")
     (tmp / "videoconfig.txt").write_text(VIDEOCONFIG, encoding="utf-8")
-    (data / "settings.json").write_text('{"update_auto": true, "telemetry_consent": false}',
-                                         encoding="utf-8")  # 免得截到顶部的提问（自动检查、匿名统计）
+    os.environ["EVO_STATS_URL"] = STATS_URL
+    (data / "settings.json").write_text('{"update_auto": true, "telemetry_consent": true, "autostart_asked": true}',
+                                         encoding="utf-8")  # 免得截到顶部的提问（自动检查、匿名统计、开机自启）；开了匿名统计，全体玩家那一页才能看
 
     import storage
     VERSION = spec.get("version") or storage.APP_VERSION
+    LABEL = spec.get("label", LABEL)
     db, latest = make_demo_data()
     base, server = serve_panel(db)
     out_dir = ROOT / "release" / f"{VERSION}截图"
