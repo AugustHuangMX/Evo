@@ -594,6 +594,7 @@ def main():
 
     if FROZEN:
         updater.after_start(log)  # 刚一键更新过：结果写进日志、窗口顶部显示一次；过一会儿删掉装过的版本
+        webview2.unblock(log)  # 用 Windows 自带的解压缩解开的：去掉 DLL 上"从网上下载的"标记，不然窗口打不开
 
     icons = load_icons()
     tips = {"waiting": "等待 Apex 启动", "recording": "正在记录", "paused": "已暂停记录"}
