@@ -169,3 +169,13 @@
   - 用户隐私保护指引现在不用填：扫码不在要声明的清单里；"我的"页的复制官网地址用到剪贴板（要声明），去掉了
   - 验证：测试 49 项全过；开发者工具里用演示数据走了一遍（码池领到小程序码 → 用 scene 打开绑定页绑定 → 43 局传上去 → 解绑删掉演示数据），深浅两套截图看过
 - **Evo 窗口打不开、每次用浏览器（下载标记），0.4.1 准备**（2026-10-25，一位群友的诊断包，放在 `bugs_test/` 里，不提交；用户决定去掉标记、作为 0.4.1）：他的 `evo.log` 每次打开窗口都报 `Failed to resolve Python.Runtime.Loader.Initialize from D:\Evo\Evo\_internal\pythonnet\runtime\Python.Runtime.dll`。原因：用 Windows 自带的解压缩解开时每个文件都带上"从网上下载的"标记（`Zone.Identifier`），.NET Framework 不加载带标记的程序集。本机复现：同一个 Python.Runtime.dll 加上标记后用 clr_loader 加载，报错一字不差，去掉就好；把 0.4.0 的压缩包标成下载的、用 Shell.Application（和资源管理器的"全部解压缩"一样）解开，Evo.exe、Python.Runtime.dll、两个 WebView2 的 DLL 都带上了标记——用 Windows 自带解压的玩家应该都这样。改：`webview2.unblock`（打包版每次启动时删掉 `_internal` 里 pythonnet、clr_loader、webview 下 DLL 的标记，写进日志），`evo_app.main` 调用；`APP_VERSION` 改成 0.4.1，`release/更新内容.txt` 只有这一条修复（原文等用户确认）；`docs/底座.md` 记了怎么看日志、怎么手动解决。他的诊断包里其他都正常（识别、大厅校准、截屏）。验证：`tests/test_webview2.py` 加 6 项（真的 Python.Runtime.dll 带标记加载不了、去掉后能加载；只动那三个文件夹；再启动不写日志；去不掉时日志说清楚），全部通过；打包实测：打包 0.4.1、压缩、标成下载的，用 Shell.Application（和"全部解压缩"一样）解开，三个文件夹里 10 个 DLL 都带标记；用测试数据文件夹（`EVO_DATA_DIR`）打开：日志"去掉了 10 个文件上'从网上下载的'标记"，标记都没了（Evo.exe 自己的不动）；再让它开窗口，Evo 窗口正常打开（WebView2 起来了，日志里没有"窗口打不开"），测完关掉、删掉。坑：用 PowerShell 的 Start-Process 打开带标记的 Evo.exe 会弹 SmartScreen 等人点，测试时用 UseShellExecute=false 打开就不弹
+
+### 2026-10-27
+
+- **派圈助手接入 Evo 的战绩**（用户 10-26 定：EVO Tracker 搁置，数据放合作者的云环境；10-27 定：「排位专区」改成战绩页、页内分两栏，加「我的」tab）。代码在 `E:\paiquan-miniprogram` 的分支 `feat/evo-stats`（3 个提交，没推送），照合作者的规矩做（中英双语、深浅主题、他的颜色和字号档位、他的英雄头像）：
+  - 底部 5 个 tab：地图 / 战绩 / 比赛 / 小游戏 / 我的。「战绩」顶部切换「我的战绩 ｜ 排位资讯」，排位资讯是原排位专区，一行没改；绑定了 Evo 的人默认看我的战绩，其他人照旧先看排位资讯
+  - 他的主包 1.88 MB（上限 2 MB），Evo 的页面、组件、段位徽章放分包 `evo/`，主包只多了约 15 KB（两个 tab 页异步引用分包组件）
+  - 云函数 `evo_pc` / `evo_mp` / `evo_qrpool`；`evo_mp` 改成只回数字和代号，中英文在手机上拼（`evo/utils/view.js`）
+  - 验证：他的 31 个测试文件全过（他的 static / i18n 测试改成 5 个 tab，分包页面和组件也查；新增 `evo.test.mjs` 25 项）；开发者工具里用我们的 AppID 和测试环境复制一份项目，演示电脑扫码绑定 → 传 43 局 → 深色中文、浅色英文两套截图看了所有页面（修了英文下副标题折行），最后删掉演示数据
+  - 用户允许以后默认跑派圈助手仓库的测试（`.claude/settings.local.json` 放开了 `node tests/*.test.mjs`）
+
