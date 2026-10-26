@@ -1,7 +1,10 @@
 """运行全部测试：python tests/run_all.py（约 5 分钟）
 
-什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、数据页"全体玩家"（global_stats.py）、诊断工具（evo_diag.py、tools/diag_report.py）、武器识别（weapons.py、tools/weapon_templates.py、config/templates/weapons/）
+什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、WebDAV 同步（webdav_sync.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、数据页"全体玩家"（global_stats.py）、诊断工具（evo_diag.py、tools/diag_report.py）、武器识别（weapons.py、tools/weapon_templates.py、config/templates/weapons/）
 或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
+
+WebDAV 同步的测试（test_webdav_sync.py）只 import 面板、数据库和同步模块，不加载 dxcam / 识别引擎，所以只改同步功能时也可以单独跑：
+python tests/test_webdav_sync.py
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；
 找不到截图的测试会显示"跳过"。测试文件只 import 项目代码，项目代码不 import 测试，所以测试不会被打进安装包。
@@ -39,6 +42,7 @@ import test_telemetry
 import test_traditional
 import test_updater
 import test_weapons
+import test_webdav_sync
 import test_webview2
 
 TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）": test_light, "整晚重放": test_replay,
@@ -62,6 +66,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "数据页\"全体玩家\"（开了匿名统计才能看、下载汇总、和自己比、筛选、连不上）": test_global_stats,
          "总览页\"关注我\"（B 站、小黑盒）": test_follow,
          "最常用武器（认武器、计时、记进数据库、数据页）": test_weapons,
+         "WebDAV 同步（合并、删除标记、缓存、两台电脑、设置页）": test_webdav_sync,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
          "诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_diag}
 

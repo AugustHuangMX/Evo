@@ -350,11 +350,106 @@
           <div class="setting-desc">清空前会自动备份一份数据库；截图不会删除</div>
         </div>
         <form method="post" action="{{ url_for('clear_data') }}"
-              onsubmit="return confirm('确定清空全部 {{ total }} 局战绩吗？\n清空前会自动备份一份数据库。')">
+              onsubmit="return confirm('确定清空全部 {{ total }} 局战绩吗？\n清空前会自动备份一份数据库。{% if webdav.configured %}\n开启了 WebDAV 同步：其他电脑上的这些战绩也会被删除。{% endif %}')">
           <input type="hidden" name="token" value="{{ token }}">
           <button type="submit" class="btn btn-danger" {{ 'disabled' if not total }}>清空数据</button>
         </form>
       </div>
+    </section>
+
+    {# WebDAV 同步（webdav_sync.py）：自己的服务器，多台电脑的战绩合并在一起。默认关闭；
+       密码留空表示不修改已保存的。同步文件里有玩家名、队友名和 ID，截图不上传 #}
+    <section class="card settings-card" id="webdav" aria-labelledby="h-webdav">
+      <h2 id="h-webdav">WebDAV 同步</h2>
+      <p class="setting-desc webdav-intro">把战绩同步到你自己的 WebDAV 服务器（如坚果云、Nextcloud），几台电脑的记录会合并在一起。截图不会上传；同步文件里有你的游戏名、队友的名字和 ID。服务器地址和密码只保存在这台电脑上。</p>
+      {% if webdav.configured %}
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name">同步状态</div>
+          {% if webdav.last %}
+          {% if webdav.last.ok %}
+          <div class="setting-desc">上次同步：<span class="num">{{ webdav.last.at }}</span> · 收到 <span class="num">{{ webdav.last.matches_new or 0 }}</span> 局、更新 <span class="num">{{ webdav.last.matches_updated or 0 }}</span> 局{% if webdav.last.matches_deleted %}、删除 <span class="num">{{ webdav.last.matches_deleted }}</span> 局{% endif %}{% if webdav.last.uploaded %}；已上传本机数据{% endif %}</div>
+          {% if webdav.last.bad_files %}<div class="setting-desc update-error">有 {{ webdav.last.bad_files|length }} 个同步文件读不出来，已跳过</div>{% endif %}
+          {% else %}
+          <div class="setting-desc update-error">上次同步没成功：{{ webdav.last.error }}</div>
+          {% endif %}
+          {% else %}
+          <div class="setting-desc">还没有同步过</div>
+          {% endif %}
+          <div class="setting-path">{{ webdav.url }}/{{ webdav.folder }}/</div>
+        </div>
+        <div class="setting-actions">
+          <form method="post" action="{{ url_for('webdav_sync_now') }}" data-busy="正在同步…">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button type="submit" class="btn btn-primary">立即同步</button>
+          </form>
+          <form method="post" action="{{ url_for('webdav_test') }}" data-busy="正在连接…">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button type="submit" class="btn">测试连接</button>
+          </form>
+        </div>
+      </div>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="webdav-auto-name">自动同步</div>
+          <div class="setting-desc">Evo 开着时每 30 分钟同步一次；没有变化时不会重复上传。关掉后只能点"立即同步"</div>
+        </div>
+        <form method="post" action="{{ url_for('webdav_auto') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="on" value="{{ '0' if webdav.auto else '1' }}">
+          <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if webdav.auto else 'false' }}"
+                  aria-labelledby="webdav-auto-name">
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if webdav.auto else '已关闭' }}</span>
+          </button>
+        </form>
+      </div>
+      {% endif %}
+      <form method="post" action="{{ url_for('webdav_save') }}" class="webdav-form" data-busy="正在保存…">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div class="webdav-grid">
+          <label class="webdav-field" for="webdav-url">
+            <span class="label">服务器地址</span>
+            <input type="url" id="webdav-url" name="url" value="{{ webdav.url }}"
+                   placeholder="https://dav.jianguoyun.com/dav" required autocomplete="off" spellcheck="false">
+          </label>
+          <div class="webdav-two">
+            <label class="webdav-field" for="webdav-username">
+              <span class="label">用户名</span>
+              <input type="text" id="webdav-username" name="username" value="{{ webdav.username }}"
+                     required autocomplete="username" spellcheck="false">
+            </label>
+            <label class="webdav-field" for="webdav-password">
+              <span class="label">密码 / 应用密码</span>
+              <input type="password" id="webdav-password" name="password" value="" autocomplete="new-password"
+                     placeholder="{{ '已保存，留空不修改' if webdav.has_password else '密码' }}"
+                     {{ 'required' if not webdav.has_password }}>
+            </label>
+          </div>
+          <label class="webdav-field" for="webdav-folder">
+            <span class="label">同步文件夹</span>
+            <input type="text" id="webdav-folder" name="folder" value="{{ webdav.folder }}"
+                   placeholder="Evo" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+        <div class="webdav-actions">
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+        <p class="setting-desc webdav-note">保存只是记下这些设置，不连接服务器；保存后点"测试连接"或"立即同步"。密码以明文保存在数据文件夹的 settings.json 里。</p>
+      </form>
+      {% if webdav.configured %}
+      <div class="setting danger-zone">
+        <div class="setting-text">
+          <div class="setting-name">断开同步</div>
+          <div class="setting-desc">删掉本机保存的地址和密码，下载的缓存也删掉；服务器上的同步文件不动</div>
+        </div>
+        <form method="post" action="{{ url_for('webdav_clear') }}"
+              onsubmit="return confirm('断开 WebDAV 同步吗？\n本机保存的地址和密码会删除，下载的缓存也删掉；服务器上的战绩数据不会动。')">
+          <input type="hidden" name="token" value="{{ token }}">
+          <button type="submit" class="btn btn-danger">断开…</button>
+        </form>
+      </div>
+      {% endif %}
     </section>
 
     {# 微信小程序（_cloud.html、panel_cloud.py）：只在开发者电脑上、小程序上线前不打进安装包，没有就不显示 #}
