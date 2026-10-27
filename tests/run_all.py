@@ -43,6 +43,7 @@ import test_traditional
 import test_updater
 import test_weapons
 import test_webdav_sync
+import test_sync_compatibility
 import test_webview2
 
 TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）": test_light, "整晚重放": test_replay,
@@ -69,6 +70,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "WebDAV 同步（合并、删除标记、缓存、两台电脑、设置页）": test_webdav_sync,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
          "诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_diag}
+
+TESTS["同步升级兼容、旧版往返、DPAPI 和可选截图"] = test_sync_compatibility
 
 try:  # 云同步（微信小程序）的测试只在开发者电脑上，不上传 GitHub（2026-10-24 用户决定）：有就一起跑
     import test_cloud_sync

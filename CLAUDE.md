@@ -74,7 +74,7 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 - `weapon_holds`：每局 × 每一段拿在手上的武器（从这局第一次拿到武器算起的秒数）
 - `player_names`：玩家名 → 账号（按名字区分账号，改名后合并）
 - `sync_tombstones`：WebDAV 同步删掉的局（见 `webdav_sync.py`）；`matches` 和 `lobby_readings` 另有 `sync_uid`（跨电脑编号）和 `sync_updated`（最后修改时间），只在同步时用，不影响原来功能
-- 数据库升级：`SCHEMA_VERSION` + `MIGRATIONS`，只加列、加表
+- 数据库升级：`SCHEMA_VERSION` + `MIGRATIONS`，只加列、加表；升级前 SQLite 在线备份，schema 10 增加同步逻辑版本/冲突副本/截图引用表，不改业务列。WebDAV 冲突不再比较电脑时钟，凭据用 Windows DPAPI，截图同步可选
 
 RP：游戏里没有单一的"总 RP"，只有"段位 + 段内进度"。**总分以大厅为准**（打完一局通常不回大厅，所以每次回大厅都要抓住，用来校准）。每局 RP 的来源：经验值页明细 → 对局中右上角最后的 RP（只限自己最后被淘汰；先成盒、拿冠军时不是最终值）→ 前后两次大厅总分之差（只缺一局时补上）。
 

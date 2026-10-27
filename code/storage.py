@@ -24,8 +24,9 @@ from pathlib import Path
 
 from paths import DB_PATH
 
-APP_VERSION = "0.4.0"
-SCHEMA_VERSION = 9  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+APP_VERSION = "0.4.0"  # 保留上游更新器使用的纯数字版本；试用构建另行标识，不发布正式版本
+BUILD_LABEL = "WebDAV beta 3"
+SCHEMA_VERSION = 10  # 只加同步附加表；已有业务列、ID 和数据保持不变
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -139,6 +140,19 @@ SYNC_TABLE = """CREATE TABLE IF NOT EXISTS sync_tombstones (
   PRIMARY KEY (kind, uid)
 )"""
 
+SYNC_VERSION_TABLE = """CREATE TABLE IF NOT EXISTS sync_revisions (
+  kind TEXT NOT NULL, uid TEXT NOT NULL, counter INTEGER NOT NULL,
+  device TEXT NOT NULL, fingerprint TEXT NOT NULL,
+  PRIMARY KEY (kind, uid)
+)"""
+SYNC_CONFLICT_TABLE = """CREATE TABLE IF NOT EXISTS sync_conflicts (
+  kind TEXT NOT NULL, uid TEXT NOT NULL, digest TEXT NOT NULL, payload TEXT NOT NULL,
+  PRIMARY KEY (kind, uid, digest)
+)"""
+SYNC_MEDIA_TABLE = """CREATE TABLE IF NOT EXISTS sync_media (
+  uid TEXT PRIMARY KEY, digest TEXT NOT NULL, size INTEGER NOT NULL, ext TEXT NOT NULL
+)"""
+
 # 旧数据库里没有同步编号的局：给一个很早的时间，之后任何电脑上的修改都算更新。
 # 编号由内容算出来（不是随机的），这样把数据文件夹复制到另一台电脑、两边都还没同步时，同一局的编号一样，合并时不会变成两局。
 LEGACY_SYNC_TIME = "2000-01-01T00:00:00.000000Z"
@@ -166,6 +180,7 @@ MIGRATIONS = {
         SYNC_TABLE,
         "CREATE UNIQUE INDEX IF NOT EXISTS matches_sync_uid ON matches(sync_uid)",
         "CREATE UNIQUE INDEX IF NOT EXISTS lobby_readings_sync_uid ON lobby_readings(sync_uid)"],
+    10: [SYNC_VERSION_TABLE, SYNC_CONFLICT_TABLE, SYNC_MEDIA_TABLE],
 }
 
 
@@ -192,12 +207,21 @@ def _upgrade(conn):
             match_columns = {**COLUMNS, **MATCH_SYNC_COLUMNS}
             cols = ",\n  ".join(f"{name} {kind}" for name, kind in match_columns.items())
             conn.execute(f"CREATE TABLE IF NOT EXISTS matches (\n  {cols}\n)")
+            for name, kind in match_columns.items():
+                if name != "match_id":
+                    _migrate(conn, ("加列", "matches", name, kind))
             conn.execute(NAME_TABLE)
             conn.execute(MATE_TABLE)
             conn.execute(READING_TABLE)
             conn.execute(LOBBY_TABLE)
             conn.execute(WEAPON_TABLE)
+            _migrate(conn, ("加列", "teammates", "legend", "TEXT"))
+            for name, kind in MATCH_SYNC_COLUMNS.items():
+                _migrate(conn, ("加列", "lobby_readings", name, kind))
             conn.execute(SYNC_TABLE)
+            conn.execute(SYNC_VERSION_TABLE)
+            conn.execute(SYNC_CONFLICT_TABLE)
+            conn.execute(SYNC_MEDIA_TABLE)
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS matches_sync_uid ON matches(sync_uid)")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS lobby_readings_sync_uid ON lobby_readings(sync_uid)")
         else:
@@ -218,15 +242,33 @@ def connect(db_path=DB_PATH):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row  # 让查询结果可以按列名取值，比如 row["kills"]
-    if _version(conn) < SCHEMA_VERSION:
-        _upgrade(conn)
+    version = _version(conn)
+    try:
+        if version > SCHEMA_VERSION:
+            raise RuntimeError(f"数据库版本 {version} 比此程序支持的 {SCHEMA_VERSION} 更新，请使用新版 Evo；未修改数据库")
+        has_matches = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='matches'").fetchone()
+        if version < SCHEMA_VERSION and has_matches:
+            # 用 SQLite 在线备份而非复制 .db，确保 WAL 中已提交的数据也在备份里。
+            backup = db_path.with_name(f"{db_path.name}.before-v{version}-to-v{SCHEMA_VERSION}-{secrets.token_hex(6)}.bak")
+            target = sqlite3.connect(backup)
+            try:
+                conn.backup(target)
+                if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise RuntimeError("升级前数据库备份校验失败，已停止升级")
+            finally:
+                target.close()
+        if version < SCHEMA_VERSION:
+            _upgrade(conn)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 
 # ---------- WebDAV 同步用的编号、修改时间、删除标记（见 webdav_sync.py） ----------
 
 def now_sync_time():
-    """现在的 UTC 时间（同步时比较"谁后改的"用）。"""
+    """现在的 UTC 审计时间；协议 2 的冲突排序不使用这个时间。"""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
@@ -277,7 +319,7 @@ def ensure_sync_ids(conn):
 
 
 def touch_sync(conn, match_id, when=None):
-    """这一局刚被改过：记下修改时间，同步时以新的为准（没有编号的旧局先补上编号）。
+    """这一局刚被改过：记下审计时间（没有编号的旧局先补上编号）。逻辑版本在同步导出时刷新。
     不单独提交，由调用它的函数和别的改动一起提交。"""
     row = conn.execute("SELECT * FROM matches WHERE match_id = ?", (match_id,)).fetchone()
     if row is None:

@@ -5,21 +5,21 @@
 
 怎么同步（为什么是"每台电脑一个文件"）：
 - WebDAV 服务器不一定支持 If-Match（坚果云就忽略它），共用一个文件时两台电脑同时同步会互相覆盖、丢数据。
-  所以每台电脑只往服务器写自己的那个文件：evo-<16 位编号>.json.gz（gzip 压缩的 JSON 快照）。
+  所以每台电脑只往服务器写自己的那个文件：evo-v2-<16 位编号>.json.gz（gzip 压缩的 JSON 快照）。
   同步时把服务器上所有设备的文件下载下来，合并进本机的数据库（只加、只更新，不删本机独有的局），
   再把自己的快照传上去。几台电脑同一时间同步也不会丢数据：各自写各自的文件，下一次同步再合并。
 - 快照里包括：每局（matches）、队友、各来源读数、武器、大厅读数、账号名（player_names）。
-  不含截图及本机截图路径、不含设置、不含日志。
+  不含本机截图路径、设置和日志；开启截图同步时另传内容寻址的图片，快照只带哈希引用。
 - 每局、每次大厅读数有一个跨电脑的编号（storage.sync_uid）。删除会记一条删除标记
-  （storage.sync_tombstones），同步到别的电脑时那边也删掉；同一局两边都改了，后改的为准
-  （sync_updated，UTC；时间一样时按内容排一个固定顺序，保证两边结果一样）。
+  （storage.sync_tombstones），同步到别的电脑时那边也删掉；同一局两边都改了，按逻辑计数器、
+  设备号和内容哈希固定顺序收敛。同计数器不同设备的落选副本保留；不以电脑时间判断先后。
 - 旧数据第一次同步时才补编号（storage.ensure_sync_ids），编号由内容算出来：把数据文件夹复制到
   另一台电脑后，同一局算出的编号一样，合并时不会变成两局。
 
 什么时候联网：
 - 默认关闭；设置页保存了服务器地址、用户名、密码并开启"自动同步"后，Evo 开着时启动 30 秒后同步一次，
   之后每 30 分钟一次；没有变化时不重复上传。也可以随时在设置页手动同步。
-- 只连用户填的服务器；密码存在数据文件夹的 settings.json 里，不发给别的地方。
+- 只连用户填的服务器；密码用 Windows 当前用户 DPAPI 加密后存进 settings.json。
 - 同步文件里有玩家名、队友名和 ID；这些会上传到用户自己的 WebDAV 服务器。设置页有说明。
 
 测试：tests/test_webdav_sync.py（本机的小 WebDAV 服务器，不联网）；python code/webdav_sync.py --show
@@ -49,16 +49,18 @@ from pathlib import Path
 import app_settings
 import paths
 import storage
+import secure_secret
+import webdav_media
 
 SETTINGS_KEY = "webdav"  # app_settings：服务器地址、用户名、密码、同步文件夹、是否自动同步
 LAST_KEY = "webdav_last"  # app_settings：上次同步的时间和结果（设置页显示）
 UPLOAD_KEY = "webdav_upload"  # app_settings：上次上传的摘要/ETag（没有变化时不重复上传）
 
-FORMAT = 1  # 同步文件的格式；以后改了要认旧的
+FORMAT = 2  # 使用逻辑版本；v1 文件隔离，避免旧客户端按物理时间覆盖 v2 数据
 DEFAULT_FOLDER = "Evo"  # 服务器上的同步文件夹（用户可改）
-FILE_PREFIX = "evo-"
+FILE_PREFIX = "evo-v2-"
 FILE_SUFFIX = ".json.gz"
-FILE_RE = re.compile(r"evo-([0-9a-f]{16})\.json\.gz")
+FILE_RE = re.compile(r"evo-v2-([0-9a-f]{16})\.json\.gz")
 AUTO_INTERVAL = 30 * 60  # 秒：自动同步的间隔
 FIRST_DELAY = 30  # 秒：Evo 启动后第一次自动同步等多久
 TIMEOUT = 20  # 秒：单次请求最多等多久
@@ -122,7 +124,16 @@ def config():
         return None
     url = str(saved.get("url") or "").strip().rstrip("/")
     username = str(saved.get("username") or "").strip()
-    password = saved.get("password")
+    try:
+        if saved.get("password"):
+            protected = dict(saved)
+            protected["password_dpapi"] = secure_secret.protect(saved["password"])
+            protected.pop("password", None)
+            app_settings.set_value(SETTINGS_KEY, protected)
+            saved = protected
+        password = secure_secret.unprotect(saved["password_dpapi"]) if saved.get("password_dpapi") else None
+    except secure_secret.SecretError:
+        return None
     if not url or not username or not isinstance(password, str) or not password:
         return None
     try:
@@ -130,10 +141,10 @@ def config():
     except SyncError:
         folder = DEFAULT_FOLDER
     return {"url": url, "username": username, "password": password, "folder": folder,
-            "auto": saved.get("auto", False) is True}
+            "auto": saved.get("auto", False) is True, "screenshots": saved.get("screenshots") is True}
 
 
-def save_config(url, username, password, folder, auto=False):
+def save_config(url, username, password, folder, auto=False, screenshots=False):
     """保存（设置页的"保存"）。返回保存后的设置。"""
     url = _clean_url(url)
     username = (username or "").strip()
@@ -142,8 +153,13 @@ def save_config(url, username, password, folder, auto=False):
     if not isinstance(password, str) or not password:
         raise SyncError("请填密码（已经保存过时留空表示不修改）")
     cfg = {"url": url, "username": username, "password": password, "folder": _clean_folder(folder),
-           "auto": bool(auto)}
-    app_settings.set_value(SETTINGS_KEY, cfg)
+           "auto": bool(auto), "screenshots": bool(screenshots)}
+    try:
+        saved = {k: v for k, v in cfg.items() if k != "password"}
+        saved["password_dpapi"] = secure_secret.protect(password)
+        app_settings.set_value(SETTINGS_KEY, saved)
+    except secure_secret.SecretError as e:
+        raise SyncError(str(e)) from e
     return cfg
 
 
@@ -155,7 +171,8 @@ def save_form(form):
     password = form.get("password", "") or ""
     if not password and old and old["url"] == url and old["username"] == username:
         password = old["password"]
-    return save_config(url, username, password, form.get("folder", ""), auto=(old["auto"] if old else False))
+    return save_config(url, username, password, form.get("folder", ""), auto=(old["auto"] if old else False),
+                       screenshots=(old["screenshots"] if old else False))
 
 
 def config_from_form(form):
@@ -174,11 +191,20 @@ def config_from_form(form):
 
 def set_auto(on):
     """设置页"自动同步"开关。"""
-    saved = app_settings.get(SETTINGS_KEY)
-    if not isinstance(saved, dict):
+    if not config():
         raise SyncError("请先保存 WebDAV 设置")
+    saved = app_settings.get(SETTINGS_KEY)
     saved = dict(saved)
     saved["auto"] = bool(on)
+    app_settings.set_value(SETTINGS_KEY, saved)
+
+
+def set_screenshots(on):
+    saved = app_settings.get(SETTINGS_KEY)
+    if not config():
+        raise SyncError("请先保存有效的 WebDAV 设置")
+    saved = dict(app_settings.get(SETTINGS_KEY))  # config() 可能已迁移旧明文密码
+    saved["screenshots"] = bool(on)
     app_settings.set_value(SETTINGS_KEY, saved)
 
 
@@ -203,7 +229,9 @@ def view():
             "url": saved.get("url", ""),
             "username": saved.get("username", ""),
             "folder": saved.get("folder") or DEFAULT_FOLDER,
-            "has_password": bool(saved.get("password")),
+            "has_password": cfg is not None,
+            "credential_error": bool(saved.get("password_dpapi")) and cfg is None,
+            "screenshots": bool(cfg and cfg["screenshots"]),
             "auto": cfg is not None and cfg["auto"],
             "last": last if isinstance(last, dict) else None}
 
@@ -353,12 +381,12 @@ def _parse_multistatus(body, base):
     return out
 
 
-def propfind(cfg, url, depth="0"):
-    """PROPFIND；文件夹不在时返回 None（别的错误抛出 SyncError）。"""
+def propfind(cfg, url, depth="0", missing_parent=False):
+    """PROPFIND；目标不存在返回 None。建目录时可把缺少父目录的 409 视为不存在。"""
     status, _headers, body = _request("PROPFIND", url, cfg, data=PF_BODY,
                                      headers={"Depth": depth, "Content-Type": "application/xml; charset=utf-8"},
-                                     allow=(404,))
-    if status == 404:
+                                     allow=(404, 409) if missing_parent else (404,))
+    if status == 404 or (missing_parent and status == 409):
         return None
     return _parse_multistatus(body, url)
 
@@ -381,7 +409,7 @@ def ensure_folder(cfg):
     if propfind(cfg, base_url, "0") is None:
         raise SyncError("服务器地址不对：找不到这个地址，检查一下服务器地址")
     folder_url = _folder_url(cfg)
-    if propfind(cfg, folder_url, "0") is not None:
+    if propfind(cfg, folder_url, "0", missing_parent=True) is not None:
         return folder_url
     parts = cfg["folder"].split("/")
     for i in range(len(parts)):
@@ -493,6 +521,8 @@ def _match_record(conn, row):
     weapons = [{k: w[k] for k in ("weapon", "start_s", "end_s")}
                for w in conn.execute("SELECT * FROM weapon_holds WHERE match_id = ? ORDER BY start_s, weapon", (mid,))]
     return {"uid": row["sync_uid"], "updated": row["sync_updated"] or storage.LEGACY_SYNC_TIME,
+            "revision": _revision(conn, "match", row["sync_uid"]),
+            "evidence": webdav_media.reference(conn, row["sync_uid"]),
             "fields": {k: row[k] for k in storage.COLUMNS if k not in ("match_id", "evidence_path")},
             "mates": mates, "readings": readings, "weapon_holds": weapons}
 
@@ -514,17 +544,22 @@ def export_snapshot(conn, data_dir=None):
     """本机数据库 → 同步快照（dict）。"""
     storage.ensure_sync_ids(conn)
     storage.sync_names(conn)
-    conn.execute("BEGIN")  # 主行、子表、墓碑必须来自同一快照，避免与记录子进程的写入交错
+    conn.execute("BEGIN IMMEDIATE")  # 更新同步附加表并读取一致快照；编码和联网不持锁
     try:
+        _refresh_revisions(conn, data_dir)
         matches = [_match_record(conn, row) for row in conn.execute("SELECT * FROM matches ORDER BY sync_uid")]
-        lobby = [_lobby_record(row) for row in conn.execute("SELECT * FROM lobby_readings ORDER BY sync_uid")]
+        lobby = [_with_revision(conn, "lobby", _lobby_record(row))
+                 for row in conn.execute("SELECT * FROM lobby_readings ORDER BY sync_uid")]
         tombs = [{"kind": row["kind"], "uid": row["uid"], "deleted_at": row["deleted_at"]}
                  for row in storage.tombstones(conn)]
-        return {"format": FORMAT, "app": "Evo", "version": storage.APP_VERSION, "device": device_id(data_dir),
+        result = {"format": FORMAT, "app": "Evo", "version": storage.APP_VERSION, "device": device_id(data_dir),
                 "matches": matches, "names": _name_records(conn), "lobby": lobby,
                 "tombstones": sorted(tombs, key=lambda t: (t["kind"], t["uid"]))}
-    finally:
-        conn.rollback()  # 只读事务；编码和联网时不持有数据库锁
+        conn.commit()
+        return result
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 def encode_snapshot(snapshot):
@@ -631,6 +666,13 @@ def _valid_time(value):
         return False
 
 
+def _valid_revision(value):
+    return (isinstance(value, dict) and isinstance(value.get("counter"), int)
+            and 0 <= value["counter"] < 2**53
+            and isinstance(value.get("device"), str)
+            and re.fullmatch(r"[0-9a-f]{16}", value["device"]) is not None)
+
+
 def _clean_snapshot(snapshot):
     """检查服务器上的快照：只认认识的项，坏的那条跳过。返回 (清理后的快照, 跳过了几条)。"""
     if not isinstance(snapshot, dict) or snapshot.get("format") != FORMAT:
@@ -642,12 +684,14 @@ def _clean_snapshot(snapshot):
     matches = {}
     for item in snapshot.get("matches") if isinstance(snapshot.get("matches"), list) else []:
         if (not isinstance(item, dict) or not _valid_uid(item.get("uid"))
-                or not _valid_time(item.get("updated")) or not _valid_match(item)):
+                or not _valid_revision(item.get("revision")) or not _valid_match(item)):
             skipped += 1
             continue
         fields = item.get("fields") if isinstance(item.get("fields"), dict) else {}
         fields = {k: v for k, v in fields.items() if k in storage.COLUMNS and k not in ("match_id", "evidence_path")}
         record = {"uid": item["uid"],
+                  "revision": item["revision"],
+                  "evidence": item.get("evidence") if webdav_media.valid(item.get("evidence")) else None,
                   "updated": item["updated"] if isinstance(item.get("updated"), str) else storage.LEGACY_SYNC_TIME,
                   "fields": fields,
                   "mates": sorted(_clean_rows(item.get("mates"), ("slot", *storage.MATE_COLUMNS)),
@@ -664,13 +708,14 @@ def _clean_snapshot(snapshot):
     keys = ("read_at", "player_name", "rank_tier", "rank_division", "rank_progress", "score")
     for item in snapshot.get("lobby") if isinstance(snapshot.get("lobby"), list) else []:
         if (not isinstance(item, dict) or not _valid_uid(item.get("uid"))
-                or not _valid_time(item.get("updated"))
+                or not _valid_revision(item.get("revision"))
                 or not _valid_fields(item.get("fields"), ("rank_progress", "score"),
                                      ("read_at", "player_name", "rank_tier", "rank_division"), ("read_at",))):
             skipped += 1
             continue
         fields = item.get("fields") if isinstance(item.get("fields"), dict) else {}
         record = {"uid": item["uid"],
+                  "revision": item["revision"],
                   "updated": item["updated"] if isinstance(item.get("updated"), str) else storage.LEGACY_SYNC_TIME,
                   "fields": {k: fields.get(k) for k in keys}}
         if not record["fields"]["read_at"]:
@@ -737,8 +782,62 @@ def _content_fingerprint(record):
 
 
 def _record_order(record):
-    """谁"更新"：先看修改时间；时间一样时按内容排一个固定顺序（两边算出来一样，结果就一样）。"""
-    return (record.get("updated") or storage.LEGACY_SYNC_TIME, _content_fingerprint(record))
+    """逻辑版本与设备号确定顺序；电脑日期和时区完全不参与合并。"""
+    revision = record.get("revision") or {"counter": 0, "device": ""}
+    return (revision["counter"], revision["device"], _content_fingerprint(record))
+
+
+def _revision(conn, kind, uid):
+    row = conn.execute("SELECT counter, device FROM sync_revisions WHERE kind=? AND uid=?", (kind, uid)).fetchone()
+    return {"counter": row[0], "device": row[1]} if row else {"counter": 0, "device": ""}
+
+
+def _with_revision(conn, kind, record):
+    return {**record, "revision": _revision(conn, kind, record["uid"])}
+
+
+def _save_revision(conn, kind, record):
+    revision = record["revision"]
+    conn.execute("INSERT OR REPLACE INTO sync_revisions VALUES (?, ?, ?, ?, ?)",
+                 (kind, record["uid"], revision["counter"], revision["device"], _content_fingerprint(record)))
+
+
+def _refresh_revisions(conn, data_dir):
+    """在写事务中检测业务内容变化。旧 0.4.0 写入不懂同步列，也能在下一次同步时被发现。
+    同步版本只写附加表，不改变原业务表的列、ID 或写入接口。
+    """
+    writer = device_id(data_dir)
+    for kind, table in (("match", "matches"), ("lobby", "lobby_readings")):
+        present = set()
+        for row in conn.execute(f"SELECT * FROM {table}").fetchall():
+            record = _match_record(conn, row) if kind == "match" else _lobby_record(row)
+            uid = record["uid"]
+            if not uid:  # 旧版在同步准备期间新增的行
+                uid = storage._free_uid(conn, table, storage._match_hash(row) if kind == "match" else storage._lobby_hash(row))
+                conn.execute(f"UPDATE {table} SET sync_uid=? WHERE rowid=?",
+                             (uid, row["match_id"] if kind == "match" else row["reading_id"]))
+                record["uid"] = uid
+            present.add(uid)
+            old = conn.execute("SELECT * FROM sync_revisions WHERE kind=? AND uid=?", (kind, uid)).fetchone()
+            fingerprint = _content_fingerprint(record)
+            if old is None or old["fingerprint"] != fingerprint:
+                record["revision"] = {"counter": old["counter"] + 1 if old else 1, "device": writer}
+                _save_revision(conn, kind, record)
+        for row in conn.execute("SELECT uid FROM sync_revisions WHERE kind=?", (kind,)).fetchall():
+            if row[0] not in present and not conn.execute(
+                    "SELECT 1 FROM sync_tombstones WHERE kind=? AND uid=?", (kind, row[0])).fetchone():
+                storage.record_tombstone(conn, kind, row[0])  # 旧客户端删除的局也必须留下墓碑
+
+
+def _preserve_conflict(conn, kind, local, remote):
+    a, b = _record_order(local), _record_order(remote)
+    if a[0] != b[0] or a[1] == b[1] or a[2] == b[2]:
+        return 0
+    loser = local if b > a else remote
+    cur = conn.execute("INSERT OR IGNORE INTO sync_conflicts VALUES (?, ?, ?, ?)",
+                       (kind, loser["uid"], _content_fingerprint(loser),
+                        json.dumps(loser, ensure_ascii=False, sort_keys=True)))
+    return cur.rowcount
 
 
 # ---------- 合并 ----------
@@ -845,7 +944,10 @@ def merge_snapshots(conn, snapshots, data_dir=None):
         for record in snapshot["matches"]:
             old = matches.get(record["uid"])
             if old is None or _record_order(record) > _record_order(old):
-                matches[record["uid"]] = record
+                matches[record["uid"]] = ({**record, "evidence": old.get("evidence")}
+                                           if old and not record.get("evidence") else record)
+            elif record.get("evidence") and not old.get("evidence"):
+                matches[record["uid"]] = {**old, "evidence": record["evidence"]}
         for record in snapshot["lobby"]:
             old = lobby.get(record["uid"])
             if old is None or _record_order(record) > _record_order(old):
@@ -857,9 +959,10 @@ def merge_snapshots(conn, snapshots, data_dir=None):
                 tombs[key] = at
 
     stats = {"matches_new": 0, "matches_updated": 0, "matches_deleted": 0,
-             "lobby_new": 0, "lobby_updated": 0, "lobby_deleted": 0, "names_new": 0}
+             "lobby_new": 0, "lobby_updated": 0, "lobby_deleted": 0, "names_new": 0, "conflicts": 0}
     conn.execute("BEGIN IMMEDIATE")
     try:
+        _refresh_revisions(conn, data_dir)
         local_matches = {r["sync_uid"]: r for r in conn.execute("SELECT * FROM matches") if r["sync_uid"]}
         local_lobby = {r["sync_uid"]: r for r in conn.execute("SELECT * FROM lobby_readings") if r["sync_uid"]}
         local_tombs = {(r["kind"], r["uid"]) for r in storage.tombstones(conn)}
@@ -875,23 +978,35 @@ def merge_snapshots(conn, snapshots, data_dir=None):
         for uid, record in matches.items():
             if ("match", uid) in blocked:
                 continue
+            if record.get("evidence"):
+                webdav_media.remember(conn, uid, record["evidence"])
             row = local_matches.get(uid)
             if row is None:
                 _insert_match(conn, record)
+                _save_revision(conn, "match", record)
                 stats["matches_new"] += 1
-            elif _record_order(record) > _record_order(_match_record(conn, row)):
-                _update_match(conn, row, record, data_dir)
-                stats["matches_updated"] += 1
+            else:
+                local = _match_record(conn, row)
+                stats["conflicts"] += _preserve_conflict(conn, "match", local, record)
+                if _record_order(record) > _record_order(local):
+                    _update_match(conn, row, record, data_dir)
+                    _save_revision(conn, "match", record)
+                    stats["matches_updated"] += 1
         for uid, record in lobby.items():
             if ("lobby", uid) in blocked:
                 continue
             row = local_lobby.get(uid)
             if row is None:
                 _insert_lobby(conn, record)
+                _save_revision(conn, "lobby", record)
                 stats["lobby_new"] += 1
-            elif _record_order(record) > _record_order(_lobby_record(row)):
-                _update_lobby(conn, uid, record)
-                stats["lobby_updated"] += 1
+            else:
+                local = _with_revision(conn, "lobby", _lobby_record(row))
+                stats["conflicts"] += _preserve_conflict(conn, "lobby", local, record)
+                if _record_order(record) > _record_order(local):
+                    _update_lobby(conn, uid, record)
+                    _save_revision(conn, "lobby", record)
+                    stats["lobby_updated"] += 1
         stats["names_new"] = _merge_names(conn, snapshots)
         conn.commit()
     except BaseException:
@@ -1010,6 +1125,10 @@ def result_text(result):
         parts.append(f"收到 {result['lobby_new']} 次大厅读数")
     if result.get("names_new"):
         parts.append(f"新账号名 {result['names_new']} 个")
+    if result.get("images_uploaded") or result.get("images_downloaded"):
+        parts.append(f"截图上传 {result.get('images_uploaded', 0)} 张、下载 {result.get('images_downloaded', 0)} 张")
+    if result.get("conflicts"):
+        parts.append(f"已保留 {result['conflicts']} 份并发修改的副本")
     if result.get("uploaded"):
         size = result.get("size") or 0
         parts.append(f"已上传本机数据（{size / 1024:.0f} KB）" if size >= 1024 else "已上传本机数据")
@@ -1018,6 +1137,8 @@ def result_text(result):
     text = "同步完成：" + "，".join(parts)
     if result.get("bad_files"):
         text += f"；有 {len(result['bad_files'])} 个同步文件读不出来，已跳过"
+    if result.get("image_errors"):
+        text += f"；有 {result['image_errors']} 张截图未能同步，请检查文件和网络后重试"
     return text
 
 
@@ -1042,6 +1163,7 @@ def _sync(conn, cfg, data_dir=None, now=None):
             bad.append(f"{entry['name']}（{skipped} 条）")
         snapshots.append(snapshot)
     stats = merge_snapshots(conn, snapshots, data_dir=data_dir)
+    stats.update(webdav_media.sync(conn, cfg, data_dir))
     snapshot = export_snapshot(conn, data_dir=data_dir)
     payload = encode_snapshot(snapshot)
     digest = hashlib.sha256(payload).hexdigest()

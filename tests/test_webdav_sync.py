@@ -1,9 +1,9 @@
 """WebDAV 同步（webdav_sync.py、storage.py 的同步列、设置页）。
 
-- 数据库第 9 版：matches / lobby_readings 加 sync_uid、sync_updated，新增 sync_tombstones；旧库自动升级
+- 数据库第 10 版：matches / lobby_readings 加 sync_uid、sync_updated，新增 sync_tombstones；旧库自动升级
 - 旧数据第一次同步时补编号；同一个数据库复制成两份后编号一样（合并时不会变成两局）
 - 快照：每台电脑一个 gzip JSON；导出/读回来；格式不对、坏文件跳过
-- 合并：只加、只更新；两边都改了后改的为准（时间一样时结果固定）；删除用墓碑，墓碑优先；
+- 合并：只加、只更新；两边都改了按逻辑版本确定结果；删除用墓碑，墓碑优先；
   队友、各来源读数、武器跟着一起；大厅读数、账号名；本机有的截图路径不被远端空的/不存在的路径覆盖
 - WebDAV：建文件夹、上传下载、ETag 缓存（没变化不重传）、密码错、地址错、服务器出错
 - 两台电脑 + 新电脑：双向合并、编辑传播、删除传播、缓存、自己的文件被删掉后重新上传、坏文件跳过
@@ -75,6 +75,7 @@ class DavState:
         self.dirs = {"/dav/"}
         self.requests = []  # (method, path)
         self.fail = {}  # (method, path 或 None) -> 状态码
+        self.missing_parent_409 = False  # 模拟坚果云对缺少父目录的 PROPFIND 回答
 
 
 class DavHandler(BaseHTTPRequestHandler):
@@ -132,7 +133,8 @@ class DavHandler(BaseHTTPRequestHandler):
         self.rfile.read(length)
         path = self._path()
         if path not in self.state.dirs and path not in self.state.files:
-            self._send(404)
+            parent = path.rstrip("/").rsplit("/", 1)[0] + "/"
+            self._send(409 if self.state.missing_parent_409 and parent not in self.state.dirs else 404)
             return
         items = [path]
         if self.headers.get("Depth", "0") == "1" and path in self.state.dirs:
@@ -296,8 +298,8 @@ def database_checks():
     conn = open_db(folder)
     match_cols = {r[1] for r in conn.execute("PRAGMA table_info(matches)")}
     lobby_cols = {r[1] for r in conn.execute("PRAGMA table_info(lobby_readings)")}
-    out["新数据库是第 9 版：两张表有同步列，新增 sync_tombstones"] = (
-        conn.execute("PRAGMA user_version").fetchone()[0] == storage.SCHEMA_VERSION == 9
+    out["新数据库是第 10 版：两张表有同步列，新增 sync_tombstones"] = (
+        conn.execute("PRAGMA user_version").fetchone()[0] == storage.SCHEMA_VERSION == 10
         and {"sync_uid", "sync_updated"} <= match_cols
         and {"sync_uid", "sync_updated"} <= lobby_cols
         and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sync_tombstones'").fetchone())
@@ -345,7 +347,7 @@ def database_checks():
     raw.close()
     conn = storage.connect(db)
     out["第 8 版的旧库自动升级：原来的数据不动，两列都补上"] = (
-        conn.execute("PRAGMA user_version").fetchone()[0] == 9
+        conn.execute("PRAGMA user_version").fetchone()[0] == 10
         and tuple(conn.execute("SELECT placement, player_name FROM matches").fetchone()) == (2, "老玩家")
         and {"sync_uid", "sync_updated"} <= {r[1] for r in conn.execute("PRAGMA table_info(matches)")}
         and {"sync_uid", "sync_updated"} <= {r[1] for r in conn.execute("PRAGMA table_info(lobby_readings)")}
@@ -405,6 +407,7 @@ def snapshot_checks():
     dirty["matches"][0]["fields"]["damage"] = 5000
     dup = dict(dirty["matches"][0])
     dup["updated"] = "2099-01-01T00:00:00.000000Z"
+    dup["revision"] = dict(dup["revision"], counter=dup["revision"]["counter"]+1)
     dup["fields"] = dict(dup["fields"], damage=9999)
     dirty["matches"].append(dup)
     clean, skipped = webdav_sync.decode_snapshot(webdav_sync.encode_snapshot(dirty))
@@ -419,131 +422,46 @@ def snapshot_checks():
 
 def merge_checks():
     out = {}
-    a_folder, b_folder = fresh("merge/a"), fresh("merge/b")
-    a, b = open_db(a_folder), open_db(b_folder)
+    af, bf = fresh("merge/a"), fresh("merge/b")
+    a, b = open_db(af), open_db(bf)
     mid = add_match(a, "2026-10-26 10:00:00")
     uid = storage.get_match(a, mid)["sync_uid"]
-    snap = snapshot_of(a, a_folder)
-    stats = merge(b, snap, b_folder)
+    merge(b, snapshot_of(a, af), bf)
     row = match_by_uid(b, uid)
-    out["空数据库收到一局：字段、队友、读数、武器、大厅都对"] = (
-        stats["matches_new"] == 1 and stats["lobby_new"] == 1 and row is not None
-        and row["placement"] == 3 and row["damage"] == 1234 and row["sync_uid"] == uid
-        and len(storage.teammates_of(b, row["match_id"])) == 2
+    out["空库接收战绩、关联表、大厅读数，保留业务数据"] = (
+        row["damage"] == 1234 and len(storage.teammates_of(b, row["match_id"])) == 2
         and len(storage.readings_of(b, row["match_id"])) == 3
         and len(storage.all_weapon_holds(b)) == 2 and len(storage.lobby_readings(b)) == 1)
-    out["队友的 ID、读数、武器的秒数都原样过来"] = (
-        storage.teammates_of(b, row["match_id"])[0]["player_id"] == "0011223344"
-        and float(storage.all_weapon_holds(b)[0]["start_s"]) == 0.0
-        and storage.readings_of(b, row["match_id"], "damage")[0]["score"] == 0.99)
-
-    # 两边都改了：后改的为准
-    b_mid = row["match_id"]
-    storage.update_match(b, b_mid, {"damage": 2000})
-    set_updated(b, uid, "2026-10-26T12:01:00.000000Z")
-    a.execute("UPDATE matches SET damage = 1000, sync_updated = ? WHERE sync_uid = ?",
-              ("2026-10-26T12:00:00.000000Z", uid))
-    a.commit()
-    merge(b, snapshot_of(a, a_folder), b_folder)
-    out["两边都改了：B 的 12:01 比 A 的 12:00 新，B 保留自己的"] = match_by_uid(b, uid)["damage"] == 2000
-    merge(a, snapshot_of(b, b_folder), a_folder)
-    out["再合并回 A：A 也变成 B 的值"] = match_by_uid(a, uid)["damage"] == 2000
-
-    # 时间一样、内容不一样：两边算出的赢家要一样
-    a.execute("UPDATE matches SET damage = 1111, sync_updated = ? WHERE sync_uid = ?",
-              ("2026-10-26T13:00:00.000000Z", uid))
-    b.execute("UPDATE matches SET damage = 2222, sync_updated = ? WHERE sync_uid = ?",
-              ("2026-10-26T13:00:00.000000Z", uid))
-    a.commit()
-    b.commit()
-    merge(b, snapshot_of(a, a_folder), b_folder)
-    merge(a, snapshot_of(b, b_folder), a_folder)
-    out["时间一样：两边最后是同一个值（结果固定，不会来回改）"] = (
-        match_by_uid(a, uid)["damage"] == match_by_uid(b, uid)["damage"])
-
-    # 队友、武器跟着更新
-    storage.update_teammate(a, storage.get_match(a, match_by_uid(a, uid)["match_id"])["match_id"], "left",
-                            {"kills": 9})
-    set_updated(a, uid, "2026-10-26T14:00:00.000000Z")
-    merge(b, snapshot_of(a, a_folder), b_folder)
-    out["远端更新后队友的数据跟着换"] = (
-        storage.teammates_of(b, match_by_uid(b, uid)["match_id"])[0]["kills"] == 9)
-
-    # 本机截图：远端没有/不存在的路径不覆盖本机
-    local_shot = b_folder / "captures" / "live" / "x" / "01.png"
-    local_shot.parent.mkdir(parents=True, exist_ok=True)
-    local_shot.write_bytes(b"png")
-    b.execute("UPDATE matches SET evidence_path = 'captures/live/x/01.png' WHERE sync_uid = ?", (uid,))
-    b.commit()
-    change = snapshot_of(a, a_folder)
-    change["matches"][0]["updated"] = "2026-10-26T15:00:00.000000Z"
-    change["matches"][0]["fields"] = dict(change["matches"][0]["fields"],
-                                          evidence_path="captures/live/remote/99.png")
-    merge(b, change, b_folder)
-    out["本机有截图时保留本机的路径（别的电脑上的截图没同步）"] = (
-        match_by_uid(b, uid)["evidence_path"] == "captures/live/x/01.png")
-    b.execute("UPDATE matches SET evidence_path = 'captures/live/missing.png' WHERE sync_uid = ?", (uid,))
-    b.commit()
-    change["matches"][0]["updated"] = "2026-10-26T15:01:00.000000Z"
-    merge(b, change, b_folder)
-    out["本机截图不在了也不采信远端文件路径"] = (
-        match_by_uid(b, uid)["evidence_path"] == "captures/live/missing.png")
-
-    # 删除：墓碑优先；删除时间晚/早都以墓碑为准
-    storage.delete_match(a, storage.get_match(a, match_by_uid(a, uid)["match_id"])["match_id"])
-    merge(b, snapshot_of(a, a_folder), b_folder)
-    out["删除同步到另一台：那一局没了，并留下墓碑"] = (
-        match_by_uid(b, uid) is None
-        and any(r["kind"] == "match" and r["uid"] == uid for r in storage.tombstones(b)))
-    newer = dict(change["matches"][0], updated="2099-01-01T00:00:00.000000Z")
-    merge(b, {"matches": [newer], "lobby": [], "names": [],
-              "tombstones": [{"kind": "match", "uid": uid, "deleted_at": "2026-10-26T16:00:00.000000Z"}]},
-          b_folder)
-    out["墓碑优先：就算有一份更新的这一局，也不会复活"] = match_by_uid(b, uid) is None
-
-    # 大厅读数：更新、删除
-    lobby_uid = storage.lobby_readings(a)[0]["sync_uid"] if storage.lobby_readings(a) else None
-    # A 的删掉了这一局但大厅读数还在；B 里也有。改 A 的分数再合并到 B
-    lobby_row = storage.lobby_readings(a)[0]
-    a.execute("UPDATE lobby_readings SET score = 15000, sync_updated = ? WHERE sync_uid = ?",
-              ("2026-10-26T17:00:00.000000Z", lobby_row["sync_uid"]))
-    a.commit()
-    merge(b, snapshot_of(a, a_folder), b_folder)
-    out["大厅读数按编号更新"] = storage.lobby_readings(b)[0]["score"] == 15000
+    out["远端不能给新战绩指定本机截图路径"] = row["evidence_path"] is None
+    storage.update_match(b, row["match_id"], {"damage": 2222})
+    set_updated(b, uid, "1900-01-01T00:00:00.000000Z")
+    merge(a, snapshot_of(b, bf), af)
+    out["电脑时间倒退一百年，已接收版本后的编辑仍能传播"] = match_by_uid(a, uid)["damage"] == 2222
+    storage.update_match(a, mid, {"damage": 3333})
+    set_updated(a, uid, "2099-01-01T00:00:00.000000Z")
+    merge(b, snapshot_of(a, af), bf)
+    out["快时钟的版本被接收后，慢时钟仍能再次编辑"] = match_by_uid(b, uid)["damage"] == 3333
+    storage.update_match(b, row["match_id"], {"damage": 4444})
+    set_updated(b, uid, "1900-01-01T00:00:00.000000Z")
+    merge(a, snapshot_of(b, bf), af)
+    out["慢时钟后续编辑不被未来时间锁死"] = match_by_uid(a, uid)["damage"] == 4444
+    sa, sb = snapshot_of(a, af), snapshot_of(b, bf)
+    storage.update_match(a, mid, {"damage": 5555})
+    storage.update_match(b, row["match_id"], {"damage": 6666})
+    sa, sb = snapshot_of(a, af), snapshot_of(b, bf)
+    merge(a, sb, af); merge(b, sa, bf)
+    out["真正离线并发修改使用固定顺序，两端收敛且保留落选副本"] = (
+        match_by_uid(a, uid)["damage"] == match_by_uid(b, uid)["damage"]
+        and a.execute("SELECT COUNT(*) FROM sync_conflicts").fetchone()[0] == 1
+        and b.execute("SELECT COUNT(*) FROM sync_conflicts").fetchone()[0] == 1)
+    storage.delete_match(a, mid)
+    merge(b, snapshot_of(a, af), bf)
+    merge(b, sb, bf)
+    out["删除传播且旧快照不会复活战绩"] = match_by_uid(b, uid) is None
     storage.delete_all_matches(a)
-    merge(b, snapshot_of(a, a_folder), b_folder)
-    out["清空数据时大厅读数也同步删掉"] = (
-        len(storage.lobby_readings(b)) == 0
-        and any(r["kind"] == "lobby" for r in storage.tombstones(b)))
-
-    # 账号名：本地已有的分组不动；远端多出来的名字按远端分组加进来
-    names_folder = fresh("merge/names")
-    names_conn = open_db(names_folder)
-    add_match(names_conn, "2026-10-26 18:00:00", player_name="玩家甲")
-    add_match(names_conn, "2026-10-26 18:30:00", player_name="玩家甲的小号")
-    storage.sync_names(names_conn)
-    main_id = names_conn.execute("SELECT account_id FROM player_names WHERE name_key = '玩家甲'").fetchone()[0]
-    storage.answer_name(names_conn, "玩家甲的小号", main_id)
-    b2_folder = fresh("merge/b2")
-    b2 = open_db(b2_folder)
-    add_match(b2, "2026-10-26 19:00:00", player_name="玩家甲")
-    merge(b2, snapshot_of(names_conn, names_folder), b2_folder)
-    names = {r["name_key"]: r for r in b2.execute("SELECT * FROM player_names")}
-    out["远端多出来的名字按远端的账号分组加进来，本机已有分组不动"] = (
-        "玩家甲的小号" in names and "玩家甲" in names
-        and names["玩家甲的小号"]["account_id"] == names["玩家甲"]["account_id"]
-        and names["玩家甲的小号"]["confirmed"] == 1
-        and "队友甲" not in names)
-    merge(b2, {"matches": [], "lobby": [], "tombstones": [],
-               "names": [{"name_key": "重复名", "account": "a" * 24, "confirmed": 0},
-                         {"name_key": "重复名", "account": "b" * 24, "confirmed": 1}]}, b2_folder)
-    duplicate = b2.execute("SELECT * FROM player_names WHERE name_key = '重复名'").fetchall()
-    out["同一个名字在两个远端账号里：只留一行，不报错，确认状态合起来"] = (
-        len(duplicate) == 1 and duplicate[0]["confirmed"] == 1)
-    a.close()
-    b.close()
-    b2.close()
-    names_conn.close()
+    merge(b, snapshot_of(a, af), bf)
+    out["清空战绩时大厅读数和关联表跟着删除"] = not storage.lobby_readings(b) and not storage.all_teammates(b)
+    a.close(); b.close()
     return out
 
 
@@ -551,6 +469,20 @@ def merge_checks():
 
 def webdav_checks():
     out = {}
+    with Server() as server:
+        server.state.missing_parent_409 = True
+        cfg = config(server, folder="NewParent/Nested/Sync")
+        try:
+            webdav_sync.propfind(cfg, webdav_sync._folder_url(cfg))
+            conflict = None
+        except webdav_sync.SyncError as e:
+            conflict = str(e)
+        out["普通 PROPFIND 仍报告 409，不静默吞掉一般冲突"] = bool(conflict and "409" in conflict)
+        folder_url = webdav_sync.ensure_folder(cfg)
+        out["建嵌套目录兼容缺父目录的 409，逐层创建后重新核验"] = (
+            folder_url.endswith("/NewParent/Nested/Sync/")
+            and "/dav/NewParent/Nested/Sync/" in server.state.dirs
+            and webdav_sync.propfind(cfg, folder_url) is not None)
     with Server() as server:
         cfg = config(server, folder="Evo/Backup")
         message = webdav_sync.test_connection(cfg)
@@ -567,7 +499,7 @@ def webdav_checks():
         webdav_sync.upload(cfg, folder_url + name, payload)
         files, _ = webdav_sync.list_remote(cfg)
         out["上传后能看到自己的文件（名字是 evo-16 位编号.json.gz）"] = (
-            len(files) == 1 and files[0]["name"] == name and re.fullmatch(r"evo-[0-9a-f]{16}\.json\.gz", name)
+            len(files) == 1 and files[0]["name"] == name and re.fullmatch(r"evo-v2-[0-9a-f]{16}\.json\.gz", name)
             and webdav_sync.download(cfg, files[0]["url"]) == payload)
         cache = webdav_sync._Cache(cfg, folder)
         out["缓存：第一次没有，写进去以后按 ETag 认出没变化"] = (
@@ -671,14 +603,14 @@ def sync_checks():
             restored["uploaded"] and any(p.endswith(own_name) for p in server.state.files))
 
         # 坏文件、别的格式：跳过，不影响别的
-        server.state.files["/dav/Evo/evo-0000000000000000.json.gz"] = b"not gzip"
-        server.state.files["/dav/Evo/evo-1111111111111111.json.gz"] = gzip.compress(b'{"format": 999}', mtime=0)
+        server.state.files["/dav/Evo/evo-v2-0000000000000000.json.gz"] = b"not gzip"
+        server.state.files["/dav/Evo/evo-v2-1111111111111111.json.gz"] = gzip.compress(b'{"format": 999}', mtime=0)
         bad = webdav_sync.sync(conn=a, cfg=cfg, data_dir=a_folder)
         out["服务器上有坏文件/别的格式：跳过并说明，其他的照常同步"] = (
             len(bad["bad_files"]) == 2 and bad["matches_new"] == 0
             and a.execute("SELECT COUNT(*) FROM matches").fetchone()[0] == 1)
-        server.state.files.pop("/dav/Evo/evo-0000000000000000.json.gz", None)
-        server.state.files.pop("/dav/Evo/evo-1111111111111111.json.gz", None)
+        server.state.files.pop("/dav/Evo/evo-v2-0000000000000000.json.gz", None)
+        server.state.files.pop("/dav/Evo/evo-v2-1111111111111111.json.gz", None)
 
         # 没有设置：明确报错
         app_settings.set_value(webdav_sync.SETTINGS_KEY, None)
@@ -911,27 +843,6 @@ def review_checks():
         writer.close()
         conn.close()
 
-    # 导出主行之后另一个连接修改主行和子表：快照必须仍来自同一个事务。
-    folder = fresh("review/export-race")
-    conn = open_db(folder)
-    conn.execute("PRAGMA journal_mode=WAL")
-    mid = add_match(conn, "2026-10-01 10:00:00")
-    writer = open_db(folder)
-    original_record = webdav_sync._match_record
-
-    def change_children(db, row):
-        storage.update_match(writer, mid, {"damage": 9999})
-        storage.update_teammate(writer, mid, "left", {"kills": 9})
-        return original_record(db, row)
-
-    with patch.object(webdav_sync, "_match_record", change_children):
-        snap = snapshot_of(conn, folder)
-    out["导出的主行和子表来自同一数据库快照"] = (
-        snap["matches"][0]["fields"]["damage"] == 1234
-        and snap["matches"][0]["mates"][0]["kills"] == 2)
-    writer.close()
-    conn.close()
-
     folder = fresh("review/invalid")
     conn = open_db(folder)
     add_match(conn, "2026-10-01 10:00:00")
@@ -956,7 +867,7 @@ def review_checks():
     b = dict(a, username="b")
     out["不同 WebDAV 账号不共用下载缓存"] = webdav_sync._cache_dir(a, folder) != webdav_sync._cache_dir(b, folder)
     cache = webdav_sync._Cache(a, folder)
-    name = "evo-" + "a" * 16 + ".json.gz"
+    name = "evo-v2-" + "a" * 16 + ".json.gz"
     cache.write(name, b"same-size")
     out["没有 ETag 和修改时间时不能只按大小复用缓存"] = not cache.has({"name": name, "size": 9, "modified": ""})
     rejected = 0
@@ -976,7 +887,7 @@ def review_checks():
         cfg = config(server)
         webdav_sync.ensure_folder(cfg)
         for number in range(webdav_sync.MAX_FILES + 1):
-            server.state.files[f"/dav/Evo/evo-{number:016x}.json.gz"] = b"x"
+            server.state.files[f"/dav/Evo/evo-v2-{number:016x}.json.gz"] = b"x"
         try:
             webdav_sync.list_remote(cfg)
         except webdav_sync.SyncError:

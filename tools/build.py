@@ -65,7 +65,7 @@ def get_webview2_setup():
     # 核对数字签名：必须有效、签名的是微软
     check = ("$s = Get-AuthenticodeSignature -LiteralPath $env:EVO_SIGNED_FILE; "
              "Write-Output $s.Status; Write-Output $s.SignerCertificate.Subject")
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", check], capture_output=True, text=True,
+    out = subprocess.run([shutil.which("pwsh") or "powershell", "-NoProfile", "-Command", check], capture_output=True, text=True,
                          env={**os.environ, "EVO_SIGNED_FILE": str(WEBVIEW2_SETUP)}, check=True).stdout.splitlines()
     status, subject = (out + ["", ""])[:2]
     if status.strip() != "Valid" or "O=Microsoft Corporation" not in subject:

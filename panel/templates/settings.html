@@ -361,7 +361,8 @@
        密码留空表示不修改已保存的。同步文件里有玩家名、队友名和 ID，截图不上传 #}
     <section class="card settings-card" id="webdav" aria-labelledby="h-webdav">
       <h2 id="h-webdav">WebDAV 同步</h2>
-      <p class="setting-desc webdav-intro">把战绩同步到你自己的 WebDAV 服务器（如坚果云、Nextcloud），几台电脑的记录会合并在一起。截图不会上传；同步文件里有你的游戏名、队友的名字和 ID。服务器地址和密码只保存在这台电脑上。</p>
+      <p class="setting-desc webdav-intro">把战绩同步到你自己的 WebDAV 服务器（如坚果云、Nextcloud），几台电脑的记录会合并在一起。同步文件里有你的游戏名、队友的名字和 ID；截图同步默认关闭，可单独开启。</p>
+      {% if webdav.credential_error %}<p class="setting-desc update-error">保存的密码无法在当前 Windows 账号下解密，请重新填写密码并保存。</p>{% endif %}
       {% if webdav.configured %}
       <div class="setting">
         <div class="setting-text">
@@ -370,6 +371,8 @@
           {% if webdav.last.ok %}
           <div class="setting-desc">上次同步：<span class="num">{{ webdav.last.at }}</span> · 收到 <span class="num">{{ webdav.last.matches_new or 0 }}</span> 局、更新 <span class="num">{{ webdav.last.matches_updated or 0 }}</span> 局{% if webdav.last.matches_deleted %}、删除 <span class="num">{{ webdav.last.matches_deleted }}</span> 局{% endif %}{% if webdav.last.uploaded %}；已上传本机数据{% endif %}</div>
           {% if webdav.last.bad_files %}<div class="setting-desc update-error">有 {{ webdav.last.bad_files|length }} 个同步文件读不出来，已跳过</div>{% endif %}
+          {% if webdav.last.image_errors %}<div class="setting-desc update-error">有 {{ webdav.last.image_errors }} 张截图未能同步，下次同步会重试</div>{% endif %}
+          {% if webdav.last.conflicts %}<div class="setting-desc">已保留 {{ webdav.last.conflicts }} 份并发修改副本（数据库 sync_conflicts 表）</div>{% endif %}
           {% else %}
           <div class="setting-desc update-error">上次同步没成功：{{ webdav.last.error }}</div>
           {% endif %}
@@ -405,6 +408,22 @@
         </form>
       </div>
       {% endif %}
+      {% if webdav.configured %}
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="webdav-shots-name">截图同步</div>
+          <div class="setting-desc">开启后上传和下载战绩截图。截图可能包含游戏名、ID 和桌面内容，请先确认；关闭不会删除已经上传的截图。</div>
+        </div>
+        <form method="post" action="{{ url_for('webdav_screenshots') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="on" value="{{ '0' if webdav.screenshots else '1' }}">
+          <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if webdav.screenshots else 'false' }}" aria-labelledby="webdav-shots-name">
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if webdav.screenshots else '已关闭' }}</span>
+          </button>
+        </form>
+      </div>
+      {% endif %}
       <form method="post" action="{{ url_for('webdav_save') }}" class="webdav-form" data-busy="正在保存…">
         <input type="hidden" name="token" value="{{ token }}">
         <div class="webdav-grid">
@@ -435,7 +454,7 @@
         <div class="webdav-actions">
           <button type="submit" class="btn btn-primary">保存</button>
         </div>
-        <p class="setting-desc webdav-note">保存只是记下这些设置，不连接服务器；保存后点"测试连接"或"立即同步"。密码以明文保存在数据文件夹的 settings.json 里。</p>
+        <p class="setting-desc webdav-note">首次保存不会开启自动同步，可先点"测试连接"或"立即同步"。密码使用 Windows 当前用户加密保存；把数据复制到其他电脑后，需要在那里重新填写密码。</p>
       </form>
       {% if webdav.configured %}
       <div class="setting danger-zone">

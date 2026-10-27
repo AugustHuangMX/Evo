@@ -4,19 +4,23 @@
 """
 
 import json
+import os
+import secrets
 import threading
 
 from paths import DATA_DIR
 
 SETTINGS_PATH = DATA_DIR / "settings.json"
-_lock = threading.Lock()  # 托盘的后台线程和面板会同时写（如检查更新），一次只让一个改，免得互相覆盖
+_lock = threading.RLock()  # 读取也与原子替换串行，避免 Windows 文件共享冲突；set_value 内可重入 load
 
 
 def load():
-    try:
-        return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    with _lock:
+        try:
+            value = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError):
+            return {}
 
 
 def get(key, default=None):
@@ -28,4 +32,12 @@ def set_value(key, value):
         data = load()
         data[key] = value
         SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SETTINGS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        part = SETTINGS_PATH.with_name(SETTINGS_PATH.name + "." + secrets.token_hex(6) + ".tmp")
+        try:
+            with part.open("x", encoding="utf-8") as f:
+                f.write(json.dumps(data, ensure_ascii=False, indent=2))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(part, SETTINGS_PATH)
+        finally:
+            part.unlink(missing_ok=True)

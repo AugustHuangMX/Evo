@@ -189,7 +189,7 @@ def template_globals():
         # 搬数据文件夹（data_move.py）：正在搬时顶部显示进度；刚搬好时顶部说一次搬到了哪里
         "move_job": data_move.state(),
         "move_result": data_move.take_result(),
-        "version": storage.APP_VERSION,
+        "version": f"{storage.APP_VERSION} · {storage.BUILD_LABEL}",
         # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"；有 2 个以上账号时，右上角切换账号
         "name_question": name_question(),
         "account_view": account_view(),
@@ -1106,6 +1106,9 @@ def db_path():
 @app.route("/settings")
 def settings():
     shot_count, shot_bytes = folder_usage(CAPTURES_DIR / "live")
+    synced_count, synced_bytes = folder_usage(paths.DATA_DIR / "captures" / "webdav")
+    shot_count += synced_count
+    shot_bytes += synced_bytes
     clean = screenshots.cleanable(db())
     size = screen_size()
     return render_template(
@@ -1132,7 +1135,7 @@ def settings():
         clean_count=clean.deleted,
         clean_convert=clean.converted,
         clean_size=size_text(clean.freed),
-        version=storage.APP_VERSION,
+        version=f"{storage.APP_VERSION} · {storage.BUILD_LABEL}",
         source_url=SOURCE_URL,
         feedback_url=FEEDBACK_URL,
         feedback_group=FEEDBACK_GROUP,
@@ -1276,6 +1279,18 @@ def webdav_clear():
     """断开 WebDAV：删掉本机保存的地址、密码和下载缓存，服务器上的数据不动。"""
     webdav_sync.clear_config()
     flash("已断开 WebDAV 同步：本机保存的地址和密码已删除，下载的缓存也删了。服务器上的战绩数据没有动。", "ok")
+    return webdav_page()
+
+
+@app.post("/settings/webdav/screenshots")
+def webdav_screenshots():
+    try:
+        on = request.form.get("on") == "1"
+        webdav_sync.set_screenshots(on)
+        flash("已开启截图同步：下次同步会上传和下载战绩截图，请确认截图里没有不想上传的内容。" if on
+              else "已关闭截图同步；服务器上已上传的截图保留。", "ok")
+    except webdav_sync.SyncError as e:
+        flash(str(e), "error")
     return webdav_page()
 
 
