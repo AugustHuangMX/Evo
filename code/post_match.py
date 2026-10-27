@@ -19,6 +19,8 @@
 怎么归到同一局：
 - 以开局画面为界：两次开局画面之间的淘汰画面、总结页、经验值页、对局中的数据算同一局。回到大厅也算这一局结束
 - 只有经验值页、没有总结页的局（第 2 名有时没有总结页；或者很快跳过了），在这一局结束时单独记一局
+- 在大厅里重新打开上一局的经验值页（0.4.1 起）：这一轮还没有别的数据、读到的每一项都和上一次用过的经验值页一样，
+  就是上一局的，不再记（2026-10-27 玩家反馈：每打开一次就多记一局）。重启 Evo 以后不记得上一次的，管不到
 - 总结页、经验值页都没有，但有对局中的数据（结算画面一出来就跳过、提前回大厅）：也单独记一局。没看到开局画面、
   也没看到结算画面（比如靶场）的对局中数据不记
 - 只看到淘汰画面的局：单独记一局，只有名次（加上模式、地图、传奇）
@@ -230,6 +232,7 @@ class PostMatch:
         self.player_name = None  # 这次记录认出的玩家名
         self.name_slip = name_slip  # 和之前的名字这么像，就当作识别误差（见 config/player_name.json）
         self.unnamed = []  # 这次记录里存下时还不知道玩家名的局，认出名字后补上
+        self.last_xp = None  # 上一次用过的经验值页读数（补进了一局或单独记了一局），不随每局清掉
         self.reset()
 
     def reset(self):
@@ -367,6 +370,9 @@ class PostMatch:
         """每次离开经验值页、识别了最后一帧之后调用。"""
         if self.xp_done:
             return
+        if self._reopened_xp(reading):
+            self.log(f"[{when:%H:%M:%S}] 回到了上一局的经验值页（在大厅里打开的），不重复记")
+            return
         if self.xp is None or xp_score(reading, problems) > xp_score(*self.xp[:2]):
             self.xp = (reading, problems, path, when)
         if self.xp[1]:  # 到目前为止还没有一次读全
@@ -405,6 +411,14 @@ class PostMatch:
         return h is not None and (h["saw_start"] or h["end"] in ("eliminated", "champion", "summary", "xp", "squad_out")) \
             and (any(h["values"].get(k) is not None for k in HUD_FIELDS) or h["mates"])
 
+    def _reopened_xp(self, reading):
+        """是不是在大厅里重新打开了上一局的经验值页：这一轮还没有别的数据（真正只有经验值页的局前面有对局中的数据），
+        读到的项（至少一项）都和上一次用过的一样。"""
+        if self.last_xp is None or any(x is not None for x in (self.match_id, self.hud, self.elim, self.champion)):
+            return False
+        read = {k: reading[k] for k in XP_FIELDS if reading[k] is not None}
+        return bool(read) and all(self.last_xp[k] == v for k, v in read.items())
+
     def _wait_for_name(self, match_id):
         """刚存下一局：还不知道玩家名的话，记下编号，认出名字后补上。"""
         if self.player_name is None:
@@ -436,6 +450,7 @@ class PostMatch:
 
     def _save_xp(self, match_id):
         reading, _, _, when = self.xp
+        self.last_xp = reading
         storage.save_readings(self.conn, match_id, SOURCE_XP, {k: reading[k] for k in XP_FIELDS},
                               f"{when:%Y-%m-%d %H:%M:%S}")
 
@@ -559,6 +574,7 @@ class PostMatch:
         if verified:
             match.update({k: reading[k] for k in ("rank_tier", "rank_division", "rank_progress")})
         match_id = storage.insert_match(self.conn, match)
+        self.last_xp = reading
         storage.save_readings(self.conn, match_id, SOURCE_XP, {k: reading[k] for k in XP_FIELDS},
                               f"{when:%Y-%m-%d %H:%M:%S}")
         if with_others:
