@@ -7,6 +7,7 @@
   - 自己先成盒、队友后被淘汰：击杀、助攻、老板分、伤害用成盒前的；RP 不记（等经验值页或大厅校准）
   - 成盒后被复活：继续记录，RP 照常记
   - 拿冠军：冠军横幅 → 总结页；名次记第 1；总结页的名次还在滑进来也不用确认；队友按名字对上、补上传奇
+  - 停在总结页时只读总结页：右上角回到大厅才读；从经验值页切到总结页时，总结页存下了才读经验值页
   - 靶场（没有开局画面、也没有结算画面）：不记；中途停止记录：记下，但标待确认
   - 对局中截图每 0.3 秒一张，结算后回到每秒一张；交火时不用识别引擎
   - 大厅：连续两次读到一样的段位和分数才记
@@ -27,6 +28,7 @@ from fake_game import MissingShots, load, report, run_collect, shot  # 要在项
 import cv2
 
 import calibration
+import live_collect
 import ocr
 import storage
 from hud import Hud
@@ -43,6 +45,7 @@ ELIMINATED, SUMMARY = S + "死亡瞬间.png", S + "vlcsnap-2026-10-16-18h26m12s1
 SPECT_ENEMY = S + "vlcsnap-2026-10-16-18h27m31s652.png"  # 观战对手（侵蚀）：全队被淘汰以后
 START = "live/20261016_211452/match_start_213625_enter.png"  # 开局画面：排位、世界尽头
 LOBBY = "live/20261016_211452/lobby_211506_enter.png"  # 大厅：ImperialHzd，钻石 II 944
+XP5, SUMMARY5 = "live/20261016_211452/xp_222758_leave.png", "live/20261016_211452/05_222749.png"  # 同一局：第 8 名，3 杀，688 伤害
 RANGE = "legends/20261017_154752/full_27.jpg"  # 靶场
 FIELDS = ("squads_left", "kills", "assists", "participation", "damage", "rp_delta")
 
@@ -182,6 +185,25 @@ def collect_checks(images):
     r = run("squad_out", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, SPECT_ENEMY, START])
     r["got"] = [pick(row, *keys) for row in r["rows"]]
     r["said"] = [line for line in r["log"] if "返回大厅按钮" in line]
+    # 停在总结页时只读总结页（2026-10-27 用户决定）：小队打完了 → 经验值页 → 总结页 → 大厅。右上角回到大厅才读；
+    # 从经验值页切到总结页时，经验值页等总结页存下了再读
+    read_on = []  # (读的是什么, 当时屏幕上是哪一帧)
+    real_top, real_xp, real_summary = Hud.read_top, live_collect.read_xp, live_collect.read_summary
+
+    def spy(kind, real):
+        def wrapped(*args, **kwargs):
+            read_on.append((kind, fake_game.FakeCamera.showing))
+            return real(*args, **kwargs)
+        return wrapped
+
+    with mock.patch.object(Hud, "read_top", spy("右上角", real_top)), \
+            mock.patch.object(live_collect, "read_xp", spy("经验值页", real_xp)), \
+            mock.patch.object(live_collect, "read_summary", spy("总结页", real_summary)):
+        r = run("pages_first", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, XP5, SUMMARY5, SUMMARY5, SUMMARY5,
+                                LOBBY, LOBBY])
+    r["read_on"] = read_on
+    r["got"] = [pick(row, "placement", "kills", "damage", "rp_source", "legend") for row in r["rows"]]
+    r["end_screen"] = readings_of(r["rows"][0]["match_id"], "end_screen") if r["rows"] else {}
     # 拿冠军
     r = run("champion", [START, PLAYING, PLAYING, PLAYING, CHAMP_MOMENT, CHAMP_MOMENT, CHAMP_SUMMARY, CHAMP_SUMMARY,
                          CHAMP_SUMMARY])
@@ -303,7 +325,7 @@ def main():
     print("0.3.0 新流程：对局中、一局结束、冠军、大厅校准、各来源的优先级")
     try:
         paths = [PLAYING, KNOCKED, MATES_DOWN, SPECTATING, CHAMP_MOMENT, CHAMP_SUMMARY, ELIMINATED, SUMMARY, START,
-                 LOBBY, RANGE, SPECT_ENEMY]
+                 LOBBY, RANGE, SPECT_ENEMY, XP5, SUMMARY5]
         images = {p: load(shot(p)) for p in paths}
     except MissingShots as e:
         print(f"  ⏭ 截图部分跳过：找不到截图 {e}（截图只在开发者电脑上，不在仓库里）")
@@ -327,6 +349,9 @@ def main():
         return report(checks)
     s, c = screenshot_checks(images), collect_checks(images)
     last, first, revived, champ = c["last_down"], c["died_first"], c["revived"], c["champion"]
+    pages = c["pages_first"]
+    tops = [frame for kind, frame in pages["read_on"] if kind == "右上角"]
+    order = [kind for kind, _ in pages["read_on"] if kind != "右上角"]
     match_sleeps = [sec for frame, sec in last["sleeps"] if frame in (START, PLAYING, KNOCKED)]
     checks.update({
         f"对局中的 3 张样本：自己的传奇、倒地、队友的名字和传奇、右上角各项都读对（错的：{s['hud_wrong'] or '无'}）":
@@ -356,6 +381,11 @@ def main():
         f"全队被淘汰后观战对手（右下角\"返回大厅\"）：这一局结束了，自己一直活到最后，名次、RP 用右上角最后的，不用确认（{c['squad_out']['got']}）":
             c["squad_out"]["got"] == [(18, 0, 0, 0, 0, -65, "对局中", 0, HUD_ONLY_NOTE, "ranked", "罗芭")]
             and bool(c["squad_out"]["said"]),
+        f"停在总结页时只读总结页：右上角回到大厅才读（{tops}）": tops and set(tops) == {LOBBY},
+        f"  从经验值页切到总结页：总结页读完、存下以后才读经验值页（{order}）":
+            "经验值页" in order and order[:order.index("经验值页")].count("总结页") >= 2,
+        f"  对局中的数据照样补进这一局：传奇、怎么结束的；RP 用经验值页的（{pages['got']}；{pages['end_screen']}）":
+            pages["got"] == [(8, 3, 688, "经验值页", "罗芭")] and pages["end_screen"] == {"对局中": "squad_out"},
         f"0/0/0 时那一行不显示：背后画面上读出的单独一个数不算老板分（读到 {s['lone_kp'][0]}，记下 {s['lone_kp'][1]}）":
             s["lone_kp"] == (7, None, False),
         f"成盒后被复活：继续记录，RP 照常记（{revived['got']}）":

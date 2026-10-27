@@ -156,6 +156,16 @@ def rule_checks():
     p.on_xp(xp_reading(2), [], Path("xp2.png"), t0 + timedelta(minutes=20, seconds=30))
     p.finish()
     out["xp_next"] = matches(p)
+
+    log = []  # 下一局只有经验值页，对局中的数据要回到大厅才交来（先读结算画面）、离开经验值页时还没到，读数碰巧和上一局一样：照常记
+    p = post(log)
+    summary_match(p, 2, t0)
+    p.on_xp(xp_reading(2), [], Path("xp.png"), t0 + timedelta(seconds=15))
+    p.finish()
+    p.on_hud_end(t0 + timedelta(minutes=20))
+    p.on_xp(xp_reading(2), [], Path("xp2.png"), t0 + timedelta(minutes=20, seconds=30))
+    p.finish()
+    out["xp_hud_later"] = matches(p)
     return out
 
 
@@ -210,6 +220,8 @@ def main():
             r["xp_reopen"] == ([(2, 0, None), (15, 0, XP_ONLY_NOTE)], ["回到了上一局的经验值页（在大厅里打开的），不重复记"] * 2),
         f"下一局真的只有经验值页（前面有淘汰画面），读数碰巧和上一局一样：照常记（{r['xp_next']}）":
             r["xp_next"] == [(2, 0, None), (2, 0, XP_ONLY_NOTE)],
+        f"下一局只有经验值页、对局中的数据还没交来（只知道结束了），读数碰巧和上一局一样：照常记（{r['xp_hud_later']}）":
+            r["xp_hud_later"] == [(2, 0, None), (2, 0, XP_ONLY_NOTE)],
     })
     if not ok:
         print("\n  记录程序的日志（总结页 + 淘汰画面）：")

@@ -4,7 +4,8 @@
 例如：python tools/log_speed.py "E:\\Evo Tracker Data\\logs\\evo.log" bugs_test\\0010\\evo_logs\\evo.log
 
 日志每一行的开头是写日志的时间，方括号里是那一帧截图的时间，两者之差就是读那一帧用了多久（精确到秒）。每份日志打印：
-- 一局结束时读对局中存下的右上角用了几秒
+- 读对局中存下的右上角用了几秒（以前一局结束时就读，日志写"对局结束（…）"；2026-10-27 起回到大厅、下一局开局时才读，
+  写"对局中的数据（… 结束，…）"）
 - 总结页从读到的那一帧到存下用了几秒；存了几次，其中几次没读完就离开了（"总结页停留太短"）
 - 存下以后到响"总结页读完了"（读队友、名字）用了几秒
 - 响了"对局结束"的局里，后来响了"总结页读完了"的有几局，中间隔了几秒
@@ -37,7 +38,7 @@ def analyse(path):
         at = datetime.strptime(f"{day} {logged}", "%Y-%m-%d %H:%M:%S")
         shot = datetime.strptime(f"{day} {frame}", "%Y-%m-%d %H:%M:%S") if frame else None
         late = (at - shot).total_seconds() % 86400 if shot else None  # 跨午夜也对
-        if shot and text.startswith("对局结束（"):
+        if shot and text.startswith(("对局结束（", "对局中的数据（")):
             top.append(late)
         elif shot and re.match(r"第 \d+ 局（编号", text):
             saves += 1
@@ -61,7 +62,7 @@ def analyse(path):
         elif text.startswith("本次记录") and (found := re.search(r"平均每次 ([\d.]+) 秒", text)):
             per_call.append(float(found[1]))
     print(f"== {path}")
-    print(f"  一局结束读右上角：{spread(top)}")
+    print(f"  读对局中存下的右上角：{spread(top)}")
     print(f"  总结页（从读到的那一帧到存下）：{spread(save)}；存了 {saves} 次，其中没读完就离开 {short} 次")
     print(f"  存下以后到响'总结页读完了'（读队友、名字）：{spread(after)}")
     print(f"  响了'对局结束' {ends} 局，后来响了'总结页读完了' {len(gap)} 局，中间隔了：{spread(gap)}")

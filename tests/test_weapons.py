@@ -131,7 +131,7 @@ def collect_checks():
     conn = storage.connect(fake_game.last_db)
     holds = [tuple(r) for r in conn.execute("SELECT match_id, weapon, start_s, end_s FROM weapon_holds ORDER BY start_s")]
     conn.close()
-    said = [line for line in log if "对局结束" in line]
+    said = [line for line in log if "对局中的数据（" in line]
     sheila = next((h for h in holds if h[1] == "sheila"), None)
     wingman = next((h for h in holds if h[1] == "wingman"), None)
     return {

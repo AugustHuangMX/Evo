@@ -25,7 +25,8 @@
   也没看到结算画面（比如靶场）的对局中数据不记
 - 只看到淘汰画面的局：单独记一局，只有名次（加上模式、地图、传奇）
 - 一局只认第一次读到的淘汰画面名次。淘汰画面、冠军横幅、对局中的数据都在总结页、经验值页之前出现：
-  它们出现 SAME_MATCH_SECONDS 秒以后又来了，说明是新的一局（没认出开局画面），上一局先收尾
+  它们出现 SAME_MATCH_SECONDS 秒以后又来了，说明是新的一局（没认出开局画面），上一局先收尾。
+  对局中的数据看的是开始的时间：读数要等回到大厅、下一局开局时才交来（先读结算画面，见 in_match.py），总结页存下以后才到也照样补进这一局
 - 经验值页和总结页对不上（名次不同、计分击杀比总结页多、时间相差太久），说明不是同一局：单独记一局并标记待确认
 - 开局画面读到的模式和地图、对局中认出的传奇，属于接下来这一局：存这一局时一起写进去。
   开局画面没读出模式、但有 RP 的局，记为排位（只有排位赛才有排位点数）
@@ -242,7 +243,8 @@ class PostMatch:
         self.xp_done = False  # 核对通过的经验值页已经用过了（补进这一局，或单独记成一局）
         self.elim = None  # 这一局淘汰画面读到的名次：(名次, 置信度, 时间)
         self.champion = None  # 认出"捍卫者"（冠军）的时间
-        self.hud = None  # 这一局对局中最后的读数（见 in_match.py 的 InMatchWatcher._finish）
+        self.hud = None  # 这一局对局中最后的读数（见 in_match.py 的 InMatchWatcher._hand_over）
+        self.hud_end = None  # 对局中看到这一局结束的时间（读数要等回到大厅、下一局开局时才交来）
 
     def info_complete(self):
         return "mode" in self.info and "map" in self.info
@@ -326,8 +328,12 @@ class PostMatch:
             self._save_champion(self.match_id)
             self._settle(self.match_id)
 
+    def on_hud_end(self, when):
+        """对局中看到这一局结束了（结算画面）。对局中的读数等回到大厅、下一局开局时才交来（先读结算画面，见 in_match.py）。"""
+        self.hud_end = when
+
     def on_hud_final(self, hud):
-        """对局中最后的读数（一局结束时，见 in_match.InMatchWatcher._finish）：
+        """对局中最后的读数（一局结束以后，回到大厅、下一局开局、停止记录时，见 in_match.InMatchWatcher._hand_over）：
         started、ended（时间）、end（怎么结束的：eliminated / champion / summary / xp / lobby / next / stop）、
         saw_start（看到了这一局的开局画面）、own_dead（结束时自己已经成盒）、values（右上角各项，没有的为 None）、
         mates（[{slot, name, legend}]）、weapons（每一段拿在手上的武器 [(编号, 开始秒, 结束秒)]，见 weapons.WeaponTimer）。"""
@@ -412,9 +418,10 @@ class PostMatch:
             and (any(h["values"].get(k) is not None for k in HUD_FIELDS) or h["mates"])
 
     def _reopened_xp(self, reading):
-        """是不是在大厅里重新打开了上一局的经验值页：这一轮还没有别的数据（真正只有经验值页的局前面有对局中的数据），
-        读到的项（至少一项）都和上一次用过的一样。"""
-        if self.last_xp is None or any(x is not None for x in (self.match_id, self.hud, self.elim, self.champion)):
+        """是不是在大厅里重新打开了上一局的经验值页：这一轮还没有别的数据（真正只有经验值页的局前面有对局中的数据，
+        读数还没交来时至少看到了结束），读到的项（至少一项）都和上一次用过的一样。"""
+        if self.last_xp is None or any(x is not None for x in (self.match_id, self.hud, self.hud_end, self.elim,
+                                                                self.champion)):
             return False
         read = {k: reading[k] for k in XP_FIELDS if reading[k] is not None}
         return bool(read) and all(self.last_xp[k] == v for k, v in read.items())
