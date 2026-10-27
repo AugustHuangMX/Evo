@@ -30,10 +30,10 @@ import telemetry
 
 os.environ["no_proxy"] = "127.0.0.1,localhost"  # 电脑上设了代理时，本机的测试服务器也直接连
 KEYS = (telemetry.CONSENT_KEY, telemetry.SINCE_KEY, telemetry.ID_KEY, telemetry.PING_KEY, telemetry.LAST_KEY,
-        telemetry.MISSED_KEY)
+        telemetry.MISSED_KEY, telemetry.MATCH_ID_KEY)
 BODY_KEYS = {"id", "version", "matches", "ping"}
 PING_KEYS = {"day", "screen", "game_res", "game_mode", "aspect"}
-MATCH_KEYS = {"k", "day", "version", "mode", "map", "legend", "mates", "mate_stats", "placement", "kills", "assists",
+MATCH_KEYS = {"k", "match_id", "day", "version", "mode", "map", "legend", "mates", "mate_stats", "placement", "kills", "assists",
               "knockdowns", "damage", "rp_delta", "tier", "rp_source", "review", "edited"}
 SECRETS = ("测试玩家甲", "队友名字乙", "0123456789", "秘密备注", "captures/live")  # 这些一个字都不能发出去
 SINCE = "2026-10-20 12:00:00"
@@ -47,7 +47,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         self.requests.append((self.path, json.loads(body.decode("utf-8")), self.headers.get("User-Agent")))
-        reply = json.dumps({"ok": self.status == 200}).encode("utf-8")
+        reply = json.dumps({"ok": self.status == 200, "match_id_version": 1}).encode("utf-8")
         self.send_response(self.status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(reply)))
@@ -263,6 +263,59 @@ def panel_checks(conn):
     return out
 
 
+def identity_checks():
+    out = {}
+    path = storage.DB_PATH.with_name("telemetry-identity.db")
+    conn = storage.connect(path)
+    mid = add_match(conn, "2026-10-20 20:00:00")
+    conn.execute("UPDATE matches SET sync_uid=NULL WHERE match_id=?", (mid,)); conn.commit()
+    local = {telemetry.CONSENT_KEY: True, telemetry.SINCE_KEY: SINCE, telemetry.ID_KEY: "a"*32,
+             telemetry.PING_KEY: NOW.strftime("%Y-%m-%d")}
+    def get(key, default=None): return local.get(key, default)
+    sent_path = storage.DB_PATH.with_name("telemetry-identity-sent.json")
+    legacy = telemetry.match_payload(conn, storage.get_match(conn, mid), "a"*32)
+    legacy.pop("match_id")
+    sent_path.write_text(json.dumps({legacy["k"]:telemetry._digest(legacy)}), encoding="utf-8")
+    try:
+        with mock.patch.object(app_settings, "get", side_effect=get), \
+             mock.patch.object(app_settings, "set_value", side_effect=lambda k,v:local.__setitem__(k,v)), \
+             mock.patch.object(telemetry, "SENT_PATH", sent_path), \
+             mock.patch.object(telemetry, "_post", return_value={"ok": True}) as post:
+            first = telemetry.send(path, now=NOW)
+            payload = post.call_args.args[1]["matches"][0]
+            uid = storage.get_match(conn, mid)["sync_uid"]
+            out["旧发送摘要缓存触发一次带稳定 ID 的补报"] = first["matches"] == 1
+            out["旧库先上报也会持久化稳定 ID，不等待首次 WebDAV 同步"] = (
+                bool(uid) and payload["match_id"] == uid and storage.get_match(conn, mid)["match_id"] == mid)
+            import webdav_sync
+            snapshot = webdav_sync.export_snapshot(conn, path.parent)
+            out["先匿名上报再导出 WebDAV 仍使用同一个公共 match_id"] = snapshot["matches"][0]["uid"] == uid
+            out["旧服务正常接收但不误报已支持跨设备去重"] = first["ok"] and not first["match_id_dedup"]
+            post.reset_mock()
+            telemetry.send(path, now=NOW)
+            out["旧服务确认后无变化不反复发送，设备内兼容键保持稳定"] = not post.called
+            post.return_value = {"ok": True, "match_id_version": 1}
+            telemetry.send(path, now=NOW+timedelta(days=1))  # 日活确认服务端已经升级
+            out["服务升级确认会清空旧发送缓存以补报稳定 ID"] = not telemetry._load_sent()
+            post.reset_mock()
+            updated = telemetry.send(path, now=NOW+timedelta(days=1))
+            after = post.call_args.args[1]["matches"][0]
+            out["服务升级后补报同一身份，支持标记正确"] = (
+                updated["matches"] == 1 and updated["match_id_dedup"] and after["match_id"] == uid
+                and after["k"] == payload["k"])
+            post.reset_mock()
+            telemetry.send(path, now=NOW+timedelta(days=1))
+            out["完成稳定 ID 补报后恢复无变化不联网"] = not post.called
+            local[telemetry.CONSENT_KEY] = False
+            conn.execute("UPDATE matches SET sync_uid=NULL WHERE match_id=?", (mid,)); conn.commit()
+            telemetry.send(path, now=NOW+timedelta(days=2))
+            out["不同意统计时不联网，也不因上报准备而给旧局补 ID"] = (
+                not post.called and storage.get_match(conn, mid)["sync_uid"] is None)
+    finally:
+        conn.close(); sent_path.unlink(missing_ok=True)
+    return out
+
+
 def main():
     print("匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板的提问和设置页）")
     server, base = start_server()
@@ -271,7 +324,7 @@ def main():
     panel_app.app.config["DB"] = storage.DB_PATH
     conn = storage.connect()
     try:
-        checks = {**send_checks(conn), **panel_checks(conn)}
+        checks = {**send_checks(conn), **identity_checks(), **panel_checks(conn)}
     finally:
         conn.close()
         telemetry.STATS_URL = url

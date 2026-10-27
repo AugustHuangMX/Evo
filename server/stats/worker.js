@@ -2,7 +2,7 @@
 // 地址 https://stats.evotracker.cn。只有用户在 Evo 里同意了才会发过来（code/telemetry.py）。
 //
 // - POST /v1/report：{"id": 匿名编号, "version": Evo 版本号, "ping": 日活（每天一份，可以没有）, "matches": [每局，最多 100 个]}
-//   日活按（编号, 日期）存一行，每局按（编号, 对局编号）存一行，再发同一个就覆盖
+//   日活按（编号, 日期）存一行；带 match_id 的对局跨设备去重，旧格式仍兼容（编号, 对局编号）
 // - POST /v1/delete：{"id": 匿名编号}：删掉这个编号发过的所有数据（Evo 0.3.7、0.3.8 设置页的"关闭并删除已发送的数据"；
 //   之后的版本去掉了这个按钮，2026-10-24 用户决定。老版本还在用，这里留着）
 // - GET /v1/summary：全体玩家的汇总（Evo 数据页"全体玩家"，2026-10-24 用户决定；格式见 makeSummary）。
@@ -77,7 +77,7 @@ function match(m) {
   const edited = m.edited ?? [];
   if (!Array.isArray(edited) || edited.some((f) => !EDITABLE.has(f))) throw new Bad();
   if (m.review !== undefined && typeof m.review !== "boolean") throw new Bad();
-  const out = { k: m.k, day: pattern(m.day, DAY), version: text(m.version, 20),  // 版本号只限长度：旧数据、演示数据可能不是 x.y.z
+  const out = { k: m.k, match_id: pattern(m.match_id, ID), day: pattern(m.day, DAY), version: text(m.version, 20),
                 mate1: text(mates[0]), mate2: text(mates[1]), review: m.review ? 1 : 0,
                 edited: edited.length ? [...new Set(edited)].sort().join(",") : null };
   for (const f of TEXTS) out[f] = text(m[f]);
@@ -119,6 +119,7 @@ async function report(body, env) {
   const matches = body.matches ?? [];
   if (!Array.isArray(matches) || matches.length > MAX_MATCHES) throw new Bad();
   let rejected = 0;
+  const writes = [];
   for (const raw of matches) {
     let m;
     try {
@@ -128,11 +129,26 @@ async function report(body, env) {
       rejected += 1; // 这一局格式不对：不存，别的照收（Evo 那边算发过了，不会一直重发）
       continue;
     }
+    if (m.match_id !== null) {
+      statements.push(env.DB.prepare(
+        `INSERT INTO match_keys (id, k, match_id) VALUES (?, ?, ?)
+         ON CONFLICT (id, k) DO UPDATE SET match_id =
+           CASE WHEN match_keys.match_id = excluded.match_id THEN match_keys.match_id ELSE '' END`,
+      ).bind(body.id, m.k, m.match_id));
+    }
+    // 新旧客户端共用同一条路径：已登记别名的旧客户端也能找到全局身份。
+    const identity = `COALESCE(?, (SELECT match_id FROM match_keys WHERE id = ? AND k = ?))`;
     statements.push(env.DB.prepare(
-      `INSERT INTO matches (id, k, day, version, mode, map, legend, mate1, mate2, placement, kills, assists,
+      `DELETE FROM matches WHERE id = ? AND k = ? AND match_id IS NULL
+       AND ${identity} != ''`,
+    ).bind(body.id, m.k, m.match_id, body.id, m.k));
+    statements.push(env.DB.prepare(
+      `INSERT INTO matches (id, k, match_id, day, version, mode, map, legend, mate1, mate2, placement, kills, assists,
          knockdowns, damage, rp_delta, tier, rp_source, review, edited, received_at, ${MATE_COLUMNS.join(", ")})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${MATE_COLUMNS.map(() => "?").join(", ")})
-       ON CONFLICT (id, k) DO UPDATE SET day = excluded.day, version = excluded.version, mode = excluded.mode,
+       SELECT ?, COALESCE('uid:' || stable_id, ?), stable_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${MATE_COLUMNS.map(() => "?").join(", ")}
+       FROM (SELECT ${identity} AS stable_id) WHERE stable_id IS NULL OR stable_id != ''
+       ON CONFLICT DO UPDATE SET match_id = COALESCE(matches.match_id, excluded.match_id),
+         day = excluded.day, version = excluded.version, mode = excluded.mode,
          map = excluded.map, legend = excluded.legend, mate1 = excluded.mate1, mate2 = excluded.mate2,
          placement = excluded.placement, kills = excluded.kills, assists = excluded.assists,
          knockdowns = excluded.knockdowns, damage = excluded.damage, rp_delta = excluded.rp_delta,
@@ -140,16 +156,20 @@ async function report(body, env) {
          received_at = excluded.received_at, ${MATE_COLUMNS.map((c) => `${c} = excluded.${c}`).join(", ")}`,
     ).bind(body.id, m.k, m.day, m.version, m.mode, m.map, m.legend, m.mate1, m.mate2, m.placement, m.kills,
            m.assists, m.knockdowns, m.damage, m.rp_delta, m.tier, m.rp_source, m.review, m.edited, now,
-           ...MATE_COLUMNS.map((c) => m[c])));
+           ...MATE_COLUMNS.map((c) => m[c]), m.match_id, body.id, m.k));
+    writes.push(statements.length - 1);
   }
-  if (statements.length) await env.DB.batch(statements);
-  return reply({ ok: true, stored: matches.length - rejected, rejected });
+  const results = statements.length ? await env.DB.batch(statements) : [];
+  const stored = writes.filter((i) => results[i].meta?.changes > 0).length;
+  rejected += writes.length - stored;  // 已知旧键对应多个 UID 时，没有稳定 ID 的旧客户端不能猜测覆盖。
+  return reply({ ok: true, stored, rejected, match_id_version: 1 });
 }
 
 async function remove(body, env) {
   const results = await env.DB.batch([
     env.DB.prepare("DELETE FROM pings WHERE id = ?").bind(body.id),
     env.DB.prepare("DELETE FROM matches WHERE id = ?").bind(body.id),
+    env.DB.prepare("DELETE FROM match_keys WHERE id = ?").bind(body.id),
   ]);
   return reply({ ok: true, deleted: results.reduce((n, r) => n + (r.meta?.changes ?? 0), 0) });
 }

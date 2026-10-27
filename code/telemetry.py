@@ -15,7 +15,7 @@
 发送的内容只有这些（ping_payload、match_payload；python code/telemetry.py 打印原样）：
 - 每次：匿名编号、Evo 版本号
 - 日活：日期、屏幕分辨率、Apex 视频设置里的分辨率和显示模式（全屏 / 无边框 / 窗口）、设置页选的游戏画面比例
-- 每局：对局编号（由匿名编号和本机的局号算出来的一串乱码，只用来覆盖同一局）、日期、记这一局的 Evo 版本号、
+- 每局：跨设备一致的 match_id（数据库 sync_uid），以及兼容旧服务端的设备内对局键 k、日期、记这一局的 Evo 版本号、
   模式、地图、自己的传奇、两名队友的传奇、名次、击杀/助攻/击倒、伤害、RP 变化、段位（只有大段，如"钻石"）、
   RP 从哪个画面来、是否待确认、用户在战绩页改过哪几项（不发改成了什么）；0.3.8 之后的版本还有两名队友这一局的
   击杀/助攻/击倒、伤害（mate_stats，和 mates 一一对应；总结页上读的，没有总结页的局是空的。2026-10-24 用户决定：
@@ -55,6 +55,7 @@ STATS_URL = os.environ.get("EVO_STATS_URL", "https://stats.evotracker.cn").rstri
 CONSENT_KEY, SINCE_KEY, ID_KEY = "telemetry_consent", "telemetry_since", "telemetry_id"
 PING_KEY, LAST_KEY = "telemetry_ping_day", "telemetry_last"
 MISSED_KEY = "telemetry_ping_missed"
+MATCH_ID_KEY = "telemetry_match_id_version"  # 服务端确认跨设备去重的协议版本；不包含凭据或游戏账号
 MAX_PING_DAYS = 30  # 没发出去的日活最多补这么多天（更早的不补）
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 SENT_PATH = DB_PATH.parent / "telemetry_sent.json"  # 发过的局：{对局编号: 摘要}。和数据库放在一起，搬数据文件夹时一起搬
@@ -132,7 +133,7 @@ def ping_payload(day):
 
 
 def match_key(install, row):
-    """对局编号：一串乱码，服务器只用它来认出"又发了同一局"。本机的局号和时间不直接发出去。"""
+    """兼容旧统计服务的设备内键；跨设备身份由 payload.match_id 提供，不改旧键以便归并历史上报。"""
     raw = f"{install}|{row['match_id']}|{row['ended_at'] or row['started_at'] or ''}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
@@ -141,7 +142,8 @@ def match_payload(conn, row, install):
     """一局要发的内容（只有这些项）。"""
     mates = storage.teammates_of(conn, row["match_id"])[:2]
     edited = sorted({f for f in (row["edited"] or "").split(",") if f})
-    return {"k": match_key(install, row), "day": (row["ended_at"] or "")[:10] or None, "version": row["app_version"],
+    return {"k": match_key(install, row), "match_id": row["sync_uid"],
+            "day": (row["ended_at"] or "")[:10] or None, "version": row["app_version"],
             "mode": row["mode"], "map": row["map"], "legend": row["legend"], "mates": [m["legend"] for m in mates],
             # 队友的数据单独放一项：老的统计服务器不认识它，照样收下这一局（mates 的格式不变）
             "mate_stats": [{f: m[f] for f in MATE_FIELDS} for m in mates],
@@ -172,6 +174,8 @@ def pending(conn, install, sent, now=None):
     since = app_settings.get(SINCE_KEY)
     if not isinstance(since, str):
         return []
+    # 先建立旧记录的稳定身份，随后 WebDAV 沿用同一个 UID；不能等到首次同步后再换上报身份。
+    storage.ensure_sync_ids(conn)
     cutoff = ((now or datetime.now()) - timedelta(minutes=SETTLE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
     rows = conn.execute("SELECT * FROM matches WHERE ended_at >= ? AND ended_at <= ? ORDER BY ended_at, match_id",
                         (since, cutoff)).fetchall()
@@ -239,7 +243,8 @@ def send(db_path=DB_PATH, now=None):
         finally:
             conn.close()
         days = _ping_days(today)
-        result = {"ok": True, "matches": 0, "ping": False, "error": None, "at": now.strftime("%Y-%m-%d %H:%M")}
+        result = {"ok": True, "matches": 0, "ping": False, "error": None, "at": now.strftime("%Y-%m-%d %H:%M"),
+                  "match_id_dedup": app_settings.get(MATCH_ID_KEY) == 1}
         if not days and not todo:
             return result
         batches = [todo[start:start + BATCH] for start in range(0, len(todo), BATCH)]
@@ -250,7 +255,13 @@ def send(db_path=DB_PATH, now=None):
                 body = {"id": install, "version": storage.APP_VERSION, "matches": [p for _, p in batch]}
                 if i < len(days):
                     body["ping"] = {**ping, "day": days[i]}
-                _post("/v1/report", body)
+                reply = _post("/v1/report", body)
+                supported = type(reply.get("match_id_version")) is int and reply["match_id_version"] == 1
+                if supported and app_settings.get(MATCH_ID_KEY) != 1:
+                    # 新客户端先连接旧服务时，旧服务会忽略 match_id。服务升级后须补报原先缓存的局。
+                    sent.clear()
+                app_settings.set_value(MATCH_ID_KEY, 1 if supported else None)
+                result["match_id_dedup"] = supported
                 for digest, payload in batch:
                     sent[payload["k"]] = digest
                 _save_sent(sent)

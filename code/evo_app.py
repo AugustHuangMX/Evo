@@ -175,7 +175,8 @@ def start_telemetry(log, stop, first_delay=STATS_FIRST_DELAY):
             if result is not None and not result["ok"]:
                 log(f"匿名统计：没发出去（{result['error']}），下次再发")
             elif result is not None and (result["matches"] or result["ping"]):
-                log(f"匿名统计：发送了 {result['matches']} 局" + ("和今天的日活" if result["ping"] else ""))
+                log(f"匿名统计：发送了 {result['matches']} 局" + ("和今天的日活" if result["ping"] else "")
+                    + ("；统计服务尚未确认跨设备去重" if result.get("match_id_dedup") is False else ""))
             if stop.wait(STATS_EVERY):
                 return
 

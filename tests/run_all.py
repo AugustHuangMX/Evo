@@ -39,6 +39,7 @@ import test_stats_page
 import test_summary_page
 import test_teammates
 import test_telemetry
+import test_stats_worker
 import test_traditional
 import test_updater
 import test_weapons
@@ -72,6 +73,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_diag}
 
 TESTS["同步升级兼容、旧版往返、DPAPI 和可选截图"] = test_sync_compatibility
+TESTS["统计服务跨设备对局去重、旧上报迁移与事务"] = test_stats_worker
 
 try:  # 云同步（微信小程序）的测试只在开发者电脑上，不上传 GitHub（2026-10-24 用户决定）：有就一起跑
     import test_cloud_sync

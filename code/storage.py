@@ -25,7 +25,7 @@ from pathlib import Path
 from paths import DB_PATH
 
 APP_VERSION = "0.4.0"  # 保留上游更新器使用的纯数字版本；试用构建另行标识，不发布正式版本
-BUILD_LABEL = "WebDAV beta 3"
+BUILD_LABEL = "WebDAV beta 4"
 SCHEMA_VERSION = 10  # 只加同步附加表；已有业务列、ID 和数据保持不变
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序

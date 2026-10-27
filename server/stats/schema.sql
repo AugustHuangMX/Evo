@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS pings (
 CREATE TABLE IF NOT EXISTS matches (
   id TEXT NOT NULL,
   k TEXT NOT NULL,
+  match_id TEXT,  -- 新客户端的跨设备稳定身份；旧客户端保留 NULL，兼容 (id,k)
   day TEXT,  -- 这一局结束的日期（用户电脑上的）
   version TEXT,  -- 记这一局的 Evo 版本号
   mode TEXT,  -- ranked / pubs / other
@@ -53,6 +54,15 @@ CREATE TABLE IF NOT EXISTS matches (
 CREATE INDEX IF NOT EXISTS pings_day ON pings (day);
 CREATE INDEX IF NOT EXISTS matches_day ON matches (day);
 CREATE INDEX IF NOT EXISTS matches_received ON matches (received_at);  -- 汇总前看有没有新数据（只读一行）
+CREATE UNIQUE INDEX IF NOT EXISTS matches_global_id ON matches (match_id) WHERE match_id IS NOT NULL;
+
+-- 已升级设备的旧 (id,k) 别名。旧客户端再上报时也归并到原来的全局记录，不重新制造重复行。
+CREATE TABLE IF NOT EXISTS match_keys (
+  id TEXT NOT NULL,
+  k TEXT NOT NULL,
+  match_id TEXT NOT NULL,
+  PRIMARY KEY (id, k)
+);
 
 -- 全体玩家的汇总（Evo 数据页"全体玩家"下载的就是 body；worker.js 每小时算一次，有新数据或换了一天才重算）
 CREATE TABLE IF NOT EXISTS summary (
