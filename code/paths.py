@@ -39,7 +39,10 @@ def read_pointer(path):
         text = Path(path).read_text(encoding="utf-8-sig").strip()
     except OSError:
         return None
-    return Path(text) if text else None
+    if not text:
+        return None
+    target = Path(text)
+    return target if target.is_absolute() else (Path(path).resolve().parent / target).resolve()
 
 
 def has_data(folder):

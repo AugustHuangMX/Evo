@@ -73,13 +73,15 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 - `lobby_readings`：每次回大厅读到的段位和总分
 - `weapon_holds`：每局 × 每一段拿在手上的武器（从这局第一次拿到武器算起的秒数）
 - `player_names`：玩家名 → 账号（按名字区分账号，改名后合并）
-- 数据库升级：`SCHEMA_VERSION` + `MIGRATIONS`，只加列、加表
+- `sync_tombstones`：WebDAV 同步删掉的局（见 `webdav_sync.py`）；`matches` 和 `lobby_readings` 另有 `sync_uid`（跨电脑编号）和 `sync_updated`（最后修改时间），只在同步时用，不影响原来功能
+- 数据库升级：`SCHEMA_VERSION` + `MIGRATIONS`，只加列、加表；升级前 SQLite 在线备份，schema 10 增加同步逻辑版本/冲突副本/截图引用表，不改业务列。WebDAV 冲突不再比较电脑时钟，凭据用 Windows DPAPI，截图同步可选
 
 RP：游戏里没有单一的"总 RP"，只有"段位 + 段内进度"。**总分以大厅为准**（打完一局通常不回大厅，所以每次回大厅都要抓住，用来校准）。每局 RP 的来源：经验值页明细 → 对局中右上角最后的 RP（只限自己最后被淘汰；先成盒、拿冠军时不是最终值）→ 前后两次大厅总分之差（只缺一局时补上）。
 
 ## 测试
 
 - 运行：`python tests/run_all.py`（约 5 分钟，20 组）。改了模型、记录程序或 `config/` 之后都要跑，新赛季更新后也要跑一遍
+- WebDAV 同步：`python tests/test_webdav_sync.py`（不加载识别引擎，可以单独跑；见 `docs/底座.md`"WebDAV 同步"）
 - 做法：`tests/fake_game.py` 用"假摄像头"把真实截图按顺序喂给记录程序，数据写进临时文件夹（不碰正式数据），时钟是假的。正确答案写在 `tests/` 里的 CSV 和测试文件里
 - 测试只 import 项目代码，项目代码不能 import 测试（否则 PyInstaller 会把测试打进安装包）
 

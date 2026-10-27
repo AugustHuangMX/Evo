@@ -1,5 +1,6 @@
 """本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；会联网的只有"检查更新"（update_check.py，可以关掉）、
-你点了才下载的一键更新（updater.py），和你同意了才发送的匿名统计（telemetry.py）。
+你点了才下载的一键更新（updater.py）、你同意了才发送的匿名统计（telemetry.py），以及你自己在设置页开启的 WebDAV 同步
+（webdav_sync.py，只连你填的服务器）。
 
 运行：python code/panel_app.py                    读正式数据库 data/evo.db
 演示：python code/panel_app.py --db data/demo.db   读伪数据（先运行 python tools/demo_data.py 生成）
@@ -12,6 +13,7 @@ import ctypes
 import functools
 import io
 import json
+import logging
 import math
 import mimetypes
 import os
@@ -39,6 +41,7 @@ import telemetry
 import update_check
 import updater
 import paths
+import webdav_sync
 try:  # 设置页"微信小程序"一栏。小程序的文件只在开发者电脑上，不上传 GitHub、小程序上线前不打进安装包
     import panel_cloud  # （2026-10-24 用户决定）：没有就不显示这一栏
 except ImportError:
@@ -186,7 +189,7 @@ def template_globals():
         # 搬数据文件夹（data_move.py）：正在搬时顶部显示进度；刚搬好时顶部说一次搬到了哪里
         "move_job": data_move.state(),
         "move_result": data_move.take_result(),
-        "version": storage.APP_VERSION,
+        "version": f"{storage.APP_VERSION} · {storage.BUILD_LABEL}",
         # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"；有 2 个以上账号时，右上角切换账号
         "name_question": name_question(),
         "account_view": account_view(),
@@ -1103,6 +1106,9 @@ def db_path():
 @app.route("/settings")
 def settings():
     shot_count, shot_bytes = folder_usage(CAPTURES_DIR / "live")
+    synced_count, synced_bytes = folder_usage(paths.DATA_DIR / "captures" / "webdav")
+    shot_count += synced_count
+    shot_bytes += synced_bytes
     clean = screenshots.cleanable(db())
     size = screen_size()
     return render_template(
@@ -1129,7 +1135,7 @@ def settings():
         clean_count=clean.deleted,
         clean_convert=clean.converted,
         clean_size=size_text(clean.freed),
-        version=storage.APP_VERSION,
+        version=f"{storage.APP_VERSION} · {storage.BUILD_LABEL}",
         source_url=SOURCE_URL,
         feedback_url=FEEDBACK_URL,
         feedback_group=FEEDBACK_GROUP,
@@ -1141,6 +1147,7 @@ def settings():
         accounts=[{**a, "last_text": time_text(a["last"]),
                    "name_stats": [{**one, "last_text": time_text(one["last"])} for one in a["name_stats"]]}
                   for a in account_view()["accounts"]],
+        webdav=webdav_sync.view(),
     )
 
 
@@ -1198,6 +1205,93 @@ def dismiss_data_move():
 def data_move_progress():
     """页面每半秒问一次搬的进度（base.html 里的脚本）；阶段变了，页面就重新打开一次。"""
     return jsonify(data_move.state() or {"phase": "none"})
+
+
+# ---------- WebDAV 同步（webdav_sync.py） ----------
+
+def webdav_page():
+    return redirect(url_for("settings") + "#webdav")
+
+
+@app.post("/settings/webdav")
+def webdav_save():
+    """保存服务器地址、用户名、密码、同步文件夹。密码留空表示不修改已保存的。"""
+    try:
+        cfg = webdav_sync.save_form(request.form)
+    except webdav_sync.SyncError as e:
+        flash(str(e), "error")
+    else:
+        if cfg["auto"]:
+            webdav_sync.ensure_started(logging.getLogger("evo").info)  # 刚打开自动同步：不用重启 Evo
+        flash("WebDAV 设置已保存。可以点\"测试连接\"确认服务器能用，再点\"立即同步\"。", "ok")
+    return webdav_page()
+
+
+@app.post("/settings/webdav/test")
+def webdav_test():
+    """用保存的设置（或者表单里刚填的）测一次读写，不保存。"""
+    try:
+        cfg = webdav_sync.config()
+        if request.form.get("url"):
+            cfg = webdav_sync.config_from_form(request.form)
+        if cfg is None:
+            raise webdav_sync.SyncError("还没有设置 WebDAV 同步")
+        message = webdav_sync.test_connection(cfg)
+    except webdav_sync.SyncError as e:
+        flash(f"连不上：{e}", "error")
+    else:
+        flash(message, "ok")
+    return webdav_page()
+
+
+@app.post("/settings/webdav/sync")
+def webdav_sync_now():
+    """立即同步一次（下载别的电脑的快照、合并、上传本机的）。"""
+    try:
+        result = webdav_sync.sync(conn=db())
+    except webdav_sync.SyncError as e:
+        flash(f"同步没成功：{e}", "error")
+    else:
+        flash(webdav_sync.result_text(result), "ok" if not result.get("bad_files") else "error")
+    return webdav_page()
+
+
+@app.post("/settings/webdav/auto")
+def webdav_auto():
+    """自动同步开关。"""
+    on = request.form.get("on") == "1"
+    try:
+        webdav_sync.set_auto(on)
+    except webdav_sync.SyncError as e:
+        flash(str(e), "error")
+    else:
+        if on:
+            webdav_sync.ensure_started(logging.getLogger("evo").info)  # 不用重启 Evo
+        else:
+            webdav_sync.stop_auto()
+        flash("已开启自动同步：Evo 开着时每 30 分钟同步一次，没有变化时不会重复上传。" if on
+              else "已关闭自动同步，需要时可以在设置页点\"立即同步\"。", "ok")
+    return webdav_page()
+
+
+@app.post("/settings/webdav/clear")
+def webdav_clear():
+    """断开 WebDAV：删掉本机保存的地址、密码和下载缓存，服务器上的数据不动。"""
+    webdav_sync.clear_config()
+    flash("已断开 WebDAV 同步：本机保存的地址和密码已删除，下载的缓存也删了。服务器上的战绩数据没有动。", "ok")
+    return webdav_page()
+
+
+@app.post("/settings/webdav/screenshots")
+def webdav_screenshots():
+    try:
+        on = request.form.get("on") == "1"
+        webdav_sync.set_screenshots(on)
+        flash("已开启截图同步：下次同步会上传和下载战绩截图，请确认截图里没有不想上传的内容。" if on
+              else "已关闭截图同步；服务器上已上传的截图保留。", "ok")
+    except webdav_sync.SyncError as e:
+        flash(str(e), "error")
+    return webdav_page()
 
 
 @app.post("/settings/game-aspect")

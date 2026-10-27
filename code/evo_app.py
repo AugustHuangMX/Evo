@@ -12,6 +12,8 @@
 - 运行记录写在数据文件夹的 logs/evo.log（打包后没有终端窗口，出了问题看这里）
 - 一键更新（updater.py）：用户点了"安装并重新启动"，新版本的 Evo.exe 跑起来后托盘程序自己退出，
   新版本换好程序文件再把 Evo 打开（它带 --apply-update 运行，不弹窗口、不记录）
+- WebDAV 同步（webdav_sync.py）：用户自己在设置页填了服务器并开启自动同步才联网，启动 30 秒后同步一次，
+  之后每 30 分钟一次；记录子程序不联网。日志写"WebDAV 同步：……"
 - 数据文件夹搬家（data_move.py）：设置页"更改位置"，或数据还在 C 盘旧的默认位置时自动搬到程序旁边。
   搬好后打开新的 Evo（--wait-pid 等这个退出），托盘程序自己退出；新的 Evo 启动时删掉旧位置里搬走的东西
 
@@ -656,6 +658,12 @@ def main():
                                  UPDATE_FIRST_DELAY_BACKGROUND if args.background else UPDATE_FIRST_DELAY)
             start_telemetry(log, stop_update_checker,  # 用户同意了才发匿名统计
                             STATS_FIRST_DELAY_BACKGROUND if args.background else STATS_FIRST_DELAY)
+            try:  # 用户在设置页开启了 WebDAV 同步才联网（webdav_sync.py）
+                import webdav_sync
+            except ImportError:
+                pass
+            else:
+                webdav_sync.start(log, stop_update_checker)
             try:  # 绑定了微信小程序才联网，定时上传战绩（cloud_sync.py）。小程序的文件只在开发者电脑上，
                 import cloud_sync  # 不上传 GitHub、小程序上线前不打进安装包（2026-10-24 用户决定）：没有就不同步
             except ImportError:

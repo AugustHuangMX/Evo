@@ -26,7 +26,9 @@ a = Analysis(
     [os.path.join(CODE, "evo_app.py")],
     pathex=[CODE],
     datas=datas,
-    excludes=["tkinter", "matplotlib", "IPython", "pytest", *([] if WITH_CLOUD else CLOUD_MODULES)],  # 用不到的大模块
+    excludes=["tkinter", "matplotlib", "IPython", "pytest", "torch", "paddle", "openvino", "tensorflow",
+              "onnxruntime.transformers", "onnxruntime.tools", "pandas", "scipy",
+              *([] if WITH_CLOUD else CLOUD_MODULES)],  # 只使用 CPU ONNX Runtime，不打包可选的其他 OCR 后端
     # pystray 是 LGPL：以 .py 源文件形式放在 _internal/pystray 里（不压进程序内部），别人可以换成自己改过的版本
     module_collection_mode={"pystray": "py"},
 )

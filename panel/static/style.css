@@ -226,7 +226,7 @@ a { color: inherit; text-decoration: none; }
 .seg a { padding: 8px 16px; color: var(--muted); }
 .seg a + a { border-left: 1px solid var(--border); }
 .seg a.on { background: var(--nav-on-bg); color: var(--nav-on-text); }
-select, input[type="text"] {
+select, input[type="text"], input[type="url"], input[type="password"] {
   font: inherit; color: var(--text); background: var(--select-bg);
   padding: 8px 12px; min-height: 38px; border-radius: 4px; border: 1px solid var(--input-border);
 }
@@ -609,6 +609,18 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .move-actions { justify-content: flex-start; align-items: center; margin-top: 10px; }
 .move-path { font-family: Consolas, monospace; word-break: break-all; }
 .move-banner .move-path { font-size: 13px; }
+
+/* WebDAV 同步（设置页，webdav_sync.py）：几行输入框 + 保存；_有设置时上面先显示状态和按钮 */
+.webdav-intro { margin: 0 0 14px; }
+.webdav-form { border-top: 1px solid var(--row-border); padding-top: 14px; }
+.webdav-grid { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+.webdav-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.webdav-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.webdav-field input { width: 100%; box-sizing: border-box; }
+.webdav-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; }
+.webdav-note { max-width: 720px; margin: 8px 0 0; }
+@media (max-width: 720px) { .webdav-two { grid-template-columns: 1fr; } }
+
 .update-status { margin-top: 10px; font-size: 13px; }
 .update-status .update-progress { max-width: 420px; margin-top: 6px; }
 .source-link { color: var(--p3-bg); }

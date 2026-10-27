@@ -5,20 +5,28 @@
 另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节；一张队友表 teammates（每局最多两行）；
 一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）；一张大厅读数表 lobby_readings（每次回大厅读到的段位，总分以它为准）；一张武器表 weapon_holds（每一段拿在手上的武器）。
 
+WebDAV 同步（webdav_sync.py）用到的列：matches / lobby_readings 的 sync_uid（跨电脑稳定的编号）和
+sync_updated（最后修改时间，UTC）；sync_tombstones 记下删掉的局，同步到别的电脑时也跟着删。
+旧数据库第一次同步时才补编号（ensure_sync_ids），平时这两列不影响原有功能。
+
 查看最近的记录：python code/storage.py
 导出成 CSV：    python code/storage.py --export data/matches.csv
 """
 
 import argparse
 import csv
+import hashlib
+import secrets
 import sqlite3
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 
 from paths import DB_PATH
 
-APP_VERSION = "0.4.0"
-SCHEMA_VERSION = 8  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+APP_VERSION = "0.4.0"  # 保留上游更新器使用的纯数字版本；试用构建另行标识，不发布正式版本
+BUILD_LABEL = "WebDAV beta 3"
+SCHEMA_VERSION = 10  # 只加同步附加表；已有业务列、ID 和数据保持不变
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -102,7 +110,9 @@ LOBBY_TABLE = """CREATE TABLE IF NOT EXISTS lobby_readings (
   rank_tier TEXT,  -- 段位，如 钻石
   rank_division TEXT,  -- 段，如 II（大师、猎杀者没有）
   rank_progress INTEGER,  -- 段内的排位点数，如 868
-  score INTEGER  -- 换算成的总分（见 ranks.score），如 14868
+  score INTEGER,  -- 换算成的总分（见 ranks.score），如 14868
+  sync_uid TEXT,  -- WebDAV 同步：跨电脑稳定的编号（见 webdav_sync.py）
+  sync_updated TEXT  -- WebDAV 同步：最后修改时间（UTC）
 )"""
 
 # 武器：一局里每一段拿在手上的武器（对局中右下角的图标认的，见 weapons.py），一段一行（2026-10-24 用户决定）。
@@ -117,6 +127,40 @@ WEAPON_TABLE = """CREATE TABLE IF NOT EXISTS weapon_holds (
   PRIMARY KEY (match_id, start_s)
 )"""
 
+# WebDAV 同步用的列：不在 COLUMNS 里（CSV 导出、战绩页修改表单都不涉及）。
+# sync_uid 是跨电脑稳定的编号；sync_updated 是最后修改时间（UTC，ISO 格式），同步时用来判断谁后改的。
+MATCH_SYNC_COLUMNS = {"sync_uid": "TEXT", "sync_updated": "TEXT"}
+
+# 删掉的局：同步到别的电脑时，那边也要删掉（只靠"有哪几局"合并的话，删掉的会被另一台电脑加回来）。
+# kind = match / lobby；uid 是删掉的那一行的 sync_uid；deleted_at 是删除时间（UTC）。
+SYNC_TABLE = """CREATE TABLE IF NOT EXISTS sync_tombstones (
+  kind TEXT NOT NULL,
+  uid TEXT NOT NULL,
+  deleted_at TEXT,
+  PRIMARY KEY (kind, uid)
+)"""
+
+SYNC_VERSION_TABLE = """CREATE TABLE IF NOT EXISTS sync_revisions (
+  kind TEXT NOT NULL, uid TEXT NOT NULL, counter INTEGER NOT NULL,
+  device TEXT NOT NULL, fingerprint TEXT NOT NULL,
+  PRIMARY KEY (kind, uid)
+)"""
+SYNC_CONFLICT_TABLE = """CREATE TABLE IF NOT EXISTS sync_conflicts (
+  kind TEXT NOT NULL, uid TEXT NOT NULL, digest TEXT NOT NULL, payload TEXT NOT NULL,
+  PRIMARY KEY (kind, uid, digest)
+)"""
+SYNC_MEDIA_TABLE = """CREATE TABLE IF NOT EXISTS sync_media (
+  uid TEXT PRIMARY KEY, digest TEXT NOT NULL, size INTEGER NOT NULL, ext TEXT NOT NULL
+)"""
+
+# 旧数据库里没有同步编号的局：给一个很早的时间，之后任何电脑上的修改都算更新。
+# 编号由内容算出来（不是随机的），这样把数据文件夹复制到另一台电脑、两边都还没同步时，同一局的编号一样，合并时不会变成两局。
+LEGACY_SYNC_TIME = "2000-01-01T00:00:00.000000Z"
+MATCH_UID_FIELDS = ("started_at", "ended_at", "player_name", "mode", "map", "legend", "placement", "kills",
+                    "assists", "knockdowns", "participation", "damage", "survival_time", "revives", "respawns",
+                    "rp_delta", "rank_tier", "rank_division", "rank_progress")
+LOBBY_UID_FIELDS = ("read_at", "player_name", "rank_tier", "rank_division", "rank_progress", "score")
+
 # 旧数据库怎么升级：版本号 → 升到这个版本要做的事（SQL，或者 ("加列", 表, 列, 类型)）。只加列、加表，已有的数据不动
 # （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）。加列时已经有这一列就跳过
 MIGRATIONS = {
@@ -129,6 +173,14 @@ MIGRATIONS = {
         LOBBY_TABLE],  # 大厅读数
     7: [("加列", "matches", "edited", "TEXT")],  # 2026-10-22 0.3.7：用户改过哪几项（匿名统计里的"识别情况"用）
     8: [WEAPON_TABLE],  # 2026-10-24 武器：每一段拿在手上的武器（数据页"最常用武器"）
+    9: [("加列", "matches", "sync_uid", "TEXT"),  # 2026-10-26 WebDAV 同步：跨电脑稳定的编号
+        ("加列", "matches", "sync_updated", "TEXT"),  # 最后修改时间（UTC）
+        ("加列", "lobby_readings", "sync_uid", "TEXT"),
+        ("加列", "lobby_readings", "sync_updated", "TEXT"),
+        SYNC_TABLE,
+        "CREATE UNIQUE INDEX IF NOT EXISTS matches_sync_uid ON matches(sync_uid)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS lobby_readings_sync_uid ON lobby_readings(sync_uid)"],
+    10: [SYNC_VERSION_TABLE, SYNC_CONFLICT_TABLE, SYNC_MEDIA_TABLE],
 }
 
 
@@ -152,13 +204,26 @@ def _upgrade(conn):
     try:
         version = _version(conn)
         if version == 0:
-            cols = ",\n  ".join(f"{name} {kind}" for name, kind in COLUMNS.items())
+            match_columns = {**COLUMNS, **MATCH_SYNC_COLUMNS}
+            cols = ",\n  ".join(f"{name} {kind}" for name, kind in match_columns.items())
             conn.execute(f"CREATE TABLE IF NOT EXISTS matches (\n  {cols}\n)")
+            for name, kind in match_columns.items():
+                if name != "match_id":
+                    _migrate(conn, ("加列", "matches", name, kind))
             conn.execute(NAME_TABLE)
             conn.execute(MATE_TABLE)
             conn.execute(READING_TABLE)
             conn.execute(LOBBY_TABLE)
             conn.execute(WEAPON_TABLE)
+            _migrate(conn, ("加列", "teammates", "legend", "TEXT"))
+            for name, kind in MATCH_SYNC_COLUMNS.items():
+                _migrate(conn, ("加列", "lobby_readings", name, kind))
+            conn.execute(SYNC_TABLE)
+            conn.execute(SYNC_VERSION_TABLE)
+            conn.execute(SYNC_CONFLICT_TABLE)
+            conn.execute(SYNC_MEDIA_TABLE)
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS matches_sync_uid ON matches(sync_uid)")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS lobby_readings_sync_uid ON lobby_readings(sync_uid)")
         else:
             for v in range(version + 1, SCHEMA_VERSION + 1):
                 for step in MIGRATIONS[v]:
@@ -177,15 +242,115 @@ def connect(db_path=DB_PATH):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row  # 让查询结果可以按列名取值，比如 row["kills"]
-    if _version(conn) < SCHEMA_VERSION:
-        _upgrade(conn)
+    version = _version(conn)
+    try:
+        if version > SCHEMA_VERSION:
+            raise RuntimeError(f"数据库版本 {version} 比此程序支持的 {SCHEMA_VERSION} 更新，请使用新版 Evo；未修改数据库")
+        has_matches = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='matches'").fetchone()
+        if version < SCHEMA_VERSION and has_matches:
+            # 用 SQLite 在线备份而非复制 .db，确保 WAL 中已提交的数据也在备份里。
+            backup = db_path.with_name(f"{db_path.name}.before-v{version}-to-v{SCHEMA_VERSION}-{secrets.token_hex(6)}.bak")
+            target = sqlite3.connect(backup)
+            try:
+                conn.backup(target)
+                if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise RuntimeError("升级前数据库备份校验失败，已停止升级")
+            finally:
+                target.close()
+        if version < SCHEMA_VERSION:
+            _upgrade(conn)
+    except BaseException:
+        conn.close()
+        raise
     return conn
+
+
+# ---------- WebDAV 同步用的编号、修改时间、删除标记（见 webdav_sync.py） ----------
+
+def now_sync_time():
+    """现在的 UTC 审计时间；协议 2 的冲突排序不使用这个时间。"""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _uid_hash(*parts):
+    text = "|".join("" if p is None else str(p) for p in parts)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+def _match_hash(row):
+    data = dict(row)
+    return _uid_hash("match", *(data.get(k) for k in MATCH_UID_FIELDS))
+
+
+def _lobby_hash(row):
+    data = dict(row)
+    return _uid_hash("lobby", *(data.get(k) for k in LOBBY_UID_FIELDS))
+
+
+def _free_uid(conn, table, uid):
+    """这个编号还没被别的行用掉（有 unique 索引）；用掉了就把原编号再算一次。"""
+    base, n = uid, 1
+    while conn.execute(f"SELECT 1 FROM {table} WHERE sync_uid = ?", (uid,)).fetchone():
+        n += 1
+        uid = _uid_hash(base, n)
+    return uid
+
+
+def ensure_sync_ids(conn):
+    """给 0.4.0 及以前的局、大厅读数补上同步编号（第一次同步时调用），返回补了几行。
+    编号由内容算出来（不是随机的），所以把数据文件夹复制到另一台电脑、两边都还没同步时，
+    同一局算出的编号一样，合并时不会变成两局。"""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        added = 0
+        for table, hash_row in (("matches", _match_hash), ("lobby_readings", _lobby_hash)):
+            rows = conn.execute(f"SELECT rowid AS _rowid, * FROM {table} "
+                                "WHERE sync_uid IS NULL OR sync_uid = ''").fetchall()
+            for row in rows:
+                uid = _free_uid(conn, table, hash_row(row))
+                conn.execute(f"UPDATE {table} SET sync_uid = ?, sync_updated = ? WHERE rowid = ?",
+                             (uid, row["sync_updated"] or LEGACY_SYNC_TIME, row["_rowid"]))
+                added += 1
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    return added
+
+
+def touch_sync(conn, match_id, when=None):
+    """这一局刚被改过：记下审计时间（没有编号的旧局先补上编号）。逻辑版本在同步导出时刷新。
+    不单独提交，由调用它的函数和别的改动一起提交。"""
+    row = conn.execute("SELECT * FROM matches WHERE match_id = ?", (match_id,)).fetchone()
+    if row is None:
+        return
+    uid = row["sync_uid"] or _free_uid(conn, "matches", _match_hash(row))
+    conn.execute("UPDATE matches SET sync_uid = ?, sync_updated = ? WHERE match_id = ?",
+                 (uid, when or now_sync_time(), match_id))
+
+
+def record_tombstone(conn, kind, uid, deleted_at=None):
+    """记下删掉的一行（同步时让别的电脑也删掉）。已有的记录保留较晚的时间。"""
+    if not uid:
+        return
+    at = deleted_at or now_sync_time()
+    old = conn.execute("SELECT deleted_at FROM sync_tombstones WHERE kind = ? AND uid = ?", (kind, uid)).fetchone()
+    if old is not None and old[0] and old[0] > at:
+        at = old[0]
+    conn.execute("INSERT OR REPLACE INTO sync_tombstones (kind, uid, deleted_at) VALUES (?, ?, ?)", (kind, uid, at))
+
+
+def tombstones(conn):
+    """删掉的行：[(kind, uid, deleted_at)]。"""
+    return conn.execute("SELECT kind, uid, deleted_at FROM sync_tombstones ORDER BY kind, uid").fetchall()
 
 
 def insert_match(conn, match):
     """存一局。match 是字典，键是列名，没给的列留空。返回这一局的 match_id。"""
     data = {k: v for k, v in match.items() if k in COLUMNS and k != "match_id"}
     data.setdefault("app_version", APP_VERSION)
+    data["sync_uid"] = _free_uid(conn, "matches", secrets.token_hex(16))
+    data["sync_updated"] = now_sync_time()
     names = ", ".join(data)
     # 用 ? 占位、把值单独传进去，而不是直接拼进 SQL 文本：数据里有引号等特殊字符也不会出错
     marks = ", ".join("?" for _ in data)
@@ -265,11 +430,16 @@ def update_match(conn, match_id, fields):
     if not data:
         return
     sets = ", ".join(f"{k} = ?" for k in data)
+    if set(data) != {"evidence_path"}:  # 截图路径只属于本机，不应使旧战绩在远端变成较新的版本
+        touch_sync(conn, match_id)
     conn.execute(f"UPDATE matches SET {sets} WHERE match_id = ?", [*data.values(), match_id])
     conn.commit()
 
 
 def delete_match(conn, match_id):
+    row = conn.execute("SELECT * FROM matches WHERE match_id = ?", (match_id,)).fetchone()
+    if row is not None:
+        record_tombstone(conn, "match", row["sync_uid"] or _free_uid(conn, "matches", _match_hash(row)))
     conn.execute("DELETE FROM matches WHERE match_id = ?", (match_id,))
     conn.execute("DELETE FROM teammates WHERE match_id = ?", (match_id,))
     conn.execute("DELETE FROM readings WHERE match_id = ?", (match_id,))
@@ -284,6 +454,7 @@ def save_teammates(conn, match_id, mates):
         conn.execute(f"INSERT INTO teammates (match_id, slot, {', '.join(MATE_COLUMNS)}) "
                      f"VALUES (?, ?, {', '.join('?' for _ in MATE_COLUMNS)})",
                      [match_id, mate["slot"], *(mate.get(k) for k in MATE_COLUMNS)])
+    touch_sync(conn, match_id)
     conn.commit()
 
 
@@ -300,6 +471,7 @@ def update_teammate(conn, match_id, slot, fields):
         return
     sets = ", ".join(f"{k} = ?" for k in data)
     conn.execute(f"UPDATE teammates SET {sets} WHERE match_id = ? AND slot = ?", [*data.values(), match_id, slot])
+    touch_sync(conn, match_id)
     conn.commit()
 
 
@@ -308,6 +480,7 @@ def save_weapon_holds(conn, match_id, holds):
     conn.execute("DELETE FROM weapon_holds WHERE match_id = ?", (match_id,))
     conn.executemany("INSERT OR REPLACE INTO weapon_holds (match_id, weapon, start_s, end_s) VALUES (?, ?, ?, ?)",
                      [(match_id, weapon, start, end) for weapon, start, end in holds])
+    touch_sync(conn, match_id)
     conn.commit()
 
 
@@ -323,8 +496,11 @@ def all_weapon_holds(conn, names=None):
 def save_lobby(conn, reading):
     """记下一次大厅读数。reading：read_at、player_name、rank_tier、rank_division、rank_progress、score。返回编号。"""
     keys = ("read_at", "player_name", "rank_tier", "rank_division", "rank_progress", "score")
-    cur = conn.execute(f"INSERT INTO lobby_readings ({', '.join(keys)}) VALUES ({', '.join('?' for _ in keys)})",
-                       [reading.get(k) for k in keys])
+    data = {k: reading.get(k) for k in keys}
+    data["sync_uid"] = _free_uid(conn, "lobby_readings", secrets.token_hex(16))
+    data["sync_updated"] = now_sync_time()
+    cur = conn.execute(f"INSERT INTO lobby_readings ({', '.join(data)}) VALUES ({', '.join('?' for _ in data)})",
+                       list(data.values()))
     conn.commit()
     return cur.lastrowid
 
@@ -345,6 +521,7 @@ def save_readings(conn, match_id, source, values, read_at, scores=None):
     conn.executemany("INSERT OR REPLACE INTO readings (match_id, field, source, value, score, read_at) "
                      "VALUES (?, ?, ?, ?, ?, ?)",
                      [(match_id, field, source, value, scores.get(field), read_at) for field, value in values.items()])
+    touch_sync(conn, match_id)
     conn.commit()
 
 
@@ -366,13 +543,23 @@ def backup_db(conn, path):
 
 
 def delete_all_matches(conn):
-    """删除所有对局，返回删了几局。"""
-    n = conn.execute("DELETE FROM matches").rowcount
-    conn.execute("DELETE FROM teammates")
-    conn.execute("DELETE FROM readings")
-    conn.execute("DELETE FROM weapon_holds")
-    conn.execute("DELETE FROM lobby_readings")  # 段位卡片、走势图也要跟着清空
-    conn.commit()
+    """删除所有对局，返回删了几局。删掉的局和那几次大厅读数会在 WebDAV 同步时同步到别的电脑。"""
+    ensure_sync_ids(conn)
+    conn.execute("BEGIN IMMEDIATE")  # 先锁写入：不能把刚新记录的局删掉却漏记墓碑
+    try:
+        for row in conn.execute("SELECT sync_uid FROM matches WHERE sync_uid IS NOT NULL"):
+            record_tombstone(conn, "match", row[0])
+        for row in conn.execute("SELECT sync_uid FROM lobby_readings WHERE sync_uid IS NOT NULL"):
+            record_tombstone(conn, "lobby", row[0])
+        n = conn.execute("DELETE FROM matches").rowcount
+        conn.execute("DELETE FROM teammates")
+        conn.execute("DELETE FROM readings")
+        conn.execute("DELETE FROM weapon_holds")
+        conn.execute("DELETE FROM lobby_readings")  # 段位卡片、走势图也要跟着清空
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
     return n
 
 
