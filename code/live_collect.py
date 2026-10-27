@@ -19,6 +19,7 @@
 - 各来源读到的数都记进 readings 表，每一项最后用哪个来源的数见 post_match.py（总结页、经验值页读得清楚时以它们为准，
   没有时用对局中的）
 - 提示音（见 SoundCues、sounds.py；设置页能关）：小队打完了响一声提醒去总结页，总结页读完了响一声，进经验值页响一声
+- 读结算画面、大厅时不让 Windows 降频（见 FullSpeed）：笔记本上识别可能慢 10 倍以上，玩家等不到提示音就离开了
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
@@ -56,7 +57,7 @@ from ocr import SMALL_CROP_PARAMS, LazyEngine, load_config
 from paths import CAPTURES_DIR
 from player_name import PlayerNameReader
 from post_match import SOURCE_CHAMPION, SOURCE_SUMMARY, PostMatch
-from process_info import memory_mb, set_low_priority
+from process_info import memory_mb, set_full_speed, set_low_priority
 from screens import GameScreens
 from summary_page import KEY_FIELDS, is_champion, read_summary, show, summary_readings, summary_to_match
 from teammates import describe, read_teammates
@@ -229,6 +230,44 @@ class SoundCues:
             self.log(f"[{now:%H:%M:%S}] 提示音：{sounds.SOUNDS[name]}")
 
 
+class FullSpeed:
+    """读结算画面、大厅时不让 Windows 降频（2026-10-27 用户决定，见 process_info.set_full_speed）。
+    两位笔记本玩家的识别比台式机慢 10–15 倍（总结页读完要十几秒，提示音很晚），怀疑是 Windows 给没有窗口的记录程序
+    降了频。优先级、线程数不变，同样的活干得快；这时游戏在菜单里，不影响帧数。
+    进入下面这些画面时打开；离开后 HOLD_SECONDS 秒（离开经验值页时还要读最后一帧）、或者对局中认出自己的传奇时交还。"""
+
+    SCREENS = ("eliminated", "champion", "squad_out", "summary", "xp", "lobby")
+    HOLD_SECONDS = 10
+
+    def __init__(self, log, apply=None):
+        self.log = log
+        self.apply = apply or set_full_speed
+        self.on = False
+        self.until = None  # 离开这些画面后，到这个时刻交还
+        self.announced = False
+
+    def update(self, screen, in_match):
+        """每截一帧调用一次（在读这一帧之前）。screen：这一帧是哪个画面；in_match：对局中认出过自己的传奇。"""
+        if screen in self.SCREENS:
+            self.until = time.monotonic() + self.HOLD_SECONDS
+            if not self.on:
+                self._set(True)
+        elif self.on and (in_match or time.monotonic() >= self.until):
+            self._set(False)
+
+    def stop(self):
+        if self.on:
+            self._set(False)
+
+    def _set(self, on):
+        ok = self.apply(on)
+        self.on = on
+        if not self.announced:
+            self.announced = True
+            self.log("读结算画面、大厅时不让 Windows 降频（对局中照旧由 Windows 决定）" if ok
+                     else "这台电脑的 Windows 不能设置省电限速，照常运行")
+
+
 class ScreenWatcher:
     """经验值页、开局画面、大厅、淘汰画面、冠军横幅（见 config/screens.json）。
     离开经验值页时识别最后一帧（数字有动画，最后一帧才是最终结果）；进入开局画面或大厅表示上一局彻底结束；
@@ -379,6 +418,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     hud = Hud(engine, lang=lang)
     match_interval = hud.cfg["match_interval"] if match_interval is None else match_interval
     cues = SoundCues(log)
+    speed = FullSpeed(log)
     summary = SummaryWatcher(engine, load_config("summary.json", lang), conn, post, run_dir, log, summary_timeout,
                              PlayerNameReader(engine, name_cfg), on_read=cues.summary_read)
     other = ScreenWatcher(engine, detector.cfg, load_config("xp.json", lang), load_config("match_start.json", lang),
@@ -445,6 +485,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                     lang = detector.lang
                     use_language(lang)
                 on_summary = screen == "summary"
+                speed.update(screen, in_match.active)  # 读结算画面、大厅时不让 Windows 降频
                 cues.update(screen, now)  # 提示音：小队打完了、进经验值页（总结页读完了由 summary 告诉它）
                 in_match.update(screen, frame, now)  # 先交对局中的数据：结算画面上要用
                 summary.update(on_summary, frame, now)
@@ -478,13 +519,15 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         other.leave()
         post.finish()
         aspect.reset()
+        speed.stop()
         camera.release()
         conn.close()
         left = sum(1 for p in run_dir.iterdir() if p.suffix.lower() in (".png", ".jpg"))
         if not any(run_dir.iterdir()):
             run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
         saved = total()
-        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
+        per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
+        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次{per_call}，"
             f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
             f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
             f"玩家名 {post.player_name or '没认出'}；大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
@@ -493,7 +536,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         log(f"截图：留下 {left} 张（{kinds}）"
             + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
                f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
-        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues  # 释放识别模型和截屏，交还内存
+        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved

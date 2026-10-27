@@ -6,17 +6,22 @@
 截图不在仓库里，见 fake_game.py。
 托盘程序（evo_app.py，面板也在这个程序里）一直开着，只有记录子进程才该加载 OpenCV、识别引擎、截屏组件：
 另开一个 Python 只导入 evo_app 和 panel_app，检查这些库没被带进来（不用截图）。
+读结算画面、大厅时不让 Windows 降频（live_collect.FullSpeed）：直接喂画面检查什么时候打开、交还，本机真的设置一次；
+上面那次记录里，到了总结页才打开、回到游戏画面后交还，日志里写了识别平均每次几秒。
 
 运行：python tests/test_light.py
 """
 
+import re
 import subprocess
 import sys
 from unittest import mock
 
 from fake_game import CODE, FakeCamera, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
 
+import live_collect
 import ocr
+import process_info
 
 NIGHT = "live/20261016_211452/"
 HEAVY = ("cv2", "numpy", "rapidocr", "onnxruntime", "dxcam")  # 只该在记录子进程里加载的库
@@ -33,8 +38,55 @@ def main():
     print("轻量：打游戏时不跑识别，模型按需加载")
     heavy = tray_imports()
     ok = report({f"托盘程序和面板不加载识别用的库（加载了：{'、'.join(heavy) or '无'}）": not heavy})
+    ok = speed_checks() and ok
     shots = recording_checks()
     return ok if shots is None else ok and shots
+
+
+class StepClock:
+    """FullSpeed 用的假时钟：只有 monotonic()，手动往前拨。"""
+
+    def __init__(self):
+        self.now = 1000.0
+
+    def monotonic(self):
+        return self.now
+
+
+def speed_run(steps, works=True):
+    """直接喂画面给 FullSpeed：steps 里是 (画面, 对局中认出过自己的传奇, 这一帧之后过了几秒)。
+    返回 (每次设置时是第几步、打开还是交还, 日志)。"""
+    calls, log, clock = [], [], StepClock()
+    with mock.patch.object(live_collect, "time", clock):
+        speed = live_collect.FullSpeed(log.append, apply=lambda on: calls.append((step, on)) or works)
+        for step, (screen, in_match, seconds) in enumerate(steps):
+            speed.update(screen, in_match)
+            clock.now += seconds
+        step = "结束"
+        speed.stop()
+    return calls, log
+
+
+def speed_checks():
+    """读结算画面、大厅时不让 Windows 降频（live_collect.FullSpeed、process_info.set_full_speed）。"""
+    end = [(None, True, 0.3), ("eliminated", True, 1), ("summary", False, 1), ("summary", False, 1), ("xp", False, 1),
+           (None, False, 5), (None, False, 6), (None, False, 1)]  # 离开经验值页 5 秒还开着，11 秒交还
+    calls, log = speed_run(end)
+    lobby, _ = speed_run([("lobby", False, 1)] * 3 + [("match_start", False, 5), (None, True, 0.3), (None, True, 0.3)])
+    held, _ = speed_run([("summary", False, 1), (None, False, 1)])  # 停止记录时还开着
+    failed, failed_log = speed_run([("summary", False, 1), (None, False, 20), (None, False, 1), ("lobby", False, 1)],
+                                   works=False)
+    real_on, real_off = process_info.set_full_speed(True), process_info.set_full_speed(False)
+    return report({
+        "对局中不动；进淘汰画面就打开，总结页、经验值页一直开着，离开 10 秒后交还（只设置了两次）":
+            calls == [(1, True), (7, False)],
+        "日志只写一行（第一次打开时）": log == ["读结算画面、大厅时不让 Windows 降频（对局中照旧由 Windows 决定）"],
+        "大厅打开，开局画面还开着，对局中认出自己的传奇就马上交还": lobby == [(0, True), (4, False)],
+        "停止记录时还开着：交还": held == [(0, True), ("结束", False)],
+        "Windows 不支持时照常运行，日志说一次":
+            len(failed) == 4 and failed_log == ["这台电脑的 Windows 不能设置省电限速，照常运行"],
+        "本机真的能设置（打开、交还都成功）": real_on and real_off,
+    })
 
 
 def recording_checks():
@@ -58,8 +110,15 @@ def recording_checks():
 
         return run
 
+    speed = []  # 每次设置"不降频"时屏幕上是哪种画面、打开还是交还
+
+    def record_speed(on):
+        speed.append((FakeCamera.showing, on))
+        return True
+
     frames = ["游戏"] * 5 + ["总结页"] * 3 + ["游戏"] * 200
-    with mock.patch.object(ocr, "create_engine", counting_engine):
+    with mock.patch.object(ocr, "create_engine", counting_engine), \
+            mock.patch.object(live_collect, "set_full_speed", record_speed):
         rows, _, log = run_collect(frames, images.get)
     loads = [line for line in log if line.startswith("加载识别模型")]
     releases = [line for line in log if line.startswith("识别模型闲置")]
@@ -71,6 +130,8 @@ def recording_checks():
         "识别模型只加载了一次，而且是到了总结页才加载": len(loads) == 1 and ran_on[:1] == ["总结页"],
         "离开总结页、闲置 2 分钟后释放了模型，之后没有再加载": len(releases) == 1 and log.index(releases[0]) > log.index(loads[0]),
         "结束时在日志里报告了这次的截屏、识别次数和内存": len(stats) == 1,
+        "识别次数后面写了平均每次几秒": len(stats) == 1 and re.search(r"识别 \d+ 次（平均每次 \d+\.\d\d 秒）", stats[0]),
+        f"到了总结页才不让 Windows 降频，回到游戏画面后交还（{speed}）": speed == [("总结页", True), ("游戏", False)],
     })
 
 
