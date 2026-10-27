@@ -13,7 +13,7 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 | 改页面 | [docs/面板.md](docs/面板.md) |
 | 打包、安装、发布、改托盘或窗口 | [docs/底座.md](docs/底座.md) |
 | 做小程序、云同步（`miniprogram/`、Evo 上传战绩） | [docs/小程序.md](docs/小程序.md) |
-| 做「派圈助手」（和合作者一起做的小程序，集成 Evo；2026-10-26 起） | 仓库在 **`E:\paiquan-miniprogram`**（私有共享仓库 `AugustHuangMX/paiquan-miniprogram`，用户是拥有者）：先读那里的 `AGENTS.md`、`AI-CONTEXT.md`、`PRODUCT.md`（合作者的规矩：中英双语、深浅主题、一屏出结论、不编数据、600 条测试）。在 Evo 这个窗口里直接改那个文件夹，不另开窗口。在开发者工具里看效果、截图：照 `miniprogram/paiquan-preview/README.md` 做（只在本机；用我们的 AppID 和测试云环境复制一份，不碰他的项目和云环境） |
+| 做「派圈助手」（和合作者一起做的小程序，集成 Evo；2026-10-26 起） | 仓库在 **`E:\paiquan-miniprogram`**（私有共享仓库 `AugustHuangMX/paiquan-miniprogram`，用户是拥有者）：先读那里的 `AGENTS.md`、`AI-CONTEXT.md`、`PRODUCT.md`（合作者的规矩：中英双语、深浅主题、一屏出结论、不编数据、600 条测试）。合作者给了用户很大的自由度：**首页（地图页）和「我的」页由用户全权负责，结构也可以改**（2026-10-27），怎么改问用户、不用等合作者；他 `AGENTS.md` 的 8 条红线照守。在 Evo 这个窗口里直接改那个文件夹，不另开窗口。在开发者工具里看效果、截图：照 `miniprogram/paiquan-preview/README.md` 做（只在本机；用我们的 AppID 和测试云环境复制一份，不碰他的项目和云环境） |
 | 给新版本做宣传图（新功能配图） | [release/做图流程.md](release/做图流程.md)：每次都照它做（`python tools/feature_cards.py`），风格不要自己改 |
 
 - 做完一项：从 todo.md 删掉，在 progress.md 记一笔；不要把待办写进本文件
@@ -47,7 +47,7 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 3. **开源**：AGPL-3.0 许可证（2026-10-24 用户决定，之前是 MIT：防止加速器等公司把代码放进不公开源码的产品，不管放在客户端还是服务器上；代码和提示音都用它，传奇头像等素材另算）。可以借鉴其他项目（如 MaaAssistantArknights）的**设计思路**，但不复制别人的代码：即使许可证允许（MAA 也是 AGPL-3.0），Evo 的代码也要全部是自己的，以后才能单独授权给别人。
 4. **数据可信优先**：识别置信度低时，不悄悄写入错误数据，而是保留截图并标记"待确认"，由用户在面板中修正；读不出来的项留空，不当作 0。
 5. **配置驱动**：识别规则（区域、模板、阈值）写在配置文件里（`config/`），而不是写死在代码中，以便适应赛季更新和社区贡献。
-6. 在调整网页（面板、官网）的时候，永远使用 ui-ux-pro-max 这个 skill。
+6. 在调整前端界面的时候（官网、客户端、小程序），永远使用 ui-ux-pro-max 这个 skill。
 
 ## 技术栈
 
