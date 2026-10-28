@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS pings_day ON pings (day);
 CREATE INDEX IF NOT EXISTS matches_day ON matches (day);
 CREATE INDEX IF NOT EXISTS matches_received ON matches (received_at);  -- 汇总前看有没有新数据（只读一行）
 
--- 全体玩家的汇总（Evo 数据页"全体玩家"下载的就是 body；worker.js 每小时算一次，有新数据或换了一天才重算）
+-- 全体玩家的汇总（Evo 数据页"全体玩家"下载的就是 body；worker.js 每 6 小时算一次，有新数据或换了一天才重算）
 CREATE TABLE IF NOT EXISTS summary (
   name TEXT PRIMARY KEY,  -- 汇总的版本（v1）；格式改了换个名字，老版本的 Evo 照样读老的
   body TEXT NOT NULL,  -- JSON，格式见 worker.js 的 makeSummary

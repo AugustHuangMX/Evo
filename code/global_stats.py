@@ -2,7 +2,7 @@
 
 - 只有开了匿名统计的人才能看（telemetry.consent() 为 True）。没开时一个请求都不发，页面上是锁住的样子，
   可以在那里直接开启。这个限制只在 Evo 里：汇总本身在服务器上是公开的（Evo 开源，拦不住会改代码的人；以后官网也能用同一份）
-- 汇总由统计服务器每小时算一次（server/stats/worker.js 的 makeSummary，格式和每一项怎么算见那里），Evo 只下载结果：
+- 汇总由统计服务器每 6 小时算一次（server/stats/worker.js 的 makeSummary，格式和每一项怎么算见那里），Evo 只下载结果：
   GET https://stats.evotracker.cn/v1/summary，几十 KB，不带匿名编号。打开"全体玩家"时下载，存在数据文件夹
   （global_stats.json），FRESH_HOURS 小时内不重复下载；右上角的刷新按钮马上重新下载。
   只有 Evo 窗口（面板进程）下载，托盘和记录程序不下载
