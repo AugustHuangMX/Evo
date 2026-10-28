@@ -29,7 +29,7 @@ const NUMBERS = { placement: [1, 99], kills: [0, 999], assists: [0, 999], knockd
                   rp_delta: [-9999, 9999] };
 const TEXTS = ["mode", "map", "legend", "tier", "rp_source"];
 const MATE_NUMBERS = ["kills", "assists", "knockdowns", "damage"];  // 队友每局的数字（mate_stats，0.3.8 之后的 Evo 才发）
-// 武器（weapons，0.4.1 之后的 Evo 才发）：{武器编号: 秒数}，自己每把武器拿在手上几秒（只算这一局第一次拿到武器
+// 武器（weapons，0.4.2 起的 Evo 才发）：{武器编号: 秒数}，自己每把武器拿在手上几秒（只算这一局第一次拿到武器
 // 60 秒以后的）；没记下武器是 null。编号见 Evo 的 config/weapons.json，新赛季会加，所以只查格式不查名单
 const WEAPON = /^[a-z0-9_]{1,32}$/;
 const MAX_WEAPONS = 40;
