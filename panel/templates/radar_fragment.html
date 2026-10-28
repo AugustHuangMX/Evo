@@ -1,0 +1,2 @@
+{# 只有六维图那张卡片（GET /radar）：页面在后台下载好全体玩家的数据后，用它换掉旧的卡片（_radar.html 的 radar_script） #}
+{% from "_radar.html" import radar_card with context %}{{ radar_card(radar, size, range_label) }}

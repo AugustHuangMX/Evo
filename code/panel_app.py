@@ -31,6 +31,7 @@ import data_move
 import game_aspect
 import game_lang
 import global_stats
+import radar
 import ranks
 import screenshots
 import sounds
@@ -806,6 +807,28 @@ def share_options(kind, **args):
     return {"kind": kind, "url": url_for(f"share_{kind}", **args), "w": w, "h": h, "file": f"{name}_{stamp}.png"}
 
 
+# ---------- 六维图（radar.py，2026-10-28 用户决定；总览页、数据页"我的"）----------
+
+def radar_card(rows, in_range, lobby):
+    """六维图卡片：和同分段的玩家比，分段按最近一次读到的段位。"全部账号"时不画（几个账号的段位混在一起）。"""
+    if account_view()["all"]:
+        return {"state": "accounts"}
+    rank = latest_rank(rows, lobby)
+    return radar.card(in_range, rank[0] if rank else None)
+
+
+@app.route("/radar")
+def radar_fragment():
+    """只有六维图那张卡片：页面在后台下载好全体玩家的数据后，用它换掉旧的卡片。size：small（总览页）/ big（数据页）。"""
+    size = "small" if request.args.get("size") == "small" else "big"
+    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    names = account_view()["names"]
+    rows = storage.all_matches(db(), names)
+    in_range = rows[-30:] if range_key == "30" else rows
+    return render_template("radar_fragment.html", size=size, range_label=RANGES[range_key],
+                           radar=radar_card(rows, in_range, storage.lobby_readings(db(), names)))
+
+
 # ---------- 页面 ----------
 
 @app.route("/")
@@ -839,6 +862,7 @@ def overview():
         stats=stat_cards(in_range),
         recent=[view(r) for r in reversed(rows[-5:])],
         legends=legend_bars(in_range),
+        radar=radar_card(rows, in_range, lobby),
         review_count=storage.count_review(db(), names),
         total=len(rows),
         share=share,
@@ -932,6 +956,8 @@ def stats(part=None):
         weapons=weapons,
         weapon_all=weapon_all,
         buckets=PLACE_BUCKETS,
+        # 六维图只在卡片那页（完整的表格页没有）
+        radar=None if part else radar_card(rows, in_range, storage.lobby_readings(db(), names)),
         review_count=storage.count_review(db(), names),
     )
 

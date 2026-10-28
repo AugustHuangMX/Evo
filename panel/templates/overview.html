@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_legend.html" import legend_icon %}
 {% from "_share.html" import share_button, share_dialog with context %}
+{% from "_radar.html" import radar_card, radar_script with context %}
 {% block title %}总览 · Evo{% endblock %}
 
 {% block content %}
@@ -96,7 +97,7 @@
   {% endfor %}
 </div>
 
-<div class="ov-bottom {{ 'no-legends' if not legends }}">
+<div class="ov-bottom">
   <section class="card list-card" aria-label="最近对局">
     <div class="card-head">
       <h2>最近对局</h2>
@@ -120,6 +121,10 @@
     </ul>
   </section>
 
+  {# 右边一列：六维图（小图，"详细"到数据页）、传奇表现 #}
+  <div class="ov-side">
+  {{ radar_card(radar, 'small', ranges[range_key]) }}
+
   {% if legends %}
   <section class="card legend-card" aria-label="传奇表现">
     <div class="card-head"><h2>传奇表现 · {{ ranges[range_key] }}</h2></div>
@@ -141,9 +146,11 @@
     </div>
   </section>
   {% endif %}
+  </div>
 </div>
 
 {% if share %}{{ share_dialog(share) }}{% endif %}
+{{ radar_script() }}
 {% endif %}
 
 {# 关注我：开发者的 B 站、小黑盒主页。target="_blank" 交给系统浏览器打开（和设置页"意见反馈"一样），Evo 自己不联网。

@@ -1,0 +1,115 @@
+{# 六维图（radar.py，2026-10-28 用户决定）：总览页（small，小图 + "详细"）、数据页"我的"（big，图 + 旁边的数字表）。
+   和同分段的 Evo 玩家比：外圈 = 前 5% 的玩家的水平，虚线 = 平均。只有开了匿名统计能看，没开时锁住（同"全体玩家"）。
+   还没下载过全体玩家的数据、或者存着的旧了：页面打开后在后台下载，好了只换掉这张卡片（GET /radar），不重新打开页面 #}
+
+{% macro radar_card(radar, size, range_label) -%}
+<section class="card radar-card radar-{{ size }}" id="radar-card" aria-labelledby="h-radar"
+         data-fetch="{{ 1 if radar.fetch else 0 }}" data-src="{{ url_for('radar_fragment', size=size, range=request.args.get('range')) }}">
+  <div class="card-head">
+    <h2 id="h-radar">六维图{% if size == 'big' %} · {{ range_label }}{% endif %}</h2>
+    {% if radar.state == 'ready' and size == 'big' %}
+    <span class="radar-meta">和{{ radar.compare }}的 <span class="num">{{ radar.players }}</span> 名玩家比</span>
+    {% elif size == 'small' and radar.state != 'locked' %}
+    <a class="muted small" href="{{ url_for('stats', range=request.args.get('range')) }}">详细 →</a>
+    {% endif %}
+  </div>
+
+  {% if radar.state == 'accounts' %}
+  <div class="chart-empty">六维图按账号分开。在右上角选一个账号查看。</div>
+
+  {% elif radar.state == 'locked' %}
+  {# 没开匿名统计：后面是看不清的示意（几圈灰色的六边形，不是真数据），上面一张小卡片；不下载任何数据 #}
+  <div class="radar-locked">
+    <div class="radar-ghost" aria-hidden="true" inert>
+      <svg viewBox="0 0 240 220"><polygon points="120,10 206.6,60 206.6,160 120,210 33.4,160 33.4,60"/><polygon points="120,60 163.3,85 163.3,135 120,160 76.7,135 76.7,85"/><polygon class="ghost-shape" points="120,35 185,72 165,148 120,185 60,140 80,82"/></svg>
+    </div>
+    <div class="card radar-lock-panel">
+      <span class="locked-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 15v2.5"/></svg>
+      </span>
+      <p class="radar-lock-title">开启匿名统计后可以查看六维图</p>
+      {% if size == 'big' %}<p class="locked-text">和同段位的 Evo 玩家比一比伤害、击杀、助攻、击杀参与、英雄池和生存。数据来自开启了匿名统计的玩家。</p>{% endif %}
+      <form method="post" action="{{ url_for('telemetry_setting') }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="on" value="1">
+        <input type="hidden" name="next" value="{{ request.full_path if request.endpoint != 'radar_fragment' else '' }}">
+        <button type="submit" class="btn btn-primary">开启匿名统计</button>
+      </form>
+      <p class="locked-foot">以后随时可以在<a class="text-link" href="{{ url_for('settings') }}#stats">设置页</a>关闭</p>
+    </div>
+  </div>
+
+  {% elif radar.state == 'loading' %}
+  <div class="chart-empty radar-status" role="status" aria-live="polite">正在下载全体玩家的数据…</div>
+
+  {% else %}
+  <div class="radar-body">
+    <figure class="radar-figure">
+      <div class="radar-plot">
+        <svg viewBox="0 0 {{ radar.w }} {{ radar.h }}" role="img" aria-label="六维图：你和{{ radar.compare }}玩家的平均、前 5% 比（具体数字见表格）">
+          {% for ring in radar.rings %}<polygon class="radar-ring{{ ' outer' if loop.last }}" points="{{ ring }}"></polygon>{% endfor %}
+          {% for x, y in radar.spokes %}<line class="radar-spoke" x1="{{ radar.cx }}" y1="{{ radar.cy }}" x2="{{ '%.1f' % x }}" y2="{{ '%.1f' % y }}"></line>{% endfor %}
+          {% if radar.avg_points %}<polygon class="radar-avg" points="{{ radar.avg_points }}"></polygon>{% endif %}
+          {% if radar.you_points %}<polygon class="radar-you" points="{{ radar.you_points }}"></polygon>{% endif %}
+          {% for x, y in radar.you_dots %}<circle class="radar-dot" cx="{{ '%.1f' % x }}" cy="{{ '%.1f' % y }}" r="3.5"></circle>{% endfor %}
+        </svg>
+        {% for a in radar.axes %}
+        <span class="radar-label side-{{ a.side }}" style="left: {{ a.left }}%; top: {{ a.top_pct }}%" title="{{ a.full_label }}：你 {{ a.you }} · 平均 {{ a.avg }} · 前 5% {{ a.top }}" aria-hidden="true">
+          <span class="radar-name">{{ a.label }}</span><span class="radar-value num">{{ a.you }}</span>
+        </span>
+        {% endfor %}
+      </div>
+      <figcaption class="radar-key">
+        <span><i class="key-you"></i>你 · <span class="num">{{ radar.games }}</span> 局{{ '匹配' if radar.mode == 'pubs' else '排位' }}</span>
+        <span><i class="key-avg"></i>{{ radar.compare }}平均</span>
+        <span><i class="key-top"></i>外圈 = 前 5%</span>
+      </figcaption>
+      {% if size == 'small' %}<p class="radar-foot">和{{ radar.compare }}的 <span class="num">{{ radar.players }}</span> 名玩家比</p>{% endif %}
+      {% if radar.partial %}<p class="radar-foot">全体玩家的数据还不全，有的项目还没法比，过一会儿再来看</p>
+      {% elif not radar.you_points %}<p class="radar-foot">读到的数据太少，还画不出你的形状</p>{% endif %}
+    </figure>
+    <table class="stats-table radar-table{{ ' sr-only' if size == 'small' }}">
+      <caption class="sr-only">六维图的数字：你、{{ radar.compare }}玩家的平均、前 5% 的玩家</caption>
+      <thead>
+        <tr><th scope="col">项目</th><th scope="col" class="right">你</th><th scope="col" class="right">平均</th><th scope="col" class="right">前 5%</th></tr>
+      </thead>
+      <tbody>
+        {% for a in radar.axes %}
+        <tr>
+          <th scope="row">{{ a.full_label }}</th>
+          <td class="right num radar-you-cell">{{ a.you }}</td>
+          <td class="right num muted">{{ a.avg }}</td>
+          <td class="right num muted">{{ a.top }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{%- endmacro %}
+
+{# 后台下载全体玩家的数据（POST /stats/everyone/refresh），好了只换掉这张卡片；没下载到时，正在下载的那句换成原因 #}
+{% macro radar_script() -%}
+<script>
+(() => {
+  const card = document.getElementById("radar-card");
+  if (!card || card.dataset.fetch !== "1") return;
+  const body = new FormData();
+  body.append("token", "{{ token }}");
+  const status = card.querySelector(".radar-status");
+  let reason = "Evo 的面板没有回应";
+  fetch("{{ url_for('refresh_everyone') }}", { method: "POST", body })
+    .then((reply) => reply.json())
+    .then(async (result) => {
+      if (!result.ok) { reason = result.error; throw new Error(reason); }
+      const html = await (await fetch(card.dataset.src)).text();
+      const fresh = new DOMParser().parseFromString(html, "text/html").getElementById("radar-card");
+      if (fresh) card.replaceWith(fresh);
+    })
+    .catch(() => {
+      if (status) status.textContent = `没下载到全体玩家的数据：${reason}。下次打开时再试`;
+    });
+})();
+</script>
+{%- endmacro %}

@@ -185,19 +185,23 @@ async function remove(body, env) {
 // - combos：全队三个传奇（不管谁用的哪个）每种一行，局数最多的 TOP_COMBOS 种：legends（按名字排好）、
 //   n 局数、rate 选取率（n ÷ 全队传奇都认出的局数）、place 场均名次。同一局两个一样的传奇（认错了）不算
 // - people：每个编号（自己的局，打了 MIN_PLAYER_GAMES 局以上）的场均名次 place、胜率 win、场均击杀 kills、
-//   场均伤害 damage，各自从小到大排好；人多时只留 MAX_POINTS 个等间隔的点。Evo 拿自己的数字和它比，算"超过 X% 的玩家"
+//   场均伤害 damage，各自从小到大排好；人多时只留 MAX_POINTS 个等间隔的点。Evo 拿自己的数字和它比，算"超过 X% 的玩家"。
+//   2026-10-28 六维图（Evo 总览页、数据页）加了：场均助攻 assists、前五率 top5、击杀参与率 kp（(击杀 + 助攻) ÷ 全队击杀，
+//   全队击杀 = 自己的 + 两名队友的，只算三个人的击杀都读到了的局；Evo 那边用老板分算，道理一样：队友的击杀不是自己的
+//   助攻就是老板分）、英雄池 pool（局数占 POOL_SHARE 以上的传奇有几个，待确认的局也算）。Evo 用它们的平均和前 5% 画图
 // - weapons（2026-10-28）：每把武器一行，按拿在手上的时间从多到少。只有自己的（队友的武器认不出），只算每局第一次
 //   拿到武器 60 秒以后的（Evo 那边算好发来）：key 武器编号、n 拿过它的局数、share 占所有武器拿在手上时间的多少、
 //   rate 在多少比例的对局里拿过（n ÷ weapon_games）。weapon_games：记下了武器的局数（0.4.1 以前的 Evo 不发武器）。
 //   待确认的局也算（和传奇的出场次数一样，武器和名次、RP 读得准不准无关）
 // tiers（只分范围）：每个编号最近一局排位的段位，各段位多少人
 // "近 7 天"按用户电脑上的日期，从 UTC 的今天往前数 6 天算起（recent_from）
-// 读数据库：每算一次大约把 matches 表读 8 遍（D1 免费额度每天读 500 万行；局数上了几万、每小时都有新数据时要改成几小时算一次）
+// 读数据库：每算一次大约把 matches 表读 9 遍（D1 免费额度每天读 500 万行；局数上了几万、每小时都有新数据时要改成几小时算一次）
 const SUMMARY_NAME = "v1";
 const RECENT_DAYS = 7;
 const TOP_COMBOS = 30;
 const MIN_PLAYER_GAMES = 3;
 const MAX_POINTS = 201;
+const POOL_SHARE = 0.05;  // 英雄池：局数占这么多以上的传奇才算（和 Evo 的 radar.POOL_SHARE 一样）
 const TIER_ORDER = ["菜鸟", "青铜", "白银", "黄金", "白金", "钻石", "大师", "Apex 猎杀者"];
 const MODE = "CASE WHEN mode = 'ranked' THEN 'ranked' ELSE 'pubs' END";
 const TIER_GROUP = `CASE WHEN tier IN ('菜鸟', '青铜', '白银', '黄金', '白金') THEN 'low' WHEN tier = '钻石' THEN 'diamond'
@@ -205,6 +209,8 @@ const TIER_GROUP = `CASE WHEN tier IN ('菜鸟', '青铜', '白银', '黄金', '
 // 表现：不算待确认的局
 const PERFORMANCE = `SUM(review = 0 AND placement IS NOT NULL) AS np, SUM(CASE WHEN review = 0 THEN placement END) AS sp,
   SUM(review = 0 AND placement = 1) AS wins`;
+// 击杀参与率算哪些局：三个人的击杀和自己的助攻都读到了（队友的击杀 0.3.8 之后的 Evo 才发）
+const KP_GAME = "review = 0 AND kills IS NOT NULL AND assists IS NOT NULL AND mate1_kills IS NOT NULL AND mate2_kills IS NOT NULL";
 
 function round(value, digits) {
   const f = 10 ** digits;
@@ -231,6 +237,8 @@ function emptySlices() {
   return out;
 }
 
+const enough = (n) => n >= MIN_PLAYER_GAMES;  // 每名玩家的场均：打了这么多局以上才算
+
 function addTo(target, row, fields) {
   for (const f of fields) target[f] = (target[f] ?? 0) + (row[f] ?? 0);
 }
@@ -244,7 +252,7 @@ function points(values, digits) {
 async function makeSummary(env, now) {
   const today = Date.parse(now.toISOString().slice(0, 10) + "T00:00:00Z");
   const recentFrom = new Date(today - (RECENT_DAYS - 1) * 86400000).toISOString().slice(0, 10);
-  const [legendRows, comboRows, peopleRows, tierRows, weaponRows, weaponGameRows] = (await env.DB.batch([
+  const [legendRows, comboRows, peopleRows, tierRows, weaponRows, weaponGameRows, poolRows] = (await env.DB.batch([
     env.DB.prepare(
       `WITH s AS (
          SELECT mode, tier, day, review, placement, legend, kills, damage FROM matches
@@ -270,8 +278,12 @@ async function makeSummary(env, now) {
     ).bind(recentFrom),
     env.DB.prepare(
       `SELECT id, ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, COUNT(*) AS n, ${PERFORMANCE},
+         SUM(review = 0 AND placement <= 5) AS top5,
          SUM(review = 0 AND kills IS NOT NULL) AS nk, SUM(CASE WHEN review = 0 THEN kills END) AS sk,
-         SUM(review = 0 AND damage IS NOT NULL) AS nd, SUM(CASE WHEN review = 0 THEN damage END) AS sd
+         SUM(review = 0 AND assists IS NOT NULL) AS na, SUM(CASE WHEN review = 0 THEN assists END) AS sa,
+         SUM(review = 0 AND damage IS NOT NULL) AS nd, SUM(CASE WHEN review = 0 THEN damage END) AS sd,
+         SUM(${KP_GAME}) AS nkp, SUM(CASE WHEN ${KP_GAME} THEN kills + assists END) AS kpa,
+         SUM(CASE WHEN ${KP_GAME} THEN kills + mate1_kills + mate2_kills END) AS kps
        FROM matches GROUP BY id, m, g, recent`,
     ).bind(recentFrom),
     env.DB.prepare(
@@ -285,6 +297,11 @@ async function makeSummary(env, now) {
     env.DB.prepare(
       `SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, COUNT(*) AS n FROM matches
        WHERE weapons IS NOT NULL GROUP BY m, g, recent`,
+    ).bind(recentFrom),
+    // 英雄池：每个编号每个传奇用了几局（自己的局）
+    env.DB.prepare(
+      `SELECT id, ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, legend, COUNT(*) AS n FROM matches
+       WHERE legend IS NOT NULL GROUP BY id, m, g, recent, legend`,
     ).bind(recentFrom),
   ])).map((r) => r.results);
 
@@ -301,9 +318,24 @@ async function makeSummary(env, now) {
   const people = emptySlices();
   for (const row of peopleRows) {
     for (const key of sliceKeys(row)) {
-      addTo((people[key][row.id] ??= {}), row, ["n", "np", "sp", "wins", "nk", "sk", "nd", "sd"]);
+      addTo((people[key][row.id] ??= {}), row,
+            ["n", "np", "sp", "wins", "top5", "nk", "sk", "na", "sa", "nd", "sd", "nkp", "kpa", "kps"]);
     }
   }
+  const pools = emptySlices();
+  for (const row of poolRows) {
+    for (const key of sliceKeys(row)) {
+      const counts = (pools[key][row.id] ??= {});
+      counts[row.legend] = (counts[row.legend] ?? 0) + row.n;
+    }
+  }
+  // 每个编号的英雄池（用了几个传奇，局数太少的编号不算）
+  const poolSizes = (key) => Object.values(pools[key]).map(Object.values)
+    .filter((ns) => enough(ns.reduce((a, b) => a + b, 0)))
+    .map((ns) => {
+      const total = ns.reduce((a, b) => a + b, 0);
+      return ns.filter((n) => n / total >= POOL_SHARE).length;
+    });
   const weapons = emptySlices();
   for (const row of weaponRows) {
     for (const key of sliceKeys(row)) addTo((weapons[key][row.weapon] ??= {}), row, ["n", "s"]);
@@ -319,7 +351,6 @@ async function makeSummary(env, now) {
     const squads = Object.values(combos[key]).reduce((sum, c) => sum + c.n, 0);
     const ids = Object.values(people[key]);
     const held = Object.values(weapons[key]).reduce((sum, w) => sum + w.s, 0);
-    const enough = (n) => n >= MIN_PLAYER_GAMES;
     slices[key] = {
       players: ids.length,
       matches: ids.reduce((sum, p) => sum + p.n, 0),
@@ -338,6 +369,10 @@ async function makeSummary(env, now) {
         win: points(ids.filter((p) => enough(p.np)).map((p) => p.wins / p.np), 4),
         kills: points(ids.filter((p) => enough(p.nk)).map((p) => p.sk / p.nk), 2),
         damage: points(ids.filter((p) => enough(p.nd)).map((p) => p.sd / p.nd), 0),
+        assists: points(ids.filter((p) => enough(p.na)).map((p) => p.sa / p.na), 2),
+        top5: points(ids.filter((p) => enough(p.np)).map((p) => p.top5 / p.np), 4),
+        kp: points(ids.filter((p) => enough(p.nkp) && p.kps > 0).map((p) => Math.min(1, p.kpa / p.kps)), 4),
+        pool: points(poolSizes(key), 0),
       },
       weapon_games: weaponGames[key] ?? 0,
       weapons: Object.entries(weapons[key])

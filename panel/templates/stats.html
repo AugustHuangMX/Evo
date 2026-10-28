@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_legend.html" import legend_icon, combo_icons %}
 {% from "_peek.html" import peek_foot, back_link with context %}
+{% from "_radar.html" import radar_card, radar_script with context %}
 {% block title %}数据 · Evo{% endblock %}
 
 {# 数据页"我的"：两列卡片（2026-10-28 用户决定），每张先列 peek 行、只放最要紧的几列；点卡片打开完整的表格
@@ -43,6 +44,9 @@
 </div>
 
 {% if not part %}
+{# 六维图（大图：图 + 旁边的数字表），在卡片上面占满一行 #}
+{{ radar_card(radar, 'big', ranges[range_key]) }}
+
 <div class="stats-grid">
 
 {# 最常用武器：只列占比（横条和拿得最久的那把比）；时间、局数在完整的表格里 #}
@@ -152,6 +156,7 @@
 </section>
 
 </div>
+{{ radar_script() }}
 
 {% elif part == 'weapons' %}
 {# 最常用武器：每把武器拿在手上多久（只算每局第一次拿到武器 1 分钟以后的；页面上不写这条规则，用户决定）。
