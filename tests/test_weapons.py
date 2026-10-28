@@ -187,7 +187,8 @@ def panel_checks():
     conn.close()
     panel_app.app.config.update(DB=path, TESTING=True)
     client = panel_app.app.test_client()
-    recent = client.get("/stats").get_data(as_text=True)
+    recent = client.get("/stats").get_data(as_text=True)  # 卡片
+    recent_full = client.get("/stats/weapons").get_data(as_text=True)  # 完整的表格
     everything = client.get("/stats?range=all").get_data(as_text=True)
     empty_path = FOLDER / "no_weapons.db"
     empty_path.unlink(missing_ok=True)
@@ -204,19 +205,25 @@ def panel_checks():
         return [[" ".join(re.sub(r"<[^>]+>", " ", c).split()) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, re.S)]
                 for row in re.findall(r"<tr[^>]*>(.*?)</tr>", found.group(1), re.S)]
 
-    rows = table(recent)
-    section = re.search(r'aria-labelledby="h-weapons">(.*?)</section>', recent, re.S)
-    section = section.group(1) if section else ""
+    def section(page):
+        found = re.search(r'aria-labelledby="h-weapons">(.*?)</section>', page, re.S)
+        return found.group(1) if found else ""
+
+    rows = table(recent_full)
+    card = [[" ".join(re.sub(r"<[^>]+>", " ", c).split()) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, re.S)]
+            for row in re.findall(r"<tr[^>]*>(.*?)</tr>", section(recent).split("<tbody>")[-1], re.S)]
+    both = section(recent) + section(recent_full)
     return {
         f"最常用武器：只算第一次拿到武器 1 分钟以后的，按时间排（{rows}）": rows == [
             ["合计", "6 分 35 秒", "100%", "2"],
             ["R-301", "4 分 30 秒", "68%", "1"],
             ["平行步枪", "1 分 5 秒", "16%", "1"],
             ["辅助手枪", "1 分 0 秒", "15%", "1"]],
-        "1 分钟以内的不算（EVA-8 只在前 50 秒拿过，不出现）": "EVA-8" not in section,
-        "近 30 局：更早的局不算；全部：算上": "克雷贝尔" not in section and "克雷贝尔" in everything,
+        f"卡片上只列占比（{card}）": card == [["R-301", "68%"], ["平行步枪", "16%"], ["辅助手枪", "15%"]],
+        "1 分钟以内的不算（EVA-8 只在前 50 秒拿过，不出现）": "EVA-8" not in both,
+        "近 30 局：更早的局不算；全部：算上": "克雷贝尔" not in both and "克雷贝尔" in section(everything),
         "数据页最上面是最常用武器": recent.find('id="h-weapons"') < recent.find('id="h-mates"'),
-        "页面上不写怎么统计的（用户决定）": not re.search(r"1 分钟|60 秒|第一次拿到", section),
+        "页面上不写怎么统计的（用户决定）": not re.search(r"1 分钟|60 秒|第一次拿到", both),
         "没有武器数据时写明，不出空表": "这个范围里还没有记下武器" in empty and "weapons-table" not in empty,
     }
 

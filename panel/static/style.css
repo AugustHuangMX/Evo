@@ -450,7 +450,7 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .everyone-meta .num { color: var(--text); font-weight: 500; }
 .everyone-status:empty { display: none; }
 .refresh-btn { margin-left: 0; }
-.refresh-btn:focus-visible, .more-btn:focus-visible, .stats-tabs a:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.refresh-btn:focus-visible, .stats-tabs a:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
 .refresh-btn[aria-busy="true"] { cursor: progress; }
 .refresh-btn[aria-busy="true"] svg { animation: evo-spin 0.9s linear infinite; }
 @keyframes evo-spin { to { transform: rotate(360deg); } }
@@ -473,7 +473,36 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .you-games { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
 .you-none { color: var(--muted); }
 .vs-mark { flex: none; }
-.more-btn { display: block; margin: 14px auto 0; min-height: 36px; padding: 8px 16px; }
+
+/* 数据页的卡片（2026-10-28 用户决定）：两列，每张先列几行、只放最要紧的几列；整张卡片都能点（base.html 的脚本），
+   打开完整的表格（/stats/<part>）。卡片里的表格不设最小宽度，窄了才左右滚动；窗口窄时变回一列（最下面） */
+.stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.peek-card { display: flex; flex-direction: column; min-width: 0; }
+.peek-card:has(.peek-more) { cursor: pointer; transition: border-color 0.15s; }
+.peek-card:has(.peek-more):hover { border-color: var(--dashed); }
+.peek-card:has(.peek-more:focus-visible) { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.peek-more:focus-visible { outline: none; }  /* 焦点框画在整张卡片上 */
+.peek-table .share-col { width: 62%; }
+.peek-table .dist-col { width: 42%; min-width: 96px; }
+.peek-table .dist-col .bar { min-width: 96px; }
+.peek-table .pick-col { width: 40%; min-width: 120px; }
+.peek-table .pick-bar { min-width: 48px; }
+.peek-table .stats-name { max-width: 180px; }
+.combo-icons { display: inline-flex; align-items: center; gap: 10px; vertical-align: middle; }
+.combo-name { font-size: 12px; font-weight: 400; }
+.peek-ref { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+.legend-key.peek-key { margin-top: 12px; padding-top: 12px; }
+.peek-foot { margin-top: auto; padding-top: 14px; display: flex; justify-content: flex-end; }
+.peek-more { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: 13px; color: var(--muted); transition: color 0.15s; }
+.peek-arrow { flex: none; transition: transform 0.15s; }
+.peek-card:hover .peek-more { color: var(--text); }
+.peek-card:hover .peek-arrow { transform: translateX(2px); }
+.stats-grid .beat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }  /* 你在 Evo 玩家中：卡片里四格排成 2×2 */
+/* 完整表格页左上角"← 数据"（Evo 窗口没有浏览器的后退按钮） */
+.back-link { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 6px 14px 6px 10px; border-radius: 4px;
+  color: var(--muted); font-weight: 500; transition: color 0.15s, background-color 0.15s; }
+.back-link:hover { color: var(--text); background: var(--nav-on-bg); }
+.back-link:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
 
 /* 你在 Evo 玩家中：四个小格，横条是"超过多少玩家" */
 .beat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -703,6 +732,9 @@ table.stats-table { width: 100%; border-collapse: collapse; }
   .progress-busy .progress-bar { left: 32%; }  /* 解压的横条不来回走，停在中间 */
 }
 
+@media (max-width: 1099px) {
+  .stats-grid { grid-template-columns: 1fr; }  /* 数据页的卡片：两列放不下"你"那一列时变回一列 */
+}
 @media (max-width: 900px) {
   .settings-layout { grid-template-columns: 1fr; }
   .ov-top, .ov-bottom { grid-template-columns: 1fr; }

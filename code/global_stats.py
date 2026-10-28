@@ -39,9 +39,7 @@ MODES = {"ranked": "排位", "pubs": "匹配"}
 TIERS = {"all": "全部段位", "low": "白金及以下", "diamond": "钻石", "master": "大师以上"}  # 只有排位分段位
 TIER_ORDER = ("菜鸟", "青铜", "白银", "黄金", "白金", "钻石", "大师", "Apex 猎杀者")
 TIER_GROUP = {**{t: "low" for t in TIER_ORDER[:5]}, "钻石": "diamond", "大师": "master", "Apex 猎杀者": "master"}
-SHOW_LEGENDS = 8  # 传奇热度先列这么多个，其余点"展开全部"
-SHOW_COMBOS = 5  # 热门组合同上
-SHOW_WEAPONS = 8  # 大家常用的武器同上
+PARTS = ("legends", "combos", "weapons")  # 传奇热度、热门组合、大家常用的武器：卡片上先列几行，完整的表格在 /stats/<part>?view=all
 WEAPONS = game_lang.load("weapons.json")  # 武器的名字、只算第一次拿到武器多少秒以后的（同数据页"最常用武器"）
 # "你在 Evo 玩家中"的四项：(汇总里的键, 显示名, 小数位（和服务器取整一样）, 越小越好)
 PEOPLE = (("place", "场均名次", 2, True), ("win", "胜率", 4, False), ("kills", "场均击杀", 2, False),
@@ -269,9 +267,8 @@ def page(summary, rows, mates, range_key, mode, tier, your_tier=None, icons=None
     return {
         "players": part.get("players", 0), "matches": part.get("matches", 0),
         "updated": when_text(summary.get("made_at")),
-        "legends": legend_rows, "show_legends": SHOW_LEGENDS,
-        "combos": combo_rows, "show_combos": SHOW_COMBOS,
-        "weapons": weapon_rows, "show_weapons": SHOW_WEAPONS, "weapon_games": part.get("weapon_games", 0),
+        "legends": legend_rows, "combos": combo_rows,
+        "weapons": weapon_rows, "weapon_games": part.get("weapon_games", 0),
         "you_games": you["games"], "tiles": tiles,
         "tiers": tier_rows, "tier_players": spread.get("players", 0), "your_tier": your_tier,
     }

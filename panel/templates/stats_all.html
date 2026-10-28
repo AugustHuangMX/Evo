@@ -1,10 +1,12 @@
 {% extends "base.html" %}
-{% from "_legend.html" import legend_icon %}
+{% from "_legend.html" import legend_icon, combo_icons %}
+{% from "_peek.html" import peek_foot, back_link with context %}
 {% block title %}数据 · Evo{% endblock %}
 
 {# 数据页"全体玩家"（global_stats.py，2026-10-24 用户决定）：开了匿名统计的所有 Evo 玩家的汇总，和自己的比。
-   没开匿名统计：锁住的样子（后面是看不清的示意，不是真数据），不下载。前几张卡片是重点，段位分布收起来；
-   长的表格先列几行，点"展开全部"再看其余 #}
+   没开匿名统计：锁住的样子（后面是看不清的示意，不是真数据），不下载。
+   和"我的"一样是两列卡片（2026-10-28 用户决定）：传奇热度、热门组合、大家常用的武器先列 peek 行，点卡片打开完整的表格
+   （part = legends / combos / weapons，还是这个模板，左上角"← 全体玩家"回来）；你在 Evo 玩家中是第四张；段位分布收起来 #}
 
 {# 你和全体比：好的绿色、差的红色，旁边有箭头和读屏文字（不只靠颜色） #}
 {% macro versus(vs) -%}
@@ -26,7 +28,26 @@
 </td>
 {%- endmacro %}
 
+{# 表头：卡片和完整的表格一样（悬停说明也一样） #}
+{% macro pick_head() %}<th scope="col" class="pick-col" title="所有出场的传奇里（每队三个人都算），这个传奇占多少">选用率</th>{% endmacro %}
+{% macro legend_you_head() %}<th scope="col" class="right you-col" title="你用这个传奇的场均名次和局数（同样的范围、模式、段位）">你</th>{% endmacro %}
+{% macro combo_rate_head() %}<th scope="col" class="right" title="这个组合的局数 ÷ 全队传奇都认出的局数">选取率</th>{% endmacro %}
+{% macro combo_you_head() %}<th scope="col" class="right you-col" title="你们队用这个组合的场均名次和局数（同样的范围、模式、段位）">你</th>{% endmacro %}
+{% macro weapon_share_head() %}<th scope="col" class="pick-col" title="所有玩家拿武器的时间里，这把武器占多少">拿在手上</th>{% endmacro %}
+{% macro weapon_you_head() %}<th scope="col" class="right you-col" title="你拿这把武器的时间占你拿武器的时间多少，和拿过它的局数（同样的范围、模式、段位）">你</th>{% endmacro %}
+
+{# 选用率、武器占比：横条（最多的那个占满）+ 数字 #}
+{% macro pick_cell(width, text) -%}
+<td class="pick-col">
+  <span class="pick"><span class="bar pick-bar" aria-hidden="true"><span style="width: {{ width }}%"></span></span><span class="num">{{ text }}</span></span>
+</td>
+{%- endmacro %}
+
+{# 卡片右上角：大家常用的武器记下了几局 #}
+{% macro weapon_games() %}{% if view.weapons %}<span class="muted small">记下了武器的 <span class="num">{{ '{:,}'.format(view.weapon_games) }}</span> 局</span>{% endif %}{% endmacro %}
+
 {% block content %}
+{% set filters = dict(range=range_key, mode=mode, tier=tier) %}
 
 {% if review_count %}
 <a class="banner-warn" href="{{ url_for('matches', review='1') }}">
@@ -37,7 +58,11 @@
 {% endif %}
 
 <div class="stats-top">
+  {% if part %}
+  {{ back_link(url_for('stats', view='all', **filters), '全体玩家') }}
+  {% else %}
   {% with everyone=True %}{% include "_stats_tabs.html" %}{% endwith %}
+  {% endif %}
   {% if allowed %}
   <div class="everyone-meta">
     {% if view %}<span><span class="num">{{ view.players }}</span> 名玩家 · <span class="num">{{ '{:,}'.format(view.matches) }}</span> 局 · 更新于 {{ view.updated }}</span>{% endif %}
@@ -85,7 +110,7 @@
     <span class="label">统计范围</span>
     <div class="seg" role="group" aria-label="统计范围">
       {% for key, label in ranges.items() %}
-      <a href="{{ url_for('stats', view='all', range=key, mode=mode, tier=tier) }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}>{{ label }}</a>
+      <a href="{{ url_for('stats', part=part, view='all', range=key, mode=mode, tier=tier) }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}>{{ label }}</a>
       {% endfor %}
     </div>
   </div>
@@ -93,7 +118,7 @@
     <span class="label">模式</span>
     <div class="seg" role="group" aria-label="模式">
       {% for key, label in modes.items() %}
-      <a href="{{ url_for('stats', view='all', range=range_key, mode=key) }}" class="{{ 'on' if mode == key }}"{% if mode == key %} aria-current="true"{% endif %}{% if key == 'pubs' %} title="不是排位的局，包括没认出模式的局"{% endif %}>{{ label }}</a>
+      <a href="{{ url_for('stats', part=part, view='all', range=range_key, mode=key) }}" class="{{ 'on' if mode == key }}"{% if mode == key %} aria-current="true"{% endif %}{% if key == 'pubs' %} title="不是排位的局，包括没认出模式的局"{% endif %}>{{ label }}</a>
       {% endfor %}
     </div>
   </div>
@@ -102,96 +127,61 @@
     <span class="label">段位</span>
     <div class="seg" role="group" aria-label="段位">
       {% for key, label in tiers.items() %}
-      <a href="{{ url_for('stats', view='all', range=range_key, mode=mode, tier=key) }}" class="{{ 'on' if tier == key }}"{% if tier == key %} aria-current="true"{% endif %}>{{ label }}</a>
+      <a href="{{ url_for('stats', part=part, view='all', range=range_key, mode=mode, tier=key) }}" class="{{ 'on' if tier == key }}"{% if tier == key %} aria-current="true"{% endif %}>{{ label }}</a>
       {% endfor %}
     </div>
   </div>
   {% endif %}
 </div>
 
-{# 1. 传奇热度：全队三个人都算（队友多半是随机匹配到的）。先列 show_legends 个，其余点"展开全部" #}
-<section class="card stats-card" aria-labelledby="h-hot">
+{% if not part %}
+<div class="stats-grid">
+
+{# 1. 传奇热度：全队三个人都算（队友多半是随机匹配到的）。卡片上：选用率、场均名次、你 #}
+<section class="card stats-card peek-card" aria-labelledby="h-hot">
   <div class="card-head"><h2 id="h-hot">传奇热度</h2></div>
   {% if view.legends %}
   <div class="table-wrap">
-    <table class="stats-table everyone-table">
-      <thead>
-        <tr>
-          <th scope="col">传奇</th>
-          <th scope="col" class="right" title="这个传奇出场了几次（每队三个人都算）">出场</th>
-          <th scope="col" class="pick-col" title="所有出场的传奇里（每队三个人都算），这个传奇占多少">选用率</th>
-          <th scope="col" class="right">胜率</th>
-          <th scope="col" class="right">前五率</th>
-          <th scope="col" class="right">场均名次</th>
-          <th scope="col" class="right">场均击杀</th>
-          <th scope="col" class="right">场均伤害</th>
-          <th scope="col" class="right you-col" title="你用这个传奇的场均名次和局数（同样的范围、模式、段位）">你</th>
-        </tr>
-      </thead>
-      {% for chunk in [view.legends[:view.show_legends], view.legends[view.show_legends:]] if chunk %}
-      <tbody{% if loop.index == 2 %} id="legends-more" hidden{% endif %}>
-        {% for l in chunk %}
+    <table class="stats-table peek-table">
+      <thead><tr><th scope="col">传奇</th>{{ pick_head() }}<th scope="col" class="right">场均名次</th>{{ legend_you_head() }}</tr></thead>
+      <tbody>
+        {% for l in view.legends[:peek] %}
         <tr>
           <th scope="row"><span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span></th>
-          <td class="right num">{{ '{:,}'.format(l.games) }}</td>
-          <td class="pick-col">
-            <span class="pick"><span class="bar pick-bar"><span style="width: {{ l.pick_width }}%"></span></span><span class="num">{{ l.pick }}</span></span>
-          </td>
-          <td class="right num">{{ l.win }}</td>
-          <td class="right num">{{ l.top5 }}</td>
+          {{ pick_cell(l.pick_width, l.pick) }}
           <td class="right num">{{ l.place }}</td>
-          <td class="right num">{{ l.kills }}</td>
-          <td class="right num">{{ l.damage }}</td>
           {{ you_cell(l) }}
         </tr>
         {% endfor %}
       </tbody>
-      {% endfor %}
     </table>
   </div>
-  {% if view.legends|length > view.show_legends %}
-  <button type="button" class="btn-text more-btn" aria-expanded="false" aria-controls="legends-more"
-          data-more="展开全部 {{ view.legends|length }} 个传奇" data-less="收起">展开全部 {{ view.legends|length }} 个传奇</button>
-  {% endif %}
+  {{ peek_foot(url_for('stats', part='legends', view='all', **filters), '传奇热度', view.legends|length, '个传奇') }}
   {% else %}
   <div class="stats-empty">这个范围里还没有数据</div>
   {% endif %}
 </section>
 
-{# 2. 热门组合：全队三个传奇（不管谁用的哪个） #}
-<section class="card stats-card" aria-labelledby="h-combos">
+{# 2. 热门组合：全队三个传奇（不管谁用的哪个）。卡片上只放三个头像 #}
+<section class="card stats-card peek-card" aria-labelledby="h-combos">
   <div class="card-head"><h2 id="h-combos">热门组合</h2></div>
   {% if view.combos %}
   <div class="table-wrap">
-    <table class="stats-table combos-table everyone-combos">
-      <thead>
+    <table class="stats-table peek-table">
+      <thead><tr><th scope="col">组合</th>{{ combo_rate_head() }}<th scope="col" class="right">场均名次</th>{{ combo_you_head() }}</tr></thead>
+      <tbody>
+        {% for c in view.combos[:peek] %}
         <tr>
-          <th scope="col">组合</th>
-          <th scope="col" class="right">局数</th>
-          <th scope="col" class="right" title="这个组合的局数 ÷ 全队传奇都认出的局数">选取率</th>
-          <th scope="col" class="right">场均名次</th>
-          <th scope="col" class="right you-col" title="你们队用这个组合的场均名次和局数（同样的范围、模式、段位）">你</th>
-        </tr>
-      </thead>
-      {% for chunk in [view.combos[:view.show_combos], view.combos[view.show_combos:]] if chunk %}
-      <tbody{% if loop.index == 2 %} id="combos-more" hidden{% endif %}>
-        {% for c in chunk %}
-        <tr>
-          <th scope="row"><span class="combo">{% for l in c.legends %}<span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span>{% endfor %}</span></th>
-          <td class="right num">{{ c.games }}</td>
+          <th scope="row">{{ combo_icons(c.legends) }}</th>
           <td class="right num">{{ c.rate }}</td>
           <td class="right num">{{ c.place }}</td>
           {{ you_cell(c) }}
         </tr>
         {% endfor %}
       </tbody>
-      {% endfor %}
     </table>
   </div>
-  {% if view.combos|length > view.show_combos %}
-  <button type="button" class="btn-text more-btn" aria-expanded="false" aria-controls="combos-more"
-          data-more="展开全部 {{ view.combos|length }} 个组合" data-less="收起">展开全部 {{ view.combos|length }} 个组合</button>
-  {% endif %}
+  {{ peek_foot(url_for('stats', part='combos', view='all', **filters), '热门组合', view.combos|length, '个组合') }}
   {% else %}
   <div class="stats-empty">这个范围里还没有认出全队传奇的对局</div>
   {% endif %}
@@ -199,49 +189,31 @@
 
 {# 3. 大家常用的武器（2026-10-28 用户决定）：只有每名玩家自己的（队友的武器认不出），占比按拿在手上的时间算
    （和"我的"里的最常用武器一样，只算每局第一次拿到武器 1 分钟以后的；页面上不写这条规则）。"你"只是对照，不分好坏 #}
-<section class="card stats-card" aria-labelledby="h-weapons">
-  <div class="card-head">
-    <h2 id="h-weapons">大家常用的武器</h2>
-    {% if view.weapons %}<span class="muted small">记下了武器的 <span class="num">{{ '{:,}'.format(view.weapon_games) }}</span> 局</span>{% endif %}
-  </div>
+<section class="card stats-card peek-card" aria-labelledby="h-weapons">
+  <div class="card-head"><h2 id="h-weapons">大家常用的武器</h2>{{ weapon_games() }}</div>
   {% if view.weapons %}
   <div class="table-wrap">
-    <table class="stats-table everyone-weapons">
-      <thead>
-        <tr>
-          <th scope="col">武器</th>
-          <th scope="col" class="pick-col" title="所有玩家拿武器的时间里，这把武器占多少">拿在手上</th>
-          <th scope="col" class="right" title="多少比例的对局里拿过这把武器">拿过的局</th>
-          <th scope="col" class="right you-col" title="你拿这把武器的时间占你拿武器的时间多少，和拿过它的局数（同样的范围、模式、段位）">你</th>
-        </tr>
-      </thead>
-      {% for chunk in [view.weapons[:view.show_weapons], view.weapons[view.show_weapons:]] if chunk %}
-      <tbody{% if loop.index == 2 %} id="weapons-more" hidden{% endif %}>
-        {% for w in chunk %}
+    <table class="stats-table peek-table">
+      <thead><tr><th scope="col">武器</th>{{ weapon_share_head() }}{{ weapon_you_head() }}</tr></thead>
+      <tbody>
+        {% for w in view.weapons[:peek] %}
         <tr>
           <th scope="row">{{ w.name }}</th>
-          <td class="pick-col">
-            <span class="pick"><span class="bar pick-bar" aria-hidden="true"><span style="width: {{ w.share_width }}%"></span></span><span class="num">{{ w.share }}</span></span>
-          </td>
-          <td class="right num">{{ w.rate }}</td>
+          {{ pick_cell(w.share_width, w.share) }}
           {{ you_cell(w, w.you_share) }}
         </tr>
         {% endfor %}
       </tbody>
-      {% endfor %}
     </table>
   </div>
-  {% if view.weapons|length > view.show_weapons %}
-  <button type="button" class="btn-text more-btn" aria-expanded="false" aria-controls="weapons-more"
-          data-more="展开全部 {{ view.weapons|length }} 把武器" data-less="收起">展开全部 {{ view.weapons|length }} 把武器</button>
-  {% endif %}
+  {{ peek_foot(url_for('stats', part='weapons', view='all', **filters), '大家常用的武器', view.weapons|length, '把武器') }}
   {% else %}
   <div class="stats-empty">这个范围里还没有记下武器的对局</div>
   {% endif %}
 </section>
 
-{# 4. 你在 Evo 玩家中：你的场均数字，超过了多少玩家（打了 3 局以上的玩家，按每人的场均比） #}
-<section class="card stats-card" aria-labelledby="h-you">
+{# 4. 你在 Evo 玩家中：你的场均数字，超过了多少玩家（打了 3 局以上的玩家，按每人的场均比）。四格排成 2×2，没有完整的表格 #}
+<section class="card stats-card peek-card" aria-labelledby="h-you">
   <div class="card-head"><h2 id="h-you">你在 Evo 玩家中</h2></div>
   <div class="beat-row">
     {% for t in view.tiles %}
@@ -260,6 +232,8 @@
   </div>
 </section>
 
+</div>
+
 {# 5. 段位分布（收起来，点开看）：每名玩家按最近一局排位的段位算 #}
 {% if view.tiers %}
 <details class="card stats-card more-card">
@@ -276,22 +250,117 @@
 </details>
 {% endif %}
 
+{% elif part == 'legends' %}
+<section class="card stats-card" aria-labelledby="h-hot">
+  <div class="card-head"><h2 id="h-hot">传奇热度</h2></div>
+  {% if view.legends %}
+  <div class="table-wrap">
+    <table class="stats-table everyone-table">
+      <thead>
+        <tr>
+          <th scope="col">传奇</th>
+          <th scope="col" class="right" title="这个传奇出场了几次（每队三个人都算）">出场</th>
+          {{ pick_head() }}
+          <th scope="col" class="right">胜率</th>
+          <th scope="col" class="right">前五率</th>
+          <th scope="col" class="right">场均名次</th>
+          <th scope="col" class="right">场均击杀</th>
+          <th scope="col" class="right">场均伤害</th>
+          {{ legend_you_head() }}
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in view.legends %}
+        <tr>
+          <th scope="row"><span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span></th>
+          <td class="right num">{{ '{:,}'.format(l.games) }}</td>
+          {{ pick_cell(l.pick_width, l.pick) }}
+          <td class="right num">{{ l.win }}</td>
+          <td class="right num">{{ l.top5 }}</td>
+          <td class="right num">{{ l.place }}</td>
+          <td class="right num">{{ l.kills }}</td>
+          <td class="right num">{{ l.damage }}</td>
+          {{ you_cell(l) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有数据</div>
+  {% endif %}
+</section>
+
+{% elif part == 'combos' %}
+<section class="card stats-card" aria-labelledby="h-combos">
+  <div class="card-head"><h2 id="h-combos">热门组合</h2></div>
+  {% if view.combos %}
+  <div class="table-wrap">
+    <table class="stats-table combos-table everyone-combos">
+      <thead>
+        <tr>
+          <th scope="col">组合</th>
+          <th scope="col" class="right">局数</th>
+          {{ combo_rate_head() }}
+          <th scope="col" class="right">场均名次</th>
+          {{ combo_you_head() }}
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in view.combos %}
+        <tr>
+          <th scope="row"><span class="combo">{% for l in c.legends %}<span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span>{% endfor %}</span></th>
+          <td class="right num">{{ c.games }}</td>
+          <td class="right num">{{ c.rate }}</td>
+          <td class="right num">{{ c.place }}</td>
+          {{ you_cell(c) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有认出全队传奇的对局</div>
+  {% endif %}
+</section>
+
+{% elif part == 'weapons' %}
+<section class="card stats-card" aria-labelledby="h-weapons">
+  <div class="card-head"><h2 id="h-weapons">大家常用的武器</h2>{{ weapon_games() }}</div>
+  {% if view.weapons %}
+  <div class="table-wrap">
+    <table class="stats-table everyone-weapons">
+      <thead>
+        <tr>
+          <th scope="col">武器</th>
+          {{ weapon_share_head() }}
+          <th scope="col" class="right" title="多少比例的对局里拿过这把武器">拿过的局</th>
+          {{ weapon_you_head() }}
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in view.weapons %}
+        <tr>
+          <th scope="row">{{ w.name }}</th>
+          {{ pick_cell(w.share_width, w.share) }}
+          <td class="right num">{{ w.rate }}</td>
+          {{ you_cell(w, w.you_share) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有记下武器的对局</div>
+  {% endif %}
+</section>
+{% endif %}
+
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-// 展开全部 / 收起（传奇热度、热门组合、大家常用的武器）
-document.querySelectorAll(".more-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const more = document.getElementById(btn.getAttribute("aria-controls"));
-    const open = more.hidden;
-    more.hidden = !open;
-    btn.setAttribute("aria-expanded", String(open));
-    btn.textContent = open ? btn.dataset.less : btn.dataset.more;
-  });
-});
-
 // 刷新：下载一次汇总（POST /stats/everyone/refresh），好了重新打开页面；没下载到就写在按钮旁边。
 // 还没下载过、或者下载了 24 小时以上时，打开页面就自动下载一次（fetch_now）
 (() => {

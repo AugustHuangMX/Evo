@@ -7,3 +7,13 @@
 <span class="legend-icon blank" aria-hidden="true"></span>
 {%- endif -%}
 {%- endmacro %}
+
+{# 数据页卡片上的传奇组合只放三个头像（2026-10-28 用户决定）：名字给读屏软件和悬停；没有图标的传奇（以后的新传奇）写名字 #}
+{% macro combo_icons(legends) -%}
+{%- set names = legends|map(attribute='name')|join('、') -%}
+<span class="combo-icons" title="{{ names }}">
+  {%- for l in legends -%}
+  {%- if l.icon -%}{{ legend_icon(l.icon) }}{%- else -%}<span class="combo-name" aria-hidden="true">{{ l.name }}</span>{%- endif -%}
+  {%- endfor -%}
+  <span class="sr-only">{{ names }}</span></span>
+{%- endmacro %}

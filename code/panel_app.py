@@ -891,12 +891,20 @@ def matches():
     )
 
 
+PEEK_ROWS = 5  # 数据页（我的、全体玩家）每张卡片先列这么多行，完整的表格点卡片打开
+STATS_PARTS = ("weapons", "mates", "legends", "combos")  # "我的"每张卡片的完整表格：/stats/<part>
+
+
 @app.route("/stats")
-def stats():
-    """数据页：最常用武器、常一起玩的队友、传奇表现（详细版）、传奇组合。范围按钮和总览页一样（近 30 局 / 全部）。
-    顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
+@app.route("/stats/<part>")
+def stats(part=None):
+    """数据页：两列卡片（2026-10-28 用户决定）：最常用武器、常一起玩的队友、传奇表现（详细版）、传奇组合，
+    每张先列 PEEK_ROWS 行，点卡片打开那张的完整表格（/stats/<part>，左上角"← 数据"回来）。
+    范围按钮和总览页一样（近 30 局 / 全部）。顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
     if request.args.get("view") == "all":
-        return stats_everyone()
+        return stats_everyone(part)
+    if part is not None and part not in STATS_PARTS:
+        abort(404)
     range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
@@ -908,6 +916,8 @@ def stats():
     weapons, weapon_all = weapon_table(in_range, storage.all_weapon_holds(db(), names))
     return render_template(
         "stats.html",
+        part=part,
+        peek=PEEK_ROWS,
         range_key=range_key,
         ranges=RANGES,
         total=len(rows),
@@ -926,13 +936,18 @@ def stats():
     )
 
 
-def stats_everyone():
+def stats_everyone(part=None):
     """数据页"全体玩家"（global_stats.py，2026-10-24 用户决定）：开了匿名统计的所有 Evo 玩家的汇总，和自己的比。
     没开匿名统计：锁住的样子（蒙版 + 锁 + 开启按钮），不下载。开了：用存着的汇总；没有或超过 24 小时，
-    页面打开后脚本马上下载（POST /stats/everyone/refresh），下载好重新打开页面。"""
+    页面打开后脚本马上下载（POST /stats/everyone/refresh），下载好重新打开页面。
+    和"我的"一样是两列卡片，part 是某张卡片的完整表格（global_stats.PARTS）；锁着或还没下载过时回到卡片那页。"""
+    if part is not None and part not in global_stats.PARTS:
+        abort(404)
     range_key, mode, tier = global_stats.choose(request.args)
     allowed = global_stats.allowed()
     cache = global_stats.cached() if allowed else None
+    if part and cache is None:
+        return redirect(url_for("stats", view="all", range=range_key, mode=mode, tier=tier))
     view = None
     if cache is not None:
         names = account_view()["names"]
@@ -943,6 +958,8 @@ def stats_everyone():
                                  holds=storage.all_weapon_holds(db(), names))
     return render_template(
         "stats_all.html",
+        part=part,
+        peek=PEEK_ROWS,
         allowed=allowed,
         view=view,
         fetch_now=allowed and global_stats.stale(cache),

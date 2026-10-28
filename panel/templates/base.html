@@ -327,6 +327,13 @@
     });
   });
 
+  // 数据页的卡片：点卡片上任何地方都打开完整的表格，和点右下角的"查看全部"一样（键盘、读屏软件用那个链接）
+  document.querySelectorAll(".peek-more").forEach(function (link) {
+    link.closest(".peek-card").addEventListener("click", function (e) {
+      if (!e.target.closest("a")) link.click();
+    });
+  });
+
   // 安装并重新启动：先让窗口告诉 Windows"允许接下来打开的程序到最前面"，装好后新窗口才不会被别的程序挡住（app_window.py）
   document.querySelectorAll("form[data-allow-foreground]").forEach(function (form) {
     form.addEventListener("submit", function () {

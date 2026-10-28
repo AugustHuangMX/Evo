@@ -1,6 +1,11 @@
 {% extends "base.html" %}
-{% from "_legend.html" import legend_icon %}
+{% from "_legend.html" import legend_icon, combo_icons %}
+{% from "_peek.html" import peek_foot, back_link with context %}
 {% block title %}数据 · Evo{% endblock %}
+
+{# 数据页"我的"：两列卡片（2026-10-28 用户决定），每张先列 peek 行、只放最要紧的几列；点卡片打开完整的表格
+   （part = weapons / mates / legends / combos，还是这个模板，左上角"← 数据"回来）。范围跟着带过去 #}
+{% set range_arg = none if range_key == '30' else range_key %}
 
 {% block content %}
 
@@ -13,7 +18,11 @@
 {% endif %}
 
 <div class="stats-top">
+  {% if part %}
+  {{ back_link(url_for('stats', range=range_arg), '数据') }}
+  {% else %}
   {% with everyone=False %}{% include "_stats_tabs.html" %}{% endwith %}
+  {% endif %}
 </div>
 
 {% if not total %}
@@ -27,12 +36,124 @@
     <span class="label">统计范围</span>
     <div class="seg" role="group" aria-label="统计范围">
       {% for key, label in ranges.items() %}
-      <a href="{{ url_for('stats', range=key) if key != '30' else url_for('stats') }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}>{{ label }}</a>
+      <a href="{{ url_for('stats', part=part, range=none if key == '30' else key) }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}>{{ label }}</a>
       {% endfor %}
     </div>
   </div>
 </div>
 
+{% if not part %}
+<div class="stats-grid">
+
+{# 最常用武器：只列占比（横条和拿得最久的那把比）；时间、局数在完整的表格里 #}
+<section class="card stats-card peek-card" aria-labelledby="h-weapons">
+  <div class="card-head"><h2 id="h-weapons">最常用武器 · {{ ranges[range_key] }}</h2></div>
+  {% if weapons %}
+  <div class="table-wrap">
+    <table class="stats-table peek-table">
+      <thead><tr><th scope="col">武器</th><th scope="col" class="share-col">占比</th></tr></thead>
+      <tbody>
+        {% for w in weapons[:peek] %}
+        <tr>
+          <th scope="row">{{ w.name }}</th>
+          <td class="share-col"><span class="share"><span class="bar" aria-hidden="true"><span class="share-fill" style="width: {{ w.bar }}%"></span></span><span class="num">{{ w.share }}</span></span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ peek_foot(url_for('stats', part='weapons', range=range_arg), '最常用武器', weapons|length, '把') }}
+  {% else %}
+  <div class="stats-empty">这个范围里还没有记下武器</div>
+  {% endif %}
+</section>
+
+{# 常一起玩的队友：一起打几局、场均名次（自己的）；"所有对局"参照缩成表下一行 #}
+<section class="card stats-card peek-card" aria-labelledby="h-mates">
+  <div class="card-head"><h2 id="h-mates">常一起玩的队友 · {{ ranges[range_key] }}</h2></div>
+  {% if mates %}
+  <div class="table-wrap">
+    <table class="stats-table peek-table">
+      <thead><tr><th scope="col">队友</th><th scope="col" class="right">一起打</th><th scope="col" class="right">场均名次</th></tr></thead>
+      <tbody>
+        {% for m in mates[:peek] %}
+        <tr>
+          <th scope="row"><span class="stats-name">{{ m.name }}</span></th>
+          <td class="right"><span class="num">{{ m.games }}</span> 局</td>
+          <td class="right num">{{ m.avg_place }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="peek-ref">所有对局：场均名次 <span class="num">{{ everyone.avg_place }}</span></p>
+  {{ peek_foot(url_for('stats', part='mates', range=range_arg), '常一起玩的队友', mates|length, '人') }}
+  {% else %}
+  <div class="stats-empty">这个范围里还没有一起打过 {{ min_mate_games }} 局以上的队友</div>
+  {% endif %}
+</section>
+
+{# 传奇表现：局数、名次分布、场均名次 #}
+<section class="card stats-card peek-card" aria-labelledby="h-legends">
+  <div class="card-head"><h2 id="h-legends">传奇表现 · {{ ranges[range_key] }}</h2></div>
+  {% if legends %}
+  <div class="table-wrap">
+    <table class="stats-table peek-table">
+      <thead><tr><th scope="col">传奇</th><th scope="col" class="right">局数</th><th scope="col" class="dist-col">名次分布</th><th scope="col" class="right">场均名次</th></tr></thead>
+      <tbody>
+        {% for l in legends[:peek] %}
+        <tr>
+          <th scope="row"><span class="legend-label">{{ legend_icon(l.icon) }}{{ l.name }}</span></th>
+          <td class="right num">{{ l.games }}</td>
+          <td class="dist-col">
+            <div class="bar stacked" role="img" aria-label="{{ l.spread }}" title="{{ l.spread }}">
+              {% for css, width in l.segments %}<span class="seg-{{ css }}" style="width: {{ width }}%"></span>{% endfor %}
+            </div>
+          </td>
+          <td class="right num">{{ l.avg_place }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="legend-key peek-key">
+    {% for css, label, _ in buckets %}<span><i class="seg-{{ css }}"></i>{{ label }}</span>{% endfor %}
+  </div>
+  {{ peek_foot(url_for('stats', part='legends', range=range_arg), '传奇表现', legends|length, '个传奇') }}
+  {% else %}
+  <div class="stats-empty">这个范围里还没有认出传奇的对局</div>
+  {% endif %}
+</section>
+
+{# 传奇组合：只放三个头像（名字在悬停和读屏里）、局数、场均名次 #}
+<section class="card stats-card peek-card" aria-labelledby="h-combos">
+  <div class="card-head"><h2 id="h-combos">传奇组合 · {{ ranges[range_key] }}</h2></div>
+  {% if combos %}
+  <div class="table-wrap">
+    <table class="stats-table peek-table">
+      <thead><tr><th scope="col">组合</th><th scope="col" class="right">局数</th><th scope="col" class="right">场均名次</th></tr></thead>
+      <tbody>
+        {% for c in combos[:peek] %}
+        <tr>
+          <th scope="row">{{ combo_icons(c.legends) }}</th>
+          <td class="right num">{{ c.games }}</td>
+          <td class="right num">{{ c.avg_place }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ peek_foot(url_for('stats', part='combos', range=range_arg), '传奇组合', combos|length, '个组合') }}
+  {% elif combo_all %}
+  <div class="stats-empty">这个范围里还没有出现过 {{ min_combo_games }} 局以上的组合</div>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有认出全队传奇的对局</div>
+  {% endif %}
+</section>
+
+</div>
+
+{% elif part == 'weapons' %}
 {# 最常用武器：每把武器拿在手上多久（只算每局第一次拿到武器 1 分钟以后的；页面上不写这条规则，用户决定）。
    横条长短和拿得最久的那把比 #}
 <section class="card stats-card" aria-labelledby="h-weapons">
@@ -71,6 +192,7 @@
   {% endif %}
 </section>
 
+{% elif part == 'mates' %}
 {# 每张表第一行是"所有对局"（参照）：和某个队友、某个传奇的数字对着看，才知道是好是坏 #}
 <section class="card stats-card" aria-labelledby="h-mates">
   <div class="card-head"><h2 id="h-mates">常一起玩的队友 · {{ ranges[range_key] }}</h2></div>
@@ -115,6 +237,7 @@
   {% endif %}
 </section>
 
+{% elif part == 'legends' %}
 <section class="card stats-card" aria-labelledby="h-legends">
   <div class="card-head"><h2 id="h-legends">传奇表现 · {{ ranges[range_key] }}</h2></div>
   {% if legends %}
@@ -175,6 +298,7 @@
   {% endif %}
 </section>
 
+{% elif part == 'combos' %}
 {# 传奇组合：全队用的传奇（不管谁用的哪个），只算全队传奇都认出的局 #}
 <section class="card stats-card" aria-labelledby="h-combos">
   <div class="card-head"><h2 id="h-combos">传奇组合 · {{ ranges[range_key] }}</h2></div>
@@ -213,6 +337,7 @@
   <div class="stats-empty">这个范围里还没有认出全队传奇的对局</div>
   {% endif %}
 </section>
+{% endif %}
 
 {% endif %}
 {% endblock %}

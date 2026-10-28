@@ -1,0 +1,17 @@
+{# 数据页（我的、全体玩家）的卡片和完整表格页共用的小部件（2026-10-28 用户决定改成两列卡片）。
+   用 {% from "_peek.html" import ... with context %} 导入：要用页面上的 peek（每张卡片先列几行） #}
+
+{# 卡片右下角"查看全部 N 个 →"：整张卡片都能点（base.html 的脚本），这个链接给键盘和读屏软件用。
+   行都列出来了也有（完整的表格列更多），写"查看完整表格" #}
+{% macro peek_foot(href, name, count, unit) -%}
+<div class="peek-foot">
+  <a class="peek-more" href="{{ href }}"><span class="sr-only">{{ name }}：</span>
+    {%- if count > peek %}查看全部 <span class="num">{{ count }}</span> {{ unit }}{% else %}查看完整表格{% endif -%}
+    <svg class="peek-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></a>
+</div>
+{%- endmacro %}
+
+{# 完整表格页左上角回到卡片那页（Evo 窗口没有浏览器的后退按钮） #}
+{% macro back_link(href, label) -%}
+<a class="back-link" href="{{ href }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>{{ label }}</a>
+{%- endmacro %}
