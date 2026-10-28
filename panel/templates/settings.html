@@ -51,7 +51,7 @@
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name" id="maps-name">总览页显示当前地图</div>
-          <div class="setting-desc">匹配、排位、轮换模式现在是哪张图、还剩多久。打开后，看总览页时会联网下载地图轮换，不发送任何战绩</div>
+          <div class="setting-desc">匹配、排位、轮换模式现在是哪张图、还剩多久。打开后，看总览页时要联网下载地图轮换，不发送任何战绩</div>
         </div>
         <form method="post" action="{{ url_for('maps_setting') }}">
           <input type="hidden" name="token" value="{{ token }}">
