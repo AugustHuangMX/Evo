@@ -3,7 +3,7 @@
 {% block title %}数据 · Evo{% endblock %}
 
 {# 数据页"全体玩家"（global_stats.py，2026-10-24 用户决定）：开了匿名统计的所有 Evo 玩家的汇总，和自己的比。
-   没开匿名统计：锁住的样子（后面是看不清的示意，不是真数据），不下载。前三张卡片是重点，段位分布收起来；
+   没开匿名统计：锁住的样子（后面是看不清的示意，不是真数据），不下载。前几张卡片是重点，段位分布收起来；
    长的表格先列几行，点"展开全部"再看其余 #}
 
 {# 你和全体比：好的绿色、差的红色，旁边有箭头和读屏文字（不只靠颜色） #}
@@ -15,10 +15,11 @@
 {%- endif -%}
 {%- endmacro %}
 
-{% macro you_cell(row) -%}
+{# value：这一格写什么（默认是场均名次；武器写占比，不和全体比好坏） #}
+{% macro you_cell(row, value=none) -%}
 <td class="right you-col">
   {%- if row.you_games -%}
-  <span class="you-value you-{{ row.you_vs or 'same' }}"><span class="num">{{ row.you_place }}</span>{{ versus(row.you_vs) }}</span><span class="you-games">{{ row.you_games }} 局</span>
+  <span class="you-value you-{{ row.you_vs or 'same' }}"><span class="num">{{ row.you_place if value is none else value }}</span>{{ versus(row.you_vs) }}</span><span class="you-games">{{ row.you_games }} 局</span>
   {%- else -%}
   <span class="you-none">—</span>
   {%- endif -%}
@@ -196,7 +197,50 @@
   {% endif %}
 </section>
 
-{# 3. 你在 Evo 玩家中：你的场均数字，超过了多少玩家（打了 3 局以上的玩家，按每人的场均比） #}
+{# 3. 大家常用的武器（2026-10-28 用户决定）：只有每名玩家自己的（队友的武器认不出），占比按拿在手上的时间算
+   （和"我的"里的最常用武器一样，只算每局第一次拿到武器 1 分钟以后的；页面上不写这条规则）。"你"只是对照，不分好坏 #}
+<section class="card stats-card" aria-labelledby="h-weapons">
+  <div class="card-head">
+    <h2 id="h-weapons">大家常用的武器</h2>
+    {% if view.weapons %}<span class="muted small">记下了武器的 <span class="num">{{ '{:,}'.format(view.weapon_games) }}</span> 局</span>{% endif %}
+  </div>
+  {% if view.weapons %}
+  <div class="table-wrap">
+    <table class="stats-table everyone-weapons">
+      <thead>
+        <tr>
+          <th scope="col">武器</th>
+          <th scope="col" class="pick-col" title="所有玩家拿武器的时间里，这把武器占多少">拿在手上</th>
+          <th scope="col" class="right" title="多少比例的对局里拿过这把武器">拿过的局</th>
+          <th scope="col" class="right you-col" title="你拿这把武器的时间占你拿武器的时间多少，和拿过它的局数（同样的范围、模式、段位）">你</th>
+        </tr>
+      </thead>
+      {% for chunk in [view.weapons[:view.show_weapons], view.weapons[view.show_weapons:]] if chunk %}
+      <tbody{% if loop.index == 2 %} id="weapons-more" hidden{% endif %}>
+        {% for w in chunk %}
+        <tr>
+          <th scope="row">{{ w.name }}</th>
+          <td class="pick-col">
+            <span class="pick"><span class="bar pick-bar" aria-hidden="true"><span style="width: {{ w.share_width }}%"></span></span><span class="num">{{ w.share }}</span></span>
+          </td>
+          <td class="right num">{{ w.rate }}</td>
+          {{ you_cell(w, w.you_share) }}
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+  {% if view.weapons|length > view.show_weapons %}
+  <button type="button" class="btn-text more-btn" aria-expanded="false" aria-controls="weapons-more"
+          data-more="展开全部 {{ view.weapons|length }} 把武器" data-less="收起">展开全部 {{ view.weapons|length }} 把武器</button>
+  {% endif %}
+  {% else %}
+  <div class="stats-empty">这个范围里还没有记下武器的对局</div>
+  {% endif %}
+</section>
+
+{# 4. 你在 Evo 玩家中：你的场均数字，超过了多少玩家（打了 3 局以上的玩家，按每人的场均比） #}
 <section class="card stats-card" aria-labelledby="h-you">
   <div class="card-head"><h2 id="h-you">你在 Evo 玩家中</h2></div>
   <div class="beat-row">
@@ -216,7 +260,7 @@
   </div>
 </section>
 
-{# 4. 段位分布（收起来，点开看）：每名玩家按最近一局排位的段位算 #}
+{# 5. 段位分布（收起来，点开看）：每名玩家按最近一局排位的段位算 #}
 {% if view.tiers %}
 <details class="card stats-card more-card">
   <summary><h2>更多：段位分布</h2><svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
@@ -237,7 +281,7 @@
 
 {% block scripts %}
 <script>
-// 展开全部 / 收起（传奇热度、热门组合）
+// 展开全部 / 收起（传奇热度、热门组合、大家常用的武器）
 document.querySelectorAll(".more-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     const more = document.getElementById(btn.getAttribute("aria-controls"));

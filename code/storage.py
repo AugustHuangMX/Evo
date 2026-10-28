@@ -311,11 +311,41 @@ def save_weapon_holds(conn, match_id, holds):
     conn.commit()
 
 
+def weapon_holds_of(conn, match_id):
+    """一局拿过的武器（每一段一行，按时间先后）。没记下武器（0.4.0 以前的局、一把都没认出）返回空列表。"""
+    return conn.execute("SELECT * FROM weapon_holds WHERE match_id = ? ORDER BY start_s", (match_id,)).fetchall()
+
+
 def all_weapon_holds(conn, names=None):
     """所有对局拿过的武器（names：只要这几个玩家名的局），按对局、时间先后（数据页"最常用武器"用）。"""
     where, params = _where(names=names)
     return conn.execute(f"SELECT weapon_holds.* FROM weapon_holds JOIN matches USING (match_id){where} "
                         "ORDER BY ended_at, match_id, start_s", params).fetchall()
+
+
+def counted_weapon_seconds(holds, after):
+    """每局每把武器算进"最常用武器"的秒数：只算这一局第一次拿到武器 after 秒以后的（config/weapons.json 的
+    count_after_seconds）。数据页"最常用武器"、匿名统计、"全体玩家"都按这个算。
+    holds：weapon_holds 表的行。返回 {局号: {武器编号: 秒数}}，一秒都没算进去的武器不列。"""
+    out = {}
+    for h in holds:
+        counted = h["end_s"] - max(h["start_s"], after)
+        if counted > 0:
+            weapons = out.setdefault(h["match_id"], {})
+            weapons[h["weapon"]] = weapons.get(h["weapon"], 0) + counted
+    return out
+
+
+def weapon_totals(holds, after, match_ids):
+    """这几局（match_ids）合在一起：每把武器算进去的秒数 {武器编号: 秒数}，和拿过它的局 {武器编号: {局号}}。
+    规则同 counted_weapon_seconds（数据页"最常用武器"、"全体玩家"里的"你"用）。"""
+    seconds, played = {}, {}
+    for match_id, weapons in counted_weapon_seconds(holds, after).items():
+        if match_id in match_ids:
+            for weapon, counted in weapons.items():
+                seconds[weapon] = seconds.get(weapon, 0) + counted
+                played.setdefault(weapon, set()).add(match_id)
+    return seconds, played
 
 
 # ---------- 大厅读数（见 lobby.py、calibration.py） ----------

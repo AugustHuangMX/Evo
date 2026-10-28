@@ -458,7 +458,10 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 /* 全体玩家的表格：选用率是一条横条（最多的那个占满）；最后一列"你"和全体比，好的绿色、差的红色（旁边有箭头，不只靠颜色） */
 .everyone-table { min-width: 940px; }
 .everyone-combos { min-width: 640px; }
+.everyone-weapons { min-width: 600px; }
+.everyone-weapons thead th + th { width: 130px; }  /* 大家常用的武器只有四列：拿过的局、你窄一些，横条那列宽一些 */
 .stats-table .pick-col { width: 22%; min-width: 180px; }
+.everyone-weapons .pick-col { width: 40%; }  /* 要在上一行后面才生效 */
 .pick { display: flex; align-items: center; gap: 10px; }
 .pick-bar { flex: 1; min-width: 80px; }
 .pick-bar > span, .tier-bar > span, .beat-track > span { display: block; height: 100%; border-radius: inherit; background: var(--p3-bg); }

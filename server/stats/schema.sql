@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS matches (
   mate2_assists INTEGER,
   mate2_knockdowns INTEGER,
   mate2_damage INTEGER,
+  -- 自己每把武器拿在手上几秒，JSON 文字，如 {"car":265,"nemesis":574}（只算这一局第一次拿到武器 60 秒以后的；
+  -- 0.4.1 之后的 Evo 才发，2026-10-28 加的列）；没记下武器是空的
+  weapons TEXT,
   PRIMARY KEY (id, k)
 );
 

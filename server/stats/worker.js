@@ -29,6 +29,11 @@ const NUMBERS = { placement: [1, 99], kills: [0, 999], assists: [0, 999], knockd
                   rp_delta: [-9999, 9999] };
 const TEXTS = ["mode", "map", "legend", "tier", "rp_source"];
 const MATE_NUMBERS = ["kills", "assists", "knockdowns", "damage"];  // 队友每局的数字（mate_stats，0.3.8 之后的 Evo 才发）
+// 武器（weapons，0.4.1 之后的 Evo 才发）：{武器编号: 秒数}，自己每把武器拿在手上几秒（只算这一局第一次拿到武器
+// 60 秒以后的）；没记下武器是 null。编号见 Evo 的 config/weapons.json，新赛季会加，所以只查格式不查名单
+const WEAPON = /^[a-z0-9_]{1,32}$/;
+const MAX_WEAPONS = 40;
+const WEAPON_SECONDS = [1, 7200];
 const EDITABLE = new Set(["placement", "kills", "assists", "knockdowns", "participation", "damage", "rp_delta"]);
 
 const MATE_COLUMNS = [1, 2].flatMap((i) => MATE_NUMBERS.map((f) => `mate${i}_${f}`));
@@ -61,6 +66,18 @@ function number(value, [low, high]) {
   return value;
 }
 
+// 武器存成按编号排好的 JSON 文字，如 {"car":265,"nemesis":574}（汇总时用 json_each 拆开）
+function weaponSeconds(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || Array.isArray(value)) throw new Bad();
+  const entries = Object.entries(value);
+  if (entries.length > MAX_WEAPONS) throw new Bad();
+  for (const [key, seconds] of entries) {
+    if (!WEAPON.test(key) || number(seconds, WEAPON_SECONDS) === null) throw new Bad();
+  }
+  return JSON.stringify(Object.fromEntries(entries.sort(([a], [b]) => (a < b ? -1 : 1))));
+}
+
 function ping(p) {
   if (typeof p !== "object" || p === null) throw new Bad();
   const mode = p.game_mode ?? null;
@@ -89,6 +106,7 @@ function match(m) {
     if (typeof one !== "object" || Array.isArray(one)) throw new Bad();
     for (const f of MATE_NUMBERS) out[`mate${i + 1}_${f}`] = number(one[f], NUMBERS[f]);
   }
+  out.weapons = weaponSeconds(m.weapons);
   return out;
 }
 
@@ -130,17 +148,18 @@ async function report(body, env) {
     }
     statements.push(env.DB.prepare(
       `INSERT INTO matches (id, k, day, version, mode, map, legend, mate1, mate2, placement, kills, assists,
-         knockdowns, damage, rp_delta, tier, rp_source, review, edited, received_at, ${MATE_COLUMNS.join(", ")})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${MATE_COLUMNS.map(() => "?").join(", ")})
+         knockdowns, damage, rp_delta, tier, rp_source, review, edited, received_at, ${MATE_COLUMNS.join(", ")}, weapons)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${MATE_COLUMNS.map(() => "?").join(", ")}, ?)
        ON CONFLICT (id, k) DO UPDATE SET day = excluded.day, version = excluded.version, mode = excluded.mode,
          map = excluded.map, legend = excluded.legend, mate1 = excluded.mate1, mate2 = excluded.mate2,
          placement = excluded.placement, kills = excluded.kills, assists = excluded.assists,
          knockdowns = excluded.knockdowns, damage = excluded.damage, rp_delta = excluded.rp_delta,
          tier = excluded.tier, rp_source = excluded.rp_source, review = excluded.review, edited = excluded.edited,
-         received_at = excluded.received_at, ${MATE_COLUMNS.map((c) => `${c} = excluded.${c}`).join(", ")}`,
+         received_at = excluded.received_at, ${MATE_COLUMNS.map((c) => `${c} = excluded.${c}`).join(", ")},
+         weapons = excluded.weapons`,
     ).bind(body.id, m.k, m.day, m.version, m.mode, m.map, m.legend, m.mate1, m.mate2, m.placement, m.kills,
            m.assists, m.knockdowns, m.damage, m.rp_delta, m.tier, m.rp_source, m.review, m.edited, now,
-           ...MATE_COLUMNS.map((c) => m[c])));
+           ...MATE_COLUMNS.map((c) => m[c]), m.weapons));
   }
   if (statements.length) await env.DB.batch(statements);
   return reply({ ok: true, stored: matches.length - rejected, rejected });
@@ -167,9 +186,13 @@ async function remove(body, env) {
 //   n 局数、rate 选取率（n ÷ 全队传奇都认出的局数）、place 场均名次。同一局两个一样的传奇（认错了）不算
 // - people：每个编号（自己的局，打了 MIN_PLAYER_GAMES 局以上）的场均名次 place、胜率 win、场均击杀 kills、
 //   场均伤害 damage，各自从小到大排好；人多时只留 MAX_POINTS 个等间隔的点。Evo 拿自己的数字和它比，算"超过 X% 的玩家"
+// - weapons（2026-10-28）：每把武器一行，按拿在手上的时间从多到少。只有自己的（队友的武器认不出），只算每局第一次
+//   拿到武器 60 秒以后的（Evo 那边算好发来）：key 武器编号、n 拿过它的局数、share 占所有武器拿在手上时间的多少、
+//   rate 在多少比例的对局里拿过（n ÷ weapon_games）。weapon_games：记下了武器的局数（0.4.1 以前的 Evo 不发武器）。
+//   待确认的局也算（和传奇的出场次数一样，武器和名次、RP 读得准不准无关）
 // tiers（只分范围）：每个编号最近一局排位的段位，各段位多少人
 // "近 7 天"按用户电脑上的日期，从 UTC 的今天往前数 6 天算起（recent_from）
-// 读数据库：每算一次大约把 matches 表读 6 遍（D1 免费额度每天读 500 万行；局数上了几万、每小时都有新数据时要改成几小时算一次）
+// 读数据库：每算一次大约把 matches 表读 8 遍（D1 免费额度每天读 500 万行；局数上了几万、每小时都有新数据时要改成几小时算一次）
 const SUMMARY_NAME = "v1";
 const RECENT_DAYS = 7;
 const TOP_COMBOS = 30;
@@ -221,7 +244,7 @@ function points(values, digits) {
 async function makeSummary(env, now) {
   const today = Date.parse(now.toISOString().slice(0, 10) + "T00:00:00Z");
   const recentFrom = new Date(today - (RECENT_DAYS - 1) * 86400000).toISOString().slice(0, 10);
-  const [legendRows, comboRows, peopleRows, tierRows] = (await env.DB.batch([
+  const [legendRows, comboRows, peopleRows, tierRows, weaponRows, weaponGameRows] = (await env.DB.batch([
     env.DB.prepare(
       `WITH s AS (
          SELECT mode, tier, day, review, placement, legend, kills, damage FROM matches
@@ -255,6 +278,14 @@ async function makeSummary(env, now) {
       `SELECT id, tier, MAX(day) AS last FROM matches WHERE mode = 'ranked' AND tier IS NOT NULL AND day IS NOT NULL
        GROUP BY id, tier`,
     ),
+    env.DB.prepare(
+      `SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, w.key AS weapon, COUNT(*) AS n, SUM(w.value) AS s
+       FROM matches, json_each(matches.weapons) AS w WHERE matches.weapons IS NOT NULL GROUP BY m, g, recent, weapon`,
+    ).bind(recentFrom),
+    env.DB.prepare(
+      `SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, COUNT(*) AS n FROM matches
+       WHERE weapons IS NOT NULL GROUP BY m, g, recent`,
+    ).bind(recentFrom),
   ])).map((r) => r.results);
 
   const legends = emptySlices();
@@ -273,12 +304,21 @@ async function makeSummary(env, now) {
       addTo((people[key][row.id] ??= {}), row, ["n", "np", "sp", "wins", "nk", "sk", "nd", "sd"]);
     }
   }
+  const weapons = emptySlices();
+  for (const row of weaponRows) {
+    for (const key of sliceKeys(row)) addTo((weapons[key][row.weapon] ??= {}), row, ["n", "s"]);
+  }
+  const weaponGames = {};
+  for (const row of weaponGameRows) {
+    for (const key of sliceKeys(row)) weaponGames[key] = (weaponGames[key] ?? 0) + row.n;
+  }
 
   const slices = {};
   for (const key of Object.keys(legends)) {
     const picks = Object.values(legends[key]).reduce((sum, l) => sum + l.n, 0);
     const squads = Object.values(combos[key]).reduce((sum, c) => sum + c.n, 0);
     const ids = Object.values(people[key]);
+    const held = Object.values(weapons[key]).reduce((sum, w) => sum + w.s, 0);
     const enough = (n) => n >= MIN_PLAYER_GAMES;
     slices[key] = {
       players: ids.length,
@@ -299,6 +339,10 @@ async function makeSummary(env, now) {
         kills: points(ids.filter((p) => enough(p.nk)).map((p) => p.sk / p.nk), 2),
         damage: points(ids.filter((p) => enough(p.nd)).map((p) => p.sd / p.nd), 0),
       },
+      weapon_games: weaponGames[key] ?? 0,
+      weapons: Object.entries(weapons[key])
+        .sort(([a, x], [b, y]) => y.s - x.s || (a < b ? -1 : 1))
+        .map(([name, w]) => ({ key: name, n: w.n, share: ratio(w.s, held, 4), rate: ratio(w.n, weaponGames[key], 4) })),
     };
   }
 

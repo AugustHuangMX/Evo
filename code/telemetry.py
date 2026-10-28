@@ -19,7 +19,9 @@
   模式、地图、自己的传奇、两名队友的传奇、名次、击杀/助攻/击倒、伤害、RP 变化、段位（只有大段，如"钻石"）、
   RP 从哪个画面来、是否待确认、用户在战绩页改过哪几项（不发改成了什么）；0.3.8 之后的版本还有两名队友这一局的
   击杀/助攻/击倒、伤害（mate_stats，和 mates 一一对应；总结页上读的，没有总结页的局是空的。2026-10-24 用户决定：
-  数据页"全体玩家"按全队三个人算，用过的人不用重新问）。没读出来的项是空的（null）
+  数据页"全体玩家"按全队三个人算，用过的人不用重新问）；0.4.1 之后的版本还有自己每把武器拿在手上几秒（weapons，
+  如 {"r301": 192}；只算第一次拿到武器 60 秒以后的，和数据页"最常用武器"一样。2026-10-28 用户决定：数据页"全体玩家"
+  显示大家常用的武器，用过的人不用重新问）。没读出来的项是空的（null）
 不发：游戏名、ID、队友的名字和 ID、截图、日志、备注（可能有用户自己写的字）、文件路径、电脑信息。
 服务器不存 IP 地址（Cloudflare 本身能看到，见隐私政策）。
 
@@ -48,6 +50,7 @@ from datetime import datetime, timedelta
 
 import app_settings
 import game_aspect
+import game_lang
 import storage
 from paths import DB_PATH
 
@@ -64,6 +67,7 @@ TIMEOUT = 15  # 秒：和检查新版本一样，国内有的网络到 Cloudflar
 MAX_REPLY = 64 * 1024
 MATCH_FIELDS = ("placement", "kills", "assists", "knockdowns", "damage", "rp_delta")
 MATE_FIELDS = ("kills", "assists", "knockdowns", "damage")  # 队友每局发的数字（没有名字和 ID）
+COUNT_AFTER = game_lang.load("weapons.json")["count_after_seconds"]  # 武器只算第一次拿到武器多少秒以后的（同数据页）
 _lock = threading.Lock()  # 托盘的定时发送和设置页的按钮可能同时来，一次只让一个发
 
 
@@ -137,6 +141,16 @@ def match_key(install, row):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
 
+def weapon_payload(conn, match_id):
+    """一局每把武器拿在手上几秒（取整），只算第一次拿到武器 COUNT_AFTER 秒以后的，和数据页"最常用武器"一样。
+    这一局没记下武器（0.4.0 以前的局、一把都没认出）是 None；记下了、但那以后一秒都没有是 {}。"""
+    holds = storage.weapon_holds_of(conn, match_id)
+    if not holds:
+        return None
+    seconds = storage.counted_weapon_seconds(holds, COUNT_AFTER).get(match_id, {})
+    return {w: round(s) for w, s in sorted(seconds.items()) if round(s) > 0}
+
+
 def match_payload(conn, row, install):
     """一局要发的内容（只有这些项）。"""
     mates = storage.teammates_of(conn, row["match_id"])[:2]
@@ -147,7 +161,9 @@ def match_payload(conn, row, install):
             "mate_stats": [{f: m[f] for f in MATE_FIELDS} for m in mates],
             **{f: row[f] for f in MATCH_FIELDS},
             "tier": row["rank_tier"], "rp_source": row["rp_source"], "review": bool(row["needs_review"]),
-            "edited": edited}
+            "edited": edited,
+            # 武器（2026-10-28 用户决定）：老的统计服务器会把这一项丢掉，Evo 却算发过了，所以服务器要先更新
+            "weapons": weapon_payload(conn, row["match_id"])}
 
 
 def _digest(payload):

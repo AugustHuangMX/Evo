@@ -1,7 +1,8 @@
 """匿名统计（telemetry.py、面板上的提问和设置页）。不用截图，不联网：统计服务器由本机的小服务器冒充。
 
 - 没回答、点了"不了"、关掉以后：一个请求都不发
-- 只发同意以后结束、已经结束 1 小时的局；只发说好的那几项（游戏名、ID、队友名字、备注、截图位置都不发）
+- 只发同意以后结束、已经结束 1 小时的局；只发说好的那几项（游戏名、ID、队友名字、备注、截图位置都不发）；
+  武器只发每把拿在手上几秒（第一次拿到武器 60 秒以后的）
 - 日活一天只发一次，没发出去的日子下次连上时补发（最多 30 天）；发过的局不重发，改过（战绩页修正）的局再发一次，
   带上改了哪几项
 - 一次最多 100 局，多的分几次；连不上、服务器拒绝时不算发过，下次再发
@@ -34,7 +35,7 @@ KEYS = (telemetry.CONSENT_KEY, telemetry.SINCE_KEY, telemetry.ID_KEY, telemetry.
 BODY_KEYS = {"id", "version", "matches", "ping"}
 PING_KEYS = {"day", "screen", "game_res", "game_mode", "aspect"}
 MATCH_KEYS = {"k", "day", "version", "mode", "map", "legend", "mates", "mate_stats", "placement", "kills", "assists",
-              "knockdowns", "damage", "rp_delta", "tier", "rp_source", "review", "edited"}
+              "knockdowns", "damage", "rp_delta", "tier", "rp_source", "review", "edited", "weapons"}
 SECRETS = ("测试玩家甲", "队友名字乙", "0123456789", "秘密备注", "captures/live")  # 这些一个字都不能发出去
 SINCE = "2026-10-20 12:00:00"
 NOW = datetime(2026, 10, 21, 10, 0)
@@ -99,6 +100,9 @@ def send_checks(conn):
     first = add_match(conn, "2026-10-20 20:00:00")
     second = add_match(conn, "2026-10-20 20:30:00", legend=None, damage=None)
     recent = add_match(conn, "2026-10-21 09:30:00")
+    # 武器：第一次拿到武器以后 60 秒内的不算（R-301 0–100 秒只算 40 秒），不到半秒的取整后是 0、不列
+    storage.save_weapon_holds(conn, first, [("r301", 0.0, 100.0), ("car", 100.0, 220.4), ("p2020", 220.4, 220.8)])
+    storage.save_weapon_holds(conn, second, [("r99", 0.0, 50.0)])  # 60 秒以内就没再拿武器
 
     video = Path(storage.DB_PATH.parent / "videoconfig-telemetry.txt")
     video.write_text('"VideoConfig"\n{\n\t"setting.defaultres"\t\t"2560"\n\t"setting.defaultresheight"\t\t"1600"\n'
@@ -123,6 +127,11 @@ def send_checks(conn):
     out["队友：传奇和这一局的击杀/助攻/击倒、伤害一一对应，别的项（救人、名字、ID）不发"] = (
         one["mate_stats"] == [{"kills": 2, "assists": 1, "knockdowns": 3, "damage": 640},
                               {"kills": None, "assists": None, "knockdowns": None, "damage": None}])
+    out["武器：每把拿在手上几秒（只算第一次拿到武器 60 秒以后的，取整；取整后是 0 的不列）"] = (
+        one["weapons"] == {"car": 120, "r301": 40})
+    other = next(m for m in body["matches"] if m["legend"] is None)
+    out["武器：60 秒以后一把都没拿发 {}，没记下武器发 null"] = (
+        other["weapons"] == {} and telemetry.weapon_payload(conn, recent) is None)
     out["没读出来的项发 null（不当作 0）"] = any(m["legend"] is None and m["damage"] is None for m in body["matches"])
     out["日活：日期、Apex 视频设置里的分辨率和显示模式、画面比例设置"] = (
         body["ping"]["day"] == "2026-10-21" and body["ping"]["game_res"] == "2560x1600"

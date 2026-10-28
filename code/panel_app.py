@@ -644,15 +644,7 @@ def weapon_table(rows, holds):
     """最常用武器（2026-10-24 用户决定）：每把武器拿在手上多久，按时间从多到少；局数 = 拿过它的局。
     只算每一局第一次拿到武器 count_after_seconds 秒以后的（不算落地后随手捡的；页面上不写这条规则，用户决定）。
     rows：要统计的局；holds：weapon_holds 表的行（多了不要紧）。返回 (列表, 合计)；这个范围里没记下武器返回 ([], None)。"""
-    after = WEAPONS["count_after_seconds"]
-    games = {r["match_id"] for r in rows}
-    seconds, played = {}, {}
-    for h in holds:
-        counted = h["end_s"] - max(h["start_s"], after)
-        if h["match_id"] not in games or counted <= 0:
-            continue
-        seconds[h["weapon"]] = seconds.get(h["weapon"], 0) + counted
-        played.setdefault(h["weapon"], set()).add(h["match_id"])
+    seconds, played = storage.weapon_totals(holds, WEAPONS["count_after_seconds"], {r["match_id"] for r in rows})
     total = sum(seconds.values())
     if not total:
         return [], None
@@ -947,7 +939,8 @@ def stats_everyone():
         rows = storage.all_matches(db(), names)
         rank = latest_rank(rows, storage.lobby_readings(db(), names))
         view = global_stats.page(cache["summary"], rows, storage.all_teammates(db(), names), range_key, mode, tier,
-                                 your_tier=rank[0] if rank else None, icons=LEGEND_ICONS)
+                                 your_tier=rank[0] if rank else None, icons=LEGEND_ICONS,
+                                 holds=storage.all_weapon_holds(db(), names))
     return render_template(
         "stats_all.html",
         allowed=allowed,

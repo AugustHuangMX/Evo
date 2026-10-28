@@ -4,8 +4,9 @@
 - 日活：每天有多少台电脑开着 Evo（ping）、有多少台打了对局
 - 版本：最近 7 天在用的 Evo 版本
 - 传奇：自己用的传奇（局数、选用率、平均名次、场均击杀和伤害、冠军数），队友用的传奇
+- 武器：自己用的武器（拿过的局数、占拿武器时间的多少；只算每局第一次拿到武器 60 秒以后的，0.4.1 以后的 Evo 才发）
 - 段位：排位赛里各段位有多少人、多少局
-- 识别情况：待确认的比例、每一项没读出来的比例、用户改过哪几项、RP 从哪来、分辨率
+- 识别情况：待确认的比例、每一项没读出来的比例、记下了武器的比例、用户改过哪几项、RP 从哪来、分辨率
 
 用法：python tools/stats_report.py              最近 30 天
       python tools/stats_report.py --days 7
@@ -26,6 +27,7 @@ SERVER = ROOT / "server" / "stats"
 DATABASE = "evo-stats"
 EDITABLE = {"placement": "名次", "kills": "击杀", "assists": "助攻", "knockdowns": "击倒", "participation": "老板分",
             "damage": "伤害", "rp_delta": "RP"}
+WEAPON_NAMES = {k: v["zh"] for k, v in json.loads((ROOT / "config" / "weapons.json").read_text(encoding="utf-8"))["weapons"].items()}
 READ_FIELDS = {"legend": "传奇", "placement": "名次", "kills": "击杀", "damage": "伤害", "rp_delta": "RP",
                "tier": "段位", "map": "地图", "mode": "模式"}
 
@@ -77,7 +79,7 @@ def main():
     week = (date.today() - timedelta(days=6)).isoformat()
     m = f"FROM matches WHERE day >= '{since}'"
 
-    (pings, players, versions, legends, mates, tiers, totals, edited, sources, screens) = query([
+    (pings, players, versions, legends, mates, weapons, tiers, totals, edited, sources, screens) = query([
         f"SELECT day, COUNT(*) AS n FROM pings WHERE day >= '{since}' GROUP BY day",
         f"SELECT day, COUNT(DISTINCT id) AS n, COUNT(*) AS games {m} GROUP BY day",
         f"SELECT version, COUNT(DISTINCT id) AS n FROM pings WHERE day >= '{week}' GROUP BY version ORDER BY n DESC",
@@ -85,10 +87,12 @@ def main():
         f"SUM(placement = 1) AS wins {m} AND legend IS NOT NULL GROUP BY legend ORDER BY n DESC",
         f"SELECT legend, COUNT(*) AS n FROM (SELECT mate1 AS legend {m} UNION ALL SELECT mate2 {m}) "
         f"WHERE legend IS NOT NULL GROUP BY legend ORDER BY n DESC",
+        f"SELECT w.key AS weapon, COUNT(*) AS n, SUM(w.value) AS s FROM matches, json_each(matches.weapons) AS w "
+        f"WHERE day >= '{since}' GROUP BY weapon ORDER BY s DESC",
         f"SELECT tier, COUNT(DISTINCT id) AS players, COUNT(*) AS n {m} AND mode = 'ranked' AND tier IS NOT NULL "
         f"GROUP BY tier ORDER BY n DESC",
         "SELECT COUNT(*) AS n, COUNT(DISTINCT id) AS players, SUM(review) AS review, "
-        "SUM(edited IS NOT NULL) AS edited, "
+        "SUM(edited IS NOT NULL) AS edited, SUM(weapons IS NOT NULL) AS with_weapons, "
         + ", ".join(f"SUM({f} IS NULL) AS no_{f}" for f in READ_FIELDS) + f" {m}",
         f"SELECT edited, COUNT(*) AS n {m} AND edited IS NOT NULL GROUP BY edited",
         f"SELECT rp_source, COUNT(*) AS n {m} AND mode = 'ranked' GROUP BY rp_source ORDER BY n DESC",
@@ -111,12 +115,17 @@ def main():
            for r in legends])
     seen = sum(r["n"] for r in mates)
     table(f"队友用的传奇（{seen} 人次）", ("传奇", "人次", "占比"), [(r["legend"], r["n"], pct(r["n"], seen)) for r in mates])
+    t = totals[0] if totals else {}
+    held = sum(r["s"] for r in weapons)
+    table(f"自己用的武器（{t.get('with_weapons') or 0} 局记下了武器，一共拿了 {held / 3600:.1f} 小时）",
+          ("武器", "拿过的局", "占拿武器的时间"),
+          [(WEAPON_NAMES.get(r["weapon"], r["weapon"]), r["n"], pct(r["s"], held)) for r in weapons])
     table("排位赛的段位", ("段位", "人数", "局数"), [(r["tier"], r["players"], r["n"]) for r in tiers])
 
-    t = totals[0] if totals else {}
     print(f"\n== 识别情况（{total} 局，{t.get('players') or 0} 台电脑）")
     if total:
-        print(f"  待确认 {pct(t['review'] or 0, total)}，用户改过 {pct(t['edited'] or 0, total)}")
+        print(f"  待确认 {pct(t['review'] or 0, total)}，用户改过 {pct(t['edited'] or 0, total)}，"
+              f"记下了武器 {pct(t['with_weapons'] or 0, total)}（0.4.1 以前的 Evo 不发武器）")
         print("  没读出来：" + "，".join(f"{label} {pct(t['no_' + f] or 0, total)}" for f, label in READ_FIELDS.items()))
     counts = {}
     for r in edited:

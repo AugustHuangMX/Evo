@@ -4,6 +4,7 @@
 - 开了：还没下载过就在页面打开时自动下载；下载的只有汇总（GET /v1/summary，不带匿名编号）；24 小时内不重复下载，
   刷新按钮马上下载；连不上、服务器出错、格式不对时不覆盖已存的
 - 页面：传奇热度先列 8 个、其余点"展开全部"；热门组合先列 5 个；"你"和全体比（不算待确认的局）；
+  大家常用的武器先列 8 把，"你"是自己的占比（只是对照，不分好坏）；
   你在 Evo 玩家中（超过多少玩家，一样的算一半）；段位分布标出你的段位；范围、模式、段位筛选（匹配包括没认出模式的局）
 - 数据页"我的"上面有切换
 
@@ -44,13 +45,25 @@ def part(players, matches, legends, combos=()):
                        "kills": [0.5, 1.0, 1.5, 2.0, 2.5], "damage": [400, 600, 800, 1000, 1200]}}
 
 
+def weapons(*rows):
+    return [{"key": key, "n": 10, "share": share, "rate": rate} for key, share, rate in rows]
+
+
+# 大家常用的武器：前 8 把直接列，后 2 把在"展开全部"里；new_gun_s31 是 Evo 还不认识的新枪（显示编号）
+WEAPON_ROWS = [("r301", 0.2, 0.5), ("nemesis", 0.15, 0.4), ("car", 0.12, 0.3), ("flatline", 0.1, 0.25),
+               ("r99", 0.09, 0.2), ("havoc", 0.08, 0.2), ("spitfire", 0.07, 0.15), ("prowler", 0.06, 0.1),
+               ("eva8", 0.05, 0.1), ("new_gun_s31", 0.02, 0.05)]
+WEAPON_NAMES = ["R-301", "复仇女神", "C.A.R.", "平行步枪", "R-99冲锋枪", "哈沃克步枪", "喷火轻机枪", "猎兽冲锋枪", "EVA-8",
+                "new_gun_s31"]
 COMBOS = [sorted(["恶灵", "罗芭", "命脉"]), ["万蒂奇", "探路者", "罗芭"], ["导线管", "探路者", "班加罗尔"],
           ["希尔", "恶灵", "疯玛吉"], ["命脉", "恶灵", "艾克赛尔"], ["万蒂奇", "命脉", "罗芭"], ["探路者", "疯玛吉", "罗芭"]]
 SUMMARY = {
     "v": 1, "made_at": f"{TODAY.isoformat()}T05:07:00Z", "recent_from": RECENT_FROM,
     "slices": {
-        "all.ranked.all": part(12, 340, [legend(n, 100 - i * 9, 9.5 + i / 10) for i, n in enumerate(LEGENDS)], COMBOS),
-        "7d.ranked.all": part(5, 80, [legend("罗芭", 30, 9.0), legend("恶灵", 20, 10.0)]),
+        "all.ranked.all": {**part(12, 340, [legend(n, 100 - i * 9, 9.5 + i / 10) for i, n in enumerate(LEGENDS)], COMBOS),
+                           "weapon_games": 120, "weapons": weapons(*WEAPON_ROWS)},
+        "7d.ranked.all": {**part(5, 80, [legend("罗芭", 30, 9.0), legend("恶灵", 20, 10.0)]),
+                          "weapon_games": 30, "weapons": weapons(("r301", 0.6, 0.7))},
         "all.ranked.diamond": part(4, 90, [legend("探路者", 40, 9.0)]),
         "all.ranked.low": part(0, 0, []), "all.ranked.master": part(0, 0, []),
         "all.pubs.all": part(6, 70, [legend("动力小子", 25, 8.0)]),
@@ -99,22 +112,29 @@ def summary_gets():
 
 def new_db():
     """自己的局：恶灵排位 4 局（名次 5/7/9/11，伤害 500/700/900/1100，钻石，最近几天）+ 1 局待确认（名次 20，不算）；
-    罗芭排位 1 局（10 天前，名次 3）；动力小子 1 局没认出模式（算匹配）。恶灵那几局的队友是罗芭、命脉。最后在大厅看到钻石。"""
+    罗芭排位 1 局（10 天前，名次 3）；动力小子 1 局没认出模式（算匹配）。恶灵那几局的队友是罗芭、命脉。最后在大厅看到钻石。
+    武器（只算第一次拿到武器 60 秒以后的）：恶灵前两局 R-301 40 + 90 秒、C.A.R. 120 秒（P2020 只在 60 秒以内拿过）；
+    罗芭那局复仇女神 140 秒"""
     path = storage.DB_PATH.parent / "global-stats-test.db"
     path.unlink(missing_ok=True)
     conn = storage.connect(path)
     now = datetime.now()
+    wraith = []
     for i, (place, damage) in enumerate(((5, 500), (7, 700), (9, 900), (11, 1100))):
         match_id = storage.insert_match(conn, {
             "ended_at": f"{now - timedelta(days=2, hours=i):%Y-%m-%d %H:%M:%S}", "player_name": "ImperialHzd",
             "mode": "ranked", "legend": "恶灵", "placement": place, "kills": 2, "damage": damage, "rank_tier": "钻石"})
         storage.save_teammates(conn, match_id, [{"slot": "left", "legend": "罗芭"}, {"slot": "right", "legend": "命脉"}])
+        wraith.append(match_id)
+    storage.save_weapon_holds(conn, wraith[0], [("r301", 0.0, 100.0), ("car", 100.0, 220.0)])
+    storage.save_weapon_holds(conn, wraith[1], [("p2020", 0.0, 10.0), ("r301", 10.0, 150.0)])
     storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=1):%Y-%m-%d %H:%M:%S}", "player_name": "ImperialHzd",
                                 "mode": "ranked", "legend": "恶灵", "placement": 20, "kills": 0, "damage": 0,
                                 "rank_tier": "钻石", "needs_review": 1, "review_note": "名次对不上"})
-    storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=10):%Y-%m-%d %H:%M:%S}", "player_name": "ImperialHzd",
-                                "mode": "ranked", "legend": "罗芭", "placement": 3, "kills": 1, "damage": 300,
-                                "rank_tier": "白金"})
+    old = storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=10):%Y-%m-%d %H:%M:%S}",
+                                      "player_name": "ImperialHzd", "mode": "ranked", "legend": "罗芭", "placement": 3,
+                                      "kills": 1, "damage": 300, "rank_tier": "白金"})
+    storage.save_weapon_holds(conn, old, [("nemesis", 0.0, 200.0)])
     storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=1, hours=5):%Y-%m-%d %H:%M:%S}",
                                 "player_name": "ImperialHzd", "mode": None, "legend": "动力小子", "placement": 4,
                                 "kills": 6, "damage": 1600})
@@ -140,6 +160,22 @@ def you_cell(page, name):
     cell = re.search(r'<td class="right you-col">(.*?)</td>', row.group(1), re.S).group(1)
     vs = re.search(r"you-(better|worse|same)", cell)
     return re.sub(r"<[^>]+>|\s", "", cell), vs.group(1) if vs else None
+
+
+def weapon_section(page):
+    """大家常用的武器那张卡片。"""
+    return page.split('id="h-weapons"')[1].split('id="h-you"')[0] if 'id="h-weapons"' in page else ""
+
+
+def weapon_cell(page, name):
+    """大家常用的武器里某把武器那一行：(占比, 拿过的局, "你"那一格的文字, 颜色)，没有返回 None。"""
+    row = re.search(rf'<th scope="row">{re.escape(name)}</th>(.*?)</tr>', weapon_section(page), re.S)
+    if not row:
+        return None
+    nums = re.findall(r'<span class="num">([^<]*)</span>|<td class="right num">([^<]*)</td>', row.group(1))
+    cell = re.search(r'<td class="right you-col">(.*?)</td>', row.group(1), re.S).group(1)
+    vs = re.search(r"you-(better|worse|same)", cell)
+    return nums[0][0], nums[1][1], re.sub(r"<[^>]+>|\s", "", cell), vs.group(1) if vs else None
 
 
 def tile(page, label):
@@ -222,7 +258,21 @@ def checks():
         and re.findall(r'<span class="tier-name">([^<]+)', tiers.group(1)) == ["黄金", "白金", "钻石"]
         and re.search(r'<li class="you">\s*<span class="tier-name">钻石<span class="you-tag">你</span>', tiers.group(1)))
 
+    guns = weapon_section(full)
+    out["大家常用的武器：在热门组合后面，先列 8 把（按占比，显示中文名），其余 2 把在\"展开全部 10 把武器\"里"] = (
+        full.index('id="h-combos"') < full.index('id="h-weapons"') < full.index('id="h-you"')
+        and rows_of(guns) == WEAPON_NAMES and rows_of(guns, "weapons-more") == WEAPON_NAMES[8:]
+        and "展开全部 10 把武器" in guns and "记下了武器的 <span class=\"num\">120</span> 局" in guns)
+    out["大家常用的武器：占比、拿过的局；横条读屏跳过（数字在旁边）"] = (
+        weapon_cell(full, "R-301")[:2] == ("20.0%", "50%") and weapon_cell(full, "new_gun_s31")[:2] == ("2.0%", "5%")
+        and guns.count('class="bar pick-bar" aria-hidden="true"') == 10)
+    out["武器的\"你\"：R-301 占你拿武器时间的 33.3%（130 ÷ 390 秒，60 秒以内的不算）、2 局；不分好坏；没拿过写\"—\""] = (
+        weapon_cell(full, "R-301")[2:] == ("33.3%2局", "same") and weapon_cell(full, "C.A.R.")[2] == "30.8%1局"
+        and weapon_cell(full, "复仇女神")[2] == "35.9%1局" and weapon_cell(full, "平行步枪")[2:] == ("—", None))
+
     week = page("/stats?view=all&range=7d")
+    out["武器近 7 天：你的局只算 7 天以内（罗芭那局的复仇女神不算），R-301 占 52.0%"] = (
+        rows_of(weapon_section(week)) == ["R-301"] and weapon_cell(week, "R-301")[2] == "52.0%2局")
     out["近 7 天：用近 7 天的汇总，你的局只算 7 天以内（罗芭那局 10 天前，不算）"] = (
         rows_of(week.split('id="h-combos"')[0]) == ["罗芭", "恶灵"] and you_cell(week, "罗芭") == ("—", None)
         and "5</span> 名玩家" in week)
@@ -233,6 +283,8 @@ def checks():
     out["匹配：没有段位按钮；没认出模式的局算匹配（动力小子 1 局，名次 4）"] = (
         "段位</span>" not in pubs and rows_of(pubs.split('id="h-combos"')[0]) == ["动力小子"]
         and you_cell(pubs, "动力小子") == ("4.0（比全体好）1局", "better"))
+    out["汇总里没有武器（老的统计服务器、还没人发过）：写\"还没有记下武器的对局\"，不写局数"] = (
+        "这个范围里还没有记下武器的对局" in weapon_section(pubs) and "记下了武器的" not in weapon_section(pubs))
     out["网址里不认识的筛选：用默认（全部、排位、全部段位）"] = (
         global_stats.choose({"range": "x", "mode": "y", "tier": "z"}) == ("all", "ranked", "all"))
 

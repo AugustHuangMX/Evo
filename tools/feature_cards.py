@@ -175,8 +175,15 @@ def write_everyone(folder):
     people = {"place": [6.4, 7.6, 8.8, 10.2, 12.6], "win": [0.0, 0.03, 0.06, 0.1, 0.16],
               "kills": [1.4, 2.2, 2.9, 3.5, 4.4], "damage": [560, 760, 960, 1180, 1420]}
 
+    # 大家常用的武器：(编号, 占拿武器时间的比例, 在多少比例的对局里拿过)
+    guns = [("r301", 0.142, 0.41), ("nemesis", 0.118, 0.35), ("car", 0.104, 0.31), ("r99", 0.087, 0.27),
+            ("flatline", 0.081, 0.24), ("havoc", 0.064, 0.2), ("prowler", 0.058, 0.18), ("spitfire", 0.052, 0.16),
+            ("eva8", 0.047, 0.17), ("hemlok", 0.043, 0.13), ("alternator", 0.039, 0.14), ("mastiff", 0.035, 0.12)]
+
     def part(players, matches, scale=1.0):
-        return {"players": players, "matches": matches, "legends": legends(scale), "combos": combos, "people": people}
+        games = int(matches * 0.6)  # 记下了武器的局（老版本的 Evo 不发武器）
+        return {"players": players, "matches": matches, "legends": legends(scale), "combos": combos, "people": people,
+                "weapon_games": games, "weapons": [{"key": k, "n": int(games * r), "share": s, "rate": r} for k, s, r in guns]}
 
     now = datetime.now()
     summary = {"v": 1, "made_at": (now - timedelta(minutes=53)).strftime("%Y-%m-%dT%H:%M:00Z"),
