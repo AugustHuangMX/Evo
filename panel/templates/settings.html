@@ -465,12 +465,72 @@
       <a class="btn feedback-btn" href="{{ feedback_url }}" target="_blank" rel="noopener noreferrer">意见反馈 ↗</a>
       <div class="setting-desc">遇到问题、想提建议，加 QQ 群 <span class="num">{{ feedback_group }}</span></div>
     </div>
+    {# 支持我（2026-10-28 用户要求）：连着三个弹窗，前两个劝一劝（文字是用户写的原文），第三个才是开发者的微信收款码。
+       每个都能"关闭"（Esc、点外面也行）。收款码是 panel/static/support/wechat-pay.jpg，不联网 #}
+    <div class="support">
+      <button type="button" class="btn support-btn" id="support-open" aria-haspopup="dialog">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>
+        支持我
+      </button>
+    </div>
   </aside>
 </div>
+
+<dialog class="dialog support-dialog" id="support-1" aria-labelledby="h-support-1" aria-describedby="support-1-desc">
+  <div class="support-body">
+    <h2 id="h-support-1" tabindex="-1" autofocus>支持我</h2>
+    <p id="support-1-desc" class="support-text">谢谢你对我的支持！Evo 承诺给大家一个免费的使用体验，除非你真的喜欢这个产品，并且有余力，否则我强烈不建议你破费！</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-text" data-support-close>关闭</button>
+      <button type="button" class="btn btn-primary" data-support-next="2">是的，我就是想真金白银支持你</button>
+    </div>
+  </div>
+</dialog>
+<dialog class="dialog support-dialog" id="support-2" aria-labelledby="h-support-2" aria-describedby="support-2-desc">
+  <div class="support-body">
+    <h2 id="h-support-2" tabindex="-1" autofocus>支持我</h2>
+    <p id="support-2-desc" class="support-text">看样子你真的很喜欢 Evo，我再一次感谢你的支持！不过，任何消费之前还请三思！你还有机会退出去</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-text" data-support-close>关闭</button>
+      <button type="button" class="btn btn-primary" data-support-next="3">我真的想好了！发码！</button>
+    </div>
+  </div>
+</dialog>
+<dialog class="dialog support-dialog support-qr-dialog" id="support-3" aria-label="开发者的微信收款码">
+  <div class="support-body">
+    <img class="support-qr" src="{{ url_for('static', filename='support/wechat-pay.jpg') }}" alt="开发者的微信收款码" width="276" height="375">
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-support-close autofocus>关闭</button>
+    </div>
+  </div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // 支持我：一个弹窗点"下一步"就关掉、打开下一个；全关了以后焦点回到"支持我"按钮
+  (function () {
+    var opener = document.getElementById("support-open");
+    var steps = [1, 2, 3].map(function (n) { return document.getElementById("support-" + n); });
+    opener.addEventListener("click", function () { steps[0].showModal(); });
+    document.querySelectorAll("[data-support-next]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var next = Number(btn.dataset.supportNext);
+        steps[next - 2].close();
+        steps[next - 1].showModal();
+      });
+    });
+    document.querySelectorAll("[data-support-close]").forEach(function (btn) {
+      btn.addEventListener("click", function () { btn.closest("dialog").close(); });
+    });
+    steps.forEach(function (dialog) {
+      dialog.addEventListener("click", function (e) { if (e.target === dialog) dialog.close(); });  // 点弹窗外面（背景）
+      dialog.addEventListener("close", function () {
+        if (!steps.some(function (d) { return d.open; })) opener.focus();
+      });
+    });
+  })();
+
   var themeSelect = document.getElementById("theme-select");
   function syncThemeSelect() { themeSelect.value = evoTheme(); }
   syncThemeSelect();

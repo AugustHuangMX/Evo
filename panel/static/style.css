@@ -670,6 +670,20 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .feedback-btn { width: 100%; justify-content: center; min-height: 40px; }
 .feedback-btn:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
 .feedback .setting-desc { margin-top: 8px; text-align: center; text-wrap: balance; }
+/* "关于 Evo"最下面的"支持我"（2026-10-28）：和"意见反馈"一样宽，心形图标是红色；点开连着三个弹窗，最后一个是收款码 */
+.support { margin-top: 12px; }
+.support-btn { width: 100%; justify-content: center; min-height: 40px; }
+.support-btn svg { flex: none; color: var(--accent); }
+.support-btn:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.dialog.support-dialog { width: min(460px, calc(100vw - 32px)); }
+.support-body { display: flex; flex-direction: column; gap: 16px; padding: 24px; }
+.support-body h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.support-body h2:focus { outline: none; }
+.support-text { margin: 0; line-height: 1.8; }
+.support-body .dialog-actions { flex-wrap: wrap; }
+.dialog.support-qr-dialog { width: min(340px, calc(100vw - 32px)); }
+.support-qr { display: block; align-self: center; width: 276px; max-width: 100%; height: auto; max-height: calc(100vh - 160px);
+  object-fit: contain; border-radius: 12px; }
 
 /* 设置页"微信小程序"（_cloud.html）：绑定了时名字后面一个绿点；绑定对话框里的二维码总是白底黑块（扫码要），深色主题也一样 */
 .cloud-on { display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--good); vertical-align: middle; }

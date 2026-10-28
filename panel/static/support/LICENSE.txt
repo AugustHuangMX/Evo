@@ -1,0 +1,5 @@
+wechat-pay.jpg 是 Evo 开发者本人的微信收款码（设置页"关于 Evo"下面的"支持我"用），不适用 Evo 的 AGPL-3.0 许可证。
+改了 Evo 自己发布的话，请换成你自己的或者去掉这一项。
+
+wechat-pay.jpg is the Evo developer's personal WeChat Pay QR code (Settings → About → "支持我") and is not covered by
+Evo's AGPL-3.0 license. If you publish a modified Evo, replace it with your own or remove it.

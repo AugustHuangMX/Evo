@@ -4,6 +4,7 @@
 - 总览页有"关注我"和三个按钮，地址是正式地址（不带分享追踪参数），交给系统浏览器打开（target="_blank"、rel="noopener noreferrer"）
 - 有对局时在左边一列"最近对局"下面（2026-10-28 用户要求）；没有对局时也显示
 - 三个图标是写对了的 SVG、单色（颜色跟随文字）、不引用别的文件，面板能取到
+- 设置页"关于 Evo"最下面的"支持我"（2026-10-28）：连着三个弹窗（文字是用户写的原文），最后一个是开发者的微信收款码
 - 右上角"Evo 官方合作小程序：派圈助手"（2026-10-28，每一页都有）：前面是派圈助手的图标，点了弹出小程序码（弹窗、码、扫码说明、关闭）；
   每一页都有；没有小程序码图片时不显示；有图片时两张都是真的 PNG、面板能取到，文件夹里有许可说明
 
@@ -39,7 +40,7 @@ def follow_links(page):
 
 
 def main():
-    print("总览页\"关注我\"：B 站、小黑盒、Evo 官网；右上角派圈助手")
+    print("总览页\"关注我\"：B 站、小黑盒、Evo 官网；右上角派圈助手；设置页支持我")
     path = FOLDER / "follow.db"
     conn = storage.connect(path)
     storage.insert_match(conn, {"ended_at": "2026-10-22 20:00:00", "placement": 3, "legend": "恶灵"})
@@ -81,6 +82,7 @@ def main():
         "面板能取到图标": all(i.get("served") == 200 for i in icons.values()),
     }
     checks.update(partner_checks(client))
+    checks.update(support_checks(client))
     return report(checks)
 
 
@@ -117,6 +119,43 @@ def partner_checks(client):
     else:
         print(f"  （还没有小程序码图片 {image}：真的图片那一项跳过）")
     return out
+
+
+SUPPORT_TEXTS = (  # 用户写的原文（"Evo" 后面照面板的习惯加了空格）
+    "谢谢你对我的支持！Evo 承诺给大家一个免费的使用体验，除非你真的喜欢这个产品，并且有余力，否则我强烈不建议你破费！",
+    "是的，我就是想真金白银支持你",
+    "看样子你真的很喜欢 Evo，我再一次感谢你的支持！不过，任何消费之前还请三思！你还有机会退出去",
+    "我真的想好了！发码！",
+)
+JPEG_HEADER = bytes([0xFF, 0xD8, 0xFF])
+
+
+def support_checks(client):
+    """设置页"关于 Evo"下面的"支持我"：连着三个弹窗，最后一个是收款码。"""
+    settings = client.get("/settings").get_data(as_text=True)
+    about = re.search(r'<aside class="card about-card".*?</aside>', settings, re.S)
+    about = about.group(0) if about else ""
+    dialogs = {n: re.search(rf'<dialog [^>]*id="support-{n}".*?</dialog>', settings, re.S) for n in (1, 2, 3)}
+    dialogs = {n: d.group(0) if d else "" for n, d in dialogs.items()}
+    image = PANEL_DIR / "static" / "support" / "wechat-pay.jpg"
+    return {
+        "设置页\"关于 Evo\"最下面（意见反馈下面）有\"支持我\"按钮":
+            -1 < about.find("feedback-btn") < about.find('id="support-open"')
+            and re.search(r'id="support-open".*?</svg>\s*支持我\s*</button>', about, re.S) is not None,
+        "第一个弹窗：原文 + \"是的，我就是想真金白银支持你\"（下一步）+ 关闭":
+            SUPPORT_TEXTS[0] in dialogs[1] and f'data-support-next="2">{SUPPORT_TEXTS[1]}<' in dialogs[1]
+            and "data-support-close" in dialogs[1],
+        "第二个弹窗：原文 + \"我真的想好了！发码！\"（下一步）+ 关闭":
+            SUPPORT_TEXTS[2] in dialogs[2] and f'data-support-next="3">{SUPPORT_TEXTS[3]}<' in dialogs[2]
+            and "data-support-close" in dialogs[2],
+        "第三个弹窗：收款码（读屏写着是什么）+ 关闭":
+            'src="/static/support/wechat-pay.jpg"' in dialogs[3] and 'alt="开发者的微信收款码"' in dialogs[3]
+            and "data-support-close" in dialogs[3],
+        "收款码是 JPG、面板能取到，写明了不适用 AGPL":
+            image.read_bytes()[:3] == JPEG_HEADER and client.get("/static/support/wechat-pay.jpg").status_code == 200
+            and (image.parent / "LICENSE.txt").is_file(),
+        "只在设置页（总览页没有）": "support-open" not in client.get("/").get_data(as_text=True),
+    }
 
 
 if __name__ == "__main__":
