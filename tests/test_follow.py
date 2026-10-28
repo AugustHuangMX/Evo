@@ -4,12 +4,15 @@
 - 总览页最下面有"关注我"和两个按钮，地址是正式地址（不带分享追踪参数），交给系统浏览器打开（target="_blank"、rel="noopener noreferrer"）
 - 没有对局时也显示
 - 两个图标是写对了的 SVG、单色（颜色跟随文字）、不引用别的文件，面板能取到
+- 总览页右上角"Evo 官方合作小程序：派圈助手"（2026-10-28）：点了弹出小程序码（弹窗、码、扫码说明、关闭）；
+  只在总览页；没有小程序码图片时不显示；有图片时是真的 PNG、面板能取到
 
 运行：python tests/test_follow.py
 """
 
 import re
 import tempfile
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -20,6 +23,7 @@ import storage
 from paths import PANEL_DIR
 
 FOLDER = Path(tempfile.mkdtemp(prefix="evo-follow-", dir=storage.DB_PATH.parent.parent))  # 在测试的临时数据文件夹里
+PNG_HEADER = bytes([0x89]) + b"PNG" + bytes([13, 10, 26, 10])  # PNG 文件开头的 8 个字节
 EXPECTED = {"哔哩哔哩": "https://space.bilibili.com/26649278",
             "小黑盒": "https://www.xiaoheihe.cn/app/user/profile/765d6910c805"}
 
@@ -34,7 +38,7 @@ def follow_links(page):
 
 
 def main():
-    print("总览页\"关注我\"：B 站、小黑盒")
+    print("总览页\"关注我\"：B 站、小黑盒；右上角派圈助手")
     path = FOLDER / "follow.db"
     conn = storage.connect(path)
     storage.insert_match(conn, {"ended_at": "2026-10-22 20:00:00", "placement": 3, "legend": "恶灵"})
@@ -72,7 +76,37 @@ def main():
         "图标不引用别的文件（不联网）": all(i.get("external") is False for i in icons.values()),
         "面板能取到图标": all(i.get("served") == 200 for i in icons.values()),
     }
+    checks.update(partner_checks(client))
     return report(checks)
+
+
+def partner_checks(client):
+    """右上角"Evo 官方合作小程序：派圈助手"。小程序码图片在不在都要能测：用 mock 换掉"有没有这张图"。"""
+    with mock.patch.object(panel_app, "partner_qr", return_value=panel_app.PARTNER_QR):
+        overview = client.get("/").get_data(as_text=True)
+        others = [client.get(url).get_data(as_text=True) for url in ("/matches", "/stats", "/settings")]
+    with mock.patch.object(panel_app, "partner_qr", return_value=None):
+        without = client.get("/").get_data(as_text=True)
+    header = overview.split("</header>")[0]
+    dialog = re.search(r'<dialog class="dialog partner-dialog".*?</dialog>', overview, re.S)
+    dialog = dialog.group(0) if dialog else ""
+    out = {
+        "总览页右上角有按钮\"Evo 官方合作小程序：派圈助手\"（在顶部那一行里）":
+            'id="partner-open"' in header and "Evo 官方合作小程序：</span><span class=\"partner-name\">派圈助手" in header,
+        "点了弹出小程序码：弹窗里有码（读屏写着是什么）、扫码说明、关闭按钮":
+            f'src="/static/{panel_app.PARTNER_QR}"' in dialog and 'alt="派圈助手的小程序码"' in dialog and "扫一扫" in dialog
+            and "data-partner-close" in dialog and 'getElementById("partner-open")' in overview,
+        "只在总览页（战绩、数据、设置页没有）": all("partner-open" not in page for page in others),
+        "没有小程序码图片时不显示按钮和弹窗": "partner-open" not in without and "partner-dialog" not in without,
+    }
+    image = PANEL_DIR / "static" / panel_app.PARTNER_QR
+    if image.is_file():
+        reply = client.get(f"/static/{panel_app.PARTNER_QR}")
+        out["小程序码图片是 PNG、面板能取到"] = (image.read_bytes()[:8] == PNG_HEADER and reply.status_code == 200
+                                       and panel_app.partner_qr() == panel_app.PARTNER_QR)
+    else:
+        print(f"  （还没有小程序码图片 {image}：真的图片那一项跳过）")
+    return out
 
 
 if __name__ == "__main__":

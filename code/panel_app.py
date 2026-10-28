@@ -119,6 +119,14 @@ FOLLOW_LINKS = (
     {"name": "哔哩哔哩", "url": "https://space.bilibili.com/26649278", "icon": "brands/bilibili.svg"},
     {"name": "小黑盒", "url": "https://www.xiaoheihe.cn/app/user/profile/765d6910c805", "icon": "brands/xiaoheihe.svg"},
 )
+# 总览页右上角"Evo 官方合作小程序：派圈助手"（2026-10-28 用户要求，0.4.3 起）：点了弹出派圈助手的小程序码，用手机微信扫
+# （电脑上没有能直接打开小程序的链接）。图片是从微信公众平台"小程序码及线下物料下载"下载的；没有这张图时不显示按钮
+PARTNER_QR = "partner/paiquan.png"
+
+
+def partner_qr():
+    """派圈助手的小程序码（panel/static 里的路径）；没有这张图返回 None。"""
+    return PARTNER_QR if (PANEL_DIR / "static" / PARTNER_QR).is_file() else None
 
 # ---- 多账号 ----
 SIMILAR_NAME = 0.6  # 新名字和某个账号的名字这么像，弹窗里提示"名字很像"（可能是识别误差，也可能是改名）
@@ -867,6 +875,7 @@ def overview():
         total=len(rows),
         share=share,
         follow=FOLLOW_LINKS,
+        partner=partner_qr(),
     )
 
 

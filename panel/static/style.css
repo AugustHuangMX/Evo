@@ -142,6 +142,27 @@ a { color: inherit; text-decoration: none; }
 /* 切换账号（有 2 个以上账号时才有）：和主题按钮一起靠右 */
 .account-switch { margin-left: auto; display: flex; align-items: center; gap: 8px; margin-top: 0; margin-bottom: 0; }
 .pill ~ .account-switch, .account-switch ~ .icon-btn { margin-left: 0; }
+/* 总览页右上角"Evo 官方合作小程序：派圈助手"（base.html，2026-10-28）：描边的圆角按钮，把右边的东西推到最右；
+   窗口窄时只留"派圈助手"。弹窗里的小程序码总是白底（扫码要），深色主题也一样 */
+.partner-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 14px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--text); font: inherit; font-size: 13px;
+  cursor: pointer; transition: border-color 0.15s; }
+.partner-btn:hover { border-color: var(--muted); }
+.partner-btn:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.partner-btn svg { flex: none; color: var(--muted); }
+.partner-label { color: var(--muted); }
+.partner-name { font-weight: 500; }
+.partner-btn ~ .pill, .partner-btn ~ .account-switch, .partner-btn ~ .icon-btn { margin-left: 0; }
+.dialog.partner-dialog { width: min(360px, calc(100vw - 32px)); }
+.partner-body { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px 24px 20px; text-align: center; }
+.partner-kicker { margin: 0; color: var(--muted); font-size: 13px; }
+.partner-body h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.partner-body h2:focus { outline: none; }
+.partner-qr { width: 232px; height: 232px; margin: 8px 0 4px; padding: 6px; border-radius: 12px; background: #FFFFFF; box-shadow: 0 0 0 1px var(--border); }
+.partner-qr img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.partner-about { text-wrap: balance; }
+.partner-body .dialog-actions { align-self: stretch; margin-top: 8px; }
+@media (max-width: 760px) { .partner-label { display: none; } }
 .account-label { color: var(--muted); font-size: 13px; }
 .account-switch select { max-width: 220px; min-height: 36px; padding: 6px 10px; text-overflow: ellipsis; }
 [data-theme="dark"] .icon-moon, [data-theme="light"] .icon-sun { display: none; }

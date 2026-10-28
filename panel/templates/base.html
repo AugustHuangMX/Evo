@@ -57,6 +57,13 @@
     </a>
     {% endfor %}
   </nav>
+  {% if partner %}
+  {# 总览页右上角：Evo 官方合作小程序「派圈助手」（2026-10-28 用户要求）。点了弹出小程序码（电脑上打不开小程序，用手机微信扫） #}
+  <button type="button" class="partner-btn" id="partner-open" aria-haspopup="dialog">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
+    <span class="partner-label">Evo 官方合作小程序：</span><span class="partner-name">派圈助手</span>
+  </button>
+  {% endif %}
   {% if is_demo %}
   <div class="pill pill-warn" title="当前读取的是 {{ db_name }}，不是正式数据库">
     <span class="dot"></span><span>演示数据</span>
@@ -207,6 +214,29 @@
 
 {% block content %}{% endblock %}
 </main>
+{% if partner %}
+{# 派圈助手的小程序码（右上角按钮打开）：码总是白底（扫码要），深色主题也一样；Esc、"关闭"、点弹窗外面都能关 #}
+<dialog class="dialog partner-dialog" id="partner-dialog" aria-labelledby="h-partner" aria-describedby="partner-desc">
+  <div class="partner-body">
+    <p class="partner-kicker">Evo 官方合作小程序</p>
+    <h2 id="h-partner" tabindex="-1" autofocus>派圈助手</h2>
+    <p class="dialog-desc partner-about">地图轮换和倒计时、猎杀分数线，打开就能看</p>
+    <div class="partner-qr"><img src="{{ url_for('static', filename=partner) }}" alt="派圈助手的小程序码" width="220" height="220"></div>
+    <p id="partner-desc" class="dialog-desc partner-howto">打开手机微信，点右上角的"+"→"扫一扫"<br>扫上面的码</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-partner-close>关闭</button>
+    </div>
+  </div>
+</dialog>
+<script>
+  (function () {
+    var dialog = document.getElementById("partner-dialog");
+    document.getElementById("partner-open").addEventListener("click", function () { dialog.showModal(); });
+    dialog.querySelector("[data-partner-close]").addEventListener("click", function () { dialog.close(); });
+    dialog.addEventListener("click", function (e) { if (e.target === dialog) dialog.close(); });  // 点弹窗外面（背景）
+  })();
+</script>
+{% endif %}
 {% if name_question %}
 {# 多账号：认出了新的玩家名，问"是不是同一个人"。打开页面时弹出（下面的脚本）；不选一项不能"确定"；
    "稍后再问"和按 Esc 一样，这个窗口开着期间不再弹，下次打开窗口再问 #}
