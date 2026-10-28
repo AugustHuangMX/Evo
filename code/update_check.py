@@ -51,7 +51,7 @@ DOWNLOAD_HOSTS = {"dl.evotracker.cn"}  # latest.json 里 download.url 只接受�
 # 国内线路：腾讯云 COS（上海）的存储桶，用它自带的地址（不用备案；2024 年起这种地址只是不能在浏览器里预览、
 # 不能下 apk，zip 照常能下）。release.py、publish.py 也用这个。换存储桶要先改这里、发一版：
 # 旧版 Evo 只认自己代码里的存储桶（2026-10-27 旧存储桶 evo-dl-1307698527 的账号欠费停用，0.4.0–0.4.2 都只认它）
-COS_BASE = "https://evo-dl-1307698527.cos.ap-shanghai.myqcloud.com"  # 2026-10-24 用户建的；None = 没有备用线路
+COS_BASE = "https://evo-dl-1312774356.cos.ap-shanghai.myqcloud.com"  # 2026-10-28 用户在国内站建的；None = 没有国内线路
 MIRROR_HOSTS = {urlparse(COS_BASE).hostname} if COS_BASE else set()
 MAX_MIRRORS = 3
 MAX_PATCHES = 5  # latest.json 里最多看几个补丁包（发布时做最近 3 个版本的）
