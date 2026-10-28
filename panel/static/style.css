@@ -160,7 +160,6 @@ a { color: inherit; text-decoration: none; }
 .partner-body h2:focus { outline: none; }
 .partner-qr { width: 232px; height: 232px; margin: 8px 0 4px; padding: 6px; border-radius: 12px; background: #FFFFFF; box-shadow: 0 0 0 1px var(--border); }
 .partner-qr img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.partner-about { text-wrap: balance; }
 .partner-body .dialog-actions { align-self: stretch; margin-top: 8px; }
 @media (max-width: 760px) { .partner-label { display: none; } }
 .account-label { color: var(--muted); font-size: 13px; }
