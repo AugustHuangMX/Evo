@@ -8,8 +8,9 @@
    update_check.safe_download），边下边写进程序文件夹里的 _update/，边算 SHA-256，和 latest.json 写的对不上就删掉、报错。
    补丁包（0.4.0 起，2026-10-24 用户决定，见 update_patch.py）：latest.json 里有从现在这个版本升上来的补丁包，就先下它
    （只有变了的文件，一般十几 MB）；补丁包用不了（本机的文件对不上、服务器上没有）才改下完整的安装包。
-   国内备用线路（0.4.0 起，2026-10-24 用户决定）：latest.json 里还写着腾讯云 COS 上同一个文件的地址。
-   先从 dl.evotracker.cn 下；断了、出错，或者每 15 秒算一次速度、低于 300 KB/s（100 MB 要 6 分钟以上），就换下一条线路，
+   国内线路（0.4.0 起，2026-10-24 用户决定）：latest.json 里还写着腾讯云 COS（上海）上同一个文件的地址（mirrors）。
+   0.4.3 起（2026-10-28 用户决定：国内玩家多）先从 COS 下，再是 dl.evotracker.cn（0.4.2 及以前反过来）；
+   断了、出错，或者每 15 秒算一次速度、低于 300 KB/s（100 MB 要 6 分钟以上），就换下一条线路，
    从已经下到的地方接着下（HTTP Range；那边不支持就从头下）。每条线路最多用两次：别的都不行时还会回来接着下；
    都用完了才算失败。SHA-256 只认 latest.json 里的，所以不管从哪条线路下，文件被换掉都会被发现
 2. 解压到 _update/<版本号>/Evo/（用补丁包时：照补丁包里的清单，用补丁包里的文件和现在的程序文件拼出来，每个都核对），
@@ -55,7 +56,7 @@ from storage import APP_VERSION
 UPDATE_DIR = EXE_DIR / "_update"  # 下载、解压、安装记录都在这里
 OLD_DIR = "_old_version"  # 安装时旧文件先挪到这里，装好后删掉；出错就挪回去
 CHUNK = 256 * 1024
-READ_TIMEOUT = 20  # 秒：下载时这么久收不到数据就算这条线路断了（有备用线路时换过去）
+READ_TIMEOUT = 20  # 秒：下载时这么久收不到数据就算这条线路断了（有别的线路时换过去）
 SPEED_WINDOW = 15  # 秒：每隔这么久算一次这段时间的平均速度
 MIN_SPEED = 300 * 1024  # 字节/秒：比这慢、而且还有别的线路可以试，就换线路
 MAX_TURNS = 2  # 每条线路最多用几次
@@ -240,9 +241,9 @@ def _download(version, info):
 
 
 def _get(info, path, what):
-    """用各条线路（info 的 url 和 mirrors）把这个文件下载到 path，核对大小和 SHA-256。"""
+    """用各条线路（info 的 mirrors 和 url）把这个文件下载到 path，核对大小和 SHA-256。"""
     started = time.monotonic()
-    urls = [info["url"], *info.get("mirrors", [])]
+    urls = [*info.get("mirrors", []), info["url"]]  # 先国内线路（COS），再 dl.evotracker.cn
     _log(f"开始下载 {what}（{_size_text(info['size'])}），线路：{'、'.join(map(_host, urls))}")
     with open(path, "wb") as f:
         progress = _Part(f, info["size"])
@@ -304,7 +305,7 @@ class _Part:
 
 
 def _fetch(urls, part):
-    """用各条线路（第一条是 dl.evotracker.cn，后面是备用线路）下载到下完，换线路时接着下。
+    """用各条线路（按顺序：国内线路 COS，最后是 dl.evotracker.cn）下载到下完，换线路时接着下。
     每条线路最多用 MAX_TURNS 次；都用完了还没下完，抛出最后一次的错误。"""
     lines = [{"url": u, "host": _host(u), "main": i == 0, "turns": 0, "speed": None} for i, u in enumerate(urls)]
     line, error = None, None

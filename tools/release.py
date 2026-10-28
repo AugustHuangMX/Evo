@@ -11,7 +11,7 @@
    PATCH_FROM 个旧版本（不早于 DELTA_SINCE：更早的 Evo 不会用补丁包）各做一个，只放变了的文件
 8. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt；
    还写上压缩包和补丁包的地址、SHA-256 和大小，Evo 里的一键更新（updater.py）按它下载、核对；
-   以及国内备用线路（腾讯云 COS 上的同一个文件，update_check.COS_BASE）
+   以及国内线路（腾讯云 COS 上的同一个文件，update_check.COS_BASE）
 
 版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己电脑上程序旁边的
 Evo Tracker Data（规则见 paths.py）。
@@ -53,7 +53,7 @@ PATCH_FROM = 3  # 给最近几个旧版本做补丁包（更早的下完整的�
 
 
 def mirror_urls(name):
-    """国内备用线路：腾讯云 COS 上的同一个文件（2026-10-24 用户决定）。还没设存储桶时没有。"""
+    """国内线路：腾讯云 COS 上的同一个文件（2026-10-24 用户决定；0.4.3 起 Evo 先用它）。还没设存储桶时没有。"""
     return [f"{update_check.COS_BASE}/{name}"] if update_check.COS_BASE else []
 
 

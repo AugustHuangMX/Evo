@@ -1,8 +1,8 @@
 """检查 Evo 有没有新版本。Evo 会联网的只有这里、一键更新（updater.py，用户点了"立即更新"才下载）和匿名统计
 （telemetry.py，用户同意了才发），都可以关掉。
 
-只做一件事：下载 https://dl.evotracker.cn/latest.json 这个公开的小文件，看里面写的最新版本号；读不到时改读
-国内备用线路（腾讯云 COS）上的同一个文件。
+只做一件事：下载 latest.json 这个公开的小文件，看里面写的最新版本号。0.4.3 起先读国内线路（腾讯云 COS，上海）上的，
+读不到再读 https://dl.evotracker.cn/latest.json（Cloudflare）；0.4.2 及以前先读 dl.evotracker.cn 的。
 请求里只带"Evo/<版本号>"，不发送任何战绩、截图或电脑信息；和打开任何网页一样，服务器能看到访问者的 IP 地址。
 几秒钟连不上、文件格式不对，都当作"这次没查到"，不影响 Evo 的其他功能。
 
@@ -12,10 +12,12 @@ latest.json 由 release.py 在发布时生成，和安装包一起传到 R2 和 
                   "mirrors": ["https://<存储桶>.cos.ap-shanghai.myqcloud.com/Evo-0.4.1-win64.zip"],
                   "patches": {"0.4.0": {"url": "https://dl.evotracker.cn/Evo-0.4.1-patch-from-0.4.0.zip",
                                         "sha256": "……", "size": 11000000, "mirrors": ["……"]}}}}
-download 是一键更新用的安装包（0.3.3 起才有）：地址只接受 dl.evotracker.cn，没有或格式不对就只能去官网下载。
-mirrors 是国内备用线路（0.4.0 起，2026-10-24 用户决定）：dl.evotracker.cn 在 Cloudflare，国内晚上三家运营商连过去
-都慢、丢包（实测见 docs/底座.md），太慢或连不上时改从腾讯云 COS（上海）下载同一个文件，见 updater.py。
-只接受 COS_BASE 这个存储桶里的 zip。存储桶是自己的，所以 latest.json 从 dl.evotracker.cn 读不到时也可以从它读；
+download 是一键更新用的安装包（0.3.3 起才有）：url 只接受 dl.evotracker.cn，没有或格式不对就只能去官网下载
+（旧版 Evo 只认 url，所以它一直是 dl.evotracker.cn）。
+mirrors 是国内线路（0.4.0 起，2026-10-24 用户决定）：腾讯云 COS（上海）上的同一个文件。dl.evotracker.cn 在 Cloudflare，
+国内晚上三家运营商连过去都慢、丢包（实测见 docs/底座.md）。0.4.0–0.4.2 先从 dl.evotracker.cn 下，太慢或连不上才换 COS；
+0.4.3 起（2026-10-28 用户决定：国内玩家多）所有人先从 COS 下，太慢或连不上再换 dl.evotracker.cn，见 updater.py。
+只接受 COS_BASE 这个存储桶里的 zip。存储桶是自己的，所以 latest.json 也可以从它读；
 不管从哪条线路下载，SHA-256 都以 latest.json 为准。
 patches 是补丁包（0.4.0 起，2026-10-24 用户决定，见 update_patch.py）：从这些版本升上来只下载变了的文件。
 地址的规矩和完整安装包一样；Evo 只用自己这个版本的那一个，没有就下完整的。
@@ -45,9 +47,10 @@ from storage import APP_VERSION
 UPDATE_URL = os.environ.get("EVO_UPDATE_URL", "https://dl.evotracker.cn/latest.json")
 DEFAULT_PAGE = "https://evotracker.cn/#download"
 TRUSTED_HOSTS = {"evotracker.cn", "www.evotracker.cn", "dl.evotracker.cn"}  # 只打开自己网站上的链接
-DOWNLOAD_HOSTS = {"dl.evotracker.cn"}  # 一键更新先从这里下载安装包
-# 国内备用线路：腾讯云 COS（上海）的存储桶，用它自带的地址（不用备案；2024 年起这种地址只是不能在浏览器里预览、
-# 不能下 apk，zip 照常能下）。release.py、publish.py 也用这个。换存储桶要先改这里、发一版
+DOWNLOAD_HOSTS = {"dl.evotracker.cn"}  # latest.json 里 download.url 只接受这里（Cloudflare R2）
+# 国内线路：腾讯云 COS（上海）的存储桶，用它自带的地址（不用备案；2024 年起这种地址只是不能在浏览器里预览、
+# 不能下 apk，zip 照常能下）。release.py、publish.py 也用这个。换存储桶要先改这里、发一版：
+# 旧版 Evo 只认自己代码里的存储桶（2026-10-27 旧存储桶 evo-dl-1307698527 的账号欠费停用，0.4.0–0.4.2 都只认它）
 COS_BASE = "https://evo-dl-1307698527.cos.ap-shanghai.myqcloud.com"  # 2026-10-24 用户建的；None = 没有备用线路
 MIRROR_HOSTS = {urlparse(COS_BASE).hostname} if COS_BASE else set()
 MAX_MIRRORS = 3
@@ -55,7 +58,8 @@ MAX_PATCHES = 5  # latest.json 里最多看几个补丁包（发布时做最近 
 # 用 EVO_UPDATE_URL 换成本机的测试地址时，也接受从同一个地址下载安装包（http 也行），方便不上线就试一键更新；
 # 这时也不读 COS 上的 latest.json
 TEST_HOST = urlparse(UPDATE_URL).hostname if os.environ.get("EVO_UPDATE_URL") else None
-LATEST_URLS = [UPDATE_URL] + ([f"{COS_BASE}/latest.json"] if COS_BASE and not TEST_HOST else [])
+# 先读 COS 上的（国内快），读不到再读 dl.evotracker.cn 的
+LATEST_URLS = ([f"{COS_BASE}/latest.json"] if COS_BASE and not TEST_HOST else []) + [UPDATE_URL]
 MAX_PACKAGE = 1024 ** 3  # 安装包现在约 105 MB，超过 1 GB 一定是写错了
 TIMEOUT = 15  # 秒：国内移动宽带到 dl.evotracker.cn 绕得远，晚上还可能丢包，5 秒常常不够（0.3.6 及以前是 5 秒）
 RETRY_PAUSE = 5  # 秒：自动检查没查到时，等一下再试一次
@@ -94,7 +98,7 @@ def _test_url(parsed):
 
 
 def safe_mirror(url):
-    """备用线路的地址：COS 存储桶（MIRROR_HOSTS）的 https，最外层的一个 zip 文件，不带参数、端口。"""
+    """国内线路的地址：COS 存储桶（MIRROR_HOSTS）的 https，最外层的一个 zip 文件，不带参数、端口。"""
     parsed = _parse(url)
     if parsed is None:
         return False
@@ -110,7 +114,7 @@ def safe_mirror(url):
 
 def _package(info):
     """一个要下载的文件 {"url", "sha256", "size", "mirrors"}：地址只接受 dl.evotracker.cn 的 https（测试地址除外），
-    SHA-256 和大小的格式要对，不对返回 None。mirrors（备用线路）不对的一条条去掉，不影响主线路；返回的 mirrors 总是列表。"""
+    SHA-256 和大小的格式要对，不对返回 None。mirrors（国内线路）不对的一条条去掉，不影响 url；返回的 mirrors 总是列表。"""
     if not isinstance(info, dict):
         return None
     url, digest, size = info.get("url"), info.get("sha256"), info.get("size")
@@ -144,7 +148,7 @@ def safe_download(info):
 
 def fetch_latest(timeout=TIMEOUT):
     """下载并检查 latest.json，返回 {"version", "date", "page", "notes", "download"}（download 没有时为 None）。
-    先读 dl.evotracker.cn，读不到（或格式不对）再读 COS 上的；都不行抛出 UpdateError（说的是第一个的原因）。"""
+    先读 COS 上的，读不到（或格式不对）再读 dl.evotracker.cn 的；都不行抛出 UpdateError（说的是第一个的原因）。"""
     first = None
     for url in LATEST_URLS:
         try:

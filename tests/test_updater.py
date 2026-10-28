@@ -110,7 +110,7 @@ GOOD_FILES = {"Evo/Evo.exe": b"new exe", "Evo/_internal/new.txt": b"new", "Evo/L
 
 
 def latest_for(base, path, data, version, sha=None, mirrors=()):
-    """mirrors：备用线路的路径（内容要另外放进 Handler.files，不放就是 404）。"""
+    """mirrors：国内线路的路径，Evo 先试它们，最后才是 path（内容要另外放进 Handler.files，不放就是 404）。"""
     Handler.files[path] = data
     return {"version": version, "date": "2026-10-19", "page": "https://evotracker.cn/#download", "notes": ["测试"],
             "download": {"url": base + path, "sha256": sha or hashlib.sha256(data).hexdigest(), "size": len(data),
@@ -202,7 +202,7 @@ def download_info_checks():
 
 
 def latest_checks(base):
-    """latest.json 先读 dl.evotracker.cn，读不到（或格式不对）再读 COS 上的。"""
+    """latest.json 先读 COS 上的，读不到（或格式不对）再读 dl.evotracker.cn 的（0.4.3 起）。"""
     good = {"version": "9.6.1", "date": "2026-10-24", "notes": ["测试"], "download": None}
     Handler.files["/latest-good.json"] = json.dumps(good).encode("utf-8")
     Handler.files["/latest-junk.json"] = b"<html>not json</html>"
@@ -215,16 +215,15 @@ def latest_checks(base):
             except update_check.UpdateError as e:
                 return str(e)
 
-    out["主地址 404：改读备用地址的 latest.json"] = fetch("/latest-missing.json", "/latest-good.json")["version"] == "9.6.1"
-    out["主地址回的不是版本信息：改读备用地址的"] = fetch("/latest-junk.json", "/latest-good.json")["version"] == "9.6.1"
+    out["第一个地址 404：改读下一个地址的 latest.json"] = fetch("/latest-missing.json", "/latest-good.json")["version"] == "9.6.1"
+    out["第一个地址回的不是版本信息：改读下一个的"] = fetch("/latest-junk.json", "/latest-good.json")["version"] == "9.6.1"
     out["都读不到：说第一个的原因"] = "连不上" in fetch("/latest-missing.json", "/latest-junk.json")
     Handler.requests.clear()
     fetch("/latest-good.json", "/latest-junk.json")
-    out["主地址读到了：不再读备用地址"] = [r[0] for r in Handler.requests] == ["/latest-good.json"]
+    out["第一个地址读到了：不再读下一个"] = [r[0] for r in Handler.requests] == ["/latest-good.json"]
     urls = update_check.LATEST_URLS
-    out["先读 dl.evotracker.cn，备用的只有 COS 存储桶上的"] = (
-        urls[0] == update_check.UPDATE_URL and len(urls) <= 2
-        and all(update_check.COS_BASE and u == f"{update_check.COS_BASE}/latest.json" for u in urls[1:]))
+    cos_first = [f"{update_check.COS_BASE}/latest.json"] if update_check.COS_BASE and not update_check.TEST_HOST else []
+    out["先读 COS 存储桶上的，最后读 dl.evotracker.cn 的"] = urls == cos_first + [update_check.UPDATE_URL]
     return out
 
 
@@ -298,13 +297,13 @@ def download_checks(base):
 
 
 def mirror_checks(base):
-    """备用线路：用本机服务器的不同路径当作主线路和备用线路。"""
+    """换线路：用本机服务器的不同路径当作国内线路（mirrors，先试）和 dl.evotracker.cn（url，最后试）。"""
     out = {}
     big = package({**GOOD_FILES, "Evo/big.bin": os.urandom(2 * 2**20)}, stored=True)  # 约 2 MB，慢慢发要 1.6 秒
     half = 2**20
 
     def run(version, main, mirrors, files=(), **setup):
-        """准备好主线路 main 和备用线路 mirrors（files 里的路径放上安装包，其余 404），下载到结束。
+        """准备好 dl.evotracker.cn 的 main 和国内线路 mirrors（files 里的路径放上安装包，其余 404），下载到结束。
         返回 (结束时的状态, 这次收到的请求, 日志)。"""
         Handler.requests.clear()
         for path in files:
@@ -321,40 +320,45 @@ def mirror_checks(base):
                 (app.dir / "_update" / version / "Evo" / "big.bin").stat().st_size == 2 * 2**20)
             return state, list(Handler.requests), app.logs, folder_ok
 
-    state, reqs, logs, ok = run("9.8.1", "/m1-main.zip", ["/m1-mirror.zip"], files=["/m1-mirror.zip"])
-    out["主线路 404：换到备用线路下完，日志里写着换线路"] = (
-        state["phase"] == "ready" and ok and reqs == [("/m1-main.zip", None), ("/m1-mirror.zip", None)]
+    state, reqs, logs, ok = run("9.8.9", "/m9-main.zip", ["/m9-cos.zip"], files=["/m9-main.zip", "/m9-cos.zip"])
+    out["国内线路好好的：只从它下，不碰 dl.evotracker.cn"] = (
+        state["phase"] == "ready" and ok and reqs == [("/m9-cos.zip", None)])
+
+    state, reqs, logs, ok = run("9.8.1", "/m1-main.zip", ["/m1-cos.zip"], files=["/m1-main.zip"])
+    out["国内线路 404：换到 dl.evotracker.cn 下完，日志里写着换线路"] = (
+        state["phase"] == "ready" and ok and reqs == [("/m1-cos.zip", None), ("/m1-main.zip", None)]
         and any("换到 127.0.0.1" in m for m in logs) and any("下载好了" in m for m in logs))
 
-    state, reqs, logs, ok = run("9.8.2", "/m2-main.zip", ["/m2-mirror.zip"], files=["/m2-main.zip", "/m2-mirror.zip"],
-                                cut={"/m2-main.zip": half})
-    out["主线路中途断了：备用线路从断的地方接着下"] = (
-        state["phase"] == "ready" and ok and reqs == [("/m2-main.zip", None), ("/m2-mirror.zip", f"bytes={half}-")])
+    state, reqs, logs, ok = run("9.8.2", "/m2-main.zip", ["/m2-cos.zip"], files=["/m2-main.zip", "/m2-cos.zip"],
+                                cut={"/m2-cos.zip": half})
+    out["国内线路中途断了：dl.evotracker.cn 从断的地方接着下"] = (
+        state["phase"] == "ready" and ok and reqs == [("/m2-cos.zip", None), ("/m2-main.zip", f"bytes={half}-")])
 
-    state, reqs, logs, ok = run("9.8.3", "/m3-main.zip", ["/m3-mirror.zip"], files=["/m3-main.zip", "/m3-mirror.zip"],
-                                cut={"/m3-main.zip": half}, no_range={"/m3-mirror.zip"})
-    out["备用线路不支持接着下：从头下，照样下好"] = (
-        state["phase"] == "ready" and ok and reqs[-1] == ("/m3-mirror.zip", f"bytes={half}-")
+    state, reqs, logs, ok = run("9.8.3", "/m3-main.zip", ["/m3-cos.zip"], files=["/m3-main.zip", "/m3-cos.zip"],
+                                cut={"/m3-cos.zip": half}, no_range={"/m3-main.zip"})
+    out["换过去的线路不支持接着下：从头下，照样下好"] = (
+        state["phase"] == "ready" and ok and reqs[-1] == ("/m3-main.zip", f"bytes={half}-")
         and any("不支持接着下" in m for m in logs))
 
     with mock.patch.multiple(updater, SPEED_WINDOW=0.2, MIN_SPEED=4 * 2**20):
-        state, reqs, logs, ok = run("9.8.4", "/m4-main.zip", ["/m4-mirror.zip"],
-                                    files=["/m4-main.zip", "/m4-mirror.zip"], slow={"/m4-main.zip"})
+        state, reqs, logs, ok = run("9.8.4", "/m4-main.zip", ["/m4-cos.zip"],
+                                    files=["/m4-main.zip", "/m4-cos.zip"], slow={"/m4-cos.zip"})
     resumed_at = int((reqs[-1][1] or "bytes=0-").removeprefix("bytes=").rstrip("-")) if reqs else 0
-    out["主线路太慢：换到备用线路，从已经下到的地方接着下"] = (
-        state["phase"] == "ready" and ok and [r[0] for r in reqs] == ["/m4-main.zip", "/m4-mirror.zip"]
+    out["国内线路太慢：换到 dl.evotracker.cn，从已经下到的地方接着下"] = (
+        state["phase"] == "ready" and ok and [r[0] for r in reqs] == ["/m4-cos.zip", "/m4-main.zip"]
         and 0 < resumed_at < len(big) and any("太慢" in m for m in logs))
 
     with mock.patch.object(updater, "RETRY_PAUSE", 0.05):
         state, reqs, logs, ok = run("9.8.5", "/m5-main.zip", [], files=["/m5-main.zip"],
                                     cut={"/m5-main.zip": half}, cut_once={"/m5-main.zip"})
-    out["没有备用线路、中途断了一次：等一下再从断的地方接着下"] = (
+    out["没有国内线路、中途断了一次：等一下再从断的地方接着下"] = (
         state["phase"] == "ready" and ok and reqs == [("/m5-main.zip", None), ("/m5-main.zip", f"bytes={half}-")]
         and any("等一下再试" in m for m in logs))
 
     state, reqs, logs, ok = run("9.8.6", "/m6-main.zip", ["/m6-a.zip", "/m6-b.zip"])
-    out["主线路和备用线路都 404：每条只试一次，报错，什么也不留"] = (
-        state["phase"] == "failed" and "HTTP 404" in state["error"] and len(reqs) == 3
+    out["每条线路都 404：按顺序（国内的，最后 dl.evotracker.cn）各试一次，报错，什么也不留"] = (
+        state["phase"] == "failed" and "HTTP 404" in state["error"]
+        and [r[0] for r in reqs] == ["/m6-a.zip", "/m6-b.zip", "/m6-main.zip"]
         and not list(FOLDER.glob("mirror-9.8.6/_update/*.part")) and any("没下载好" in m for m in logs))
 
     with mock.patch.object(updater, "RETRY_PAUSE", 0.05):
@@ -363,11 +367,9 @@ def mirror_checks(base):
     out["每条线路都断在同一处：各试两次后报错，说下载中途断了"] = (
         state["phase"] == "failed" and "中途断了" in state["error"] and len(reqs) == 4)
 
-    # 用备用线路时进度里有 mirror（页面上显示"备用线路"）
-    Handler.files["/m8-mirror.zip"] = big
-    Handler.slow.add("/m8-mirror.zip")
-    latest = latest_for(base, "/m8-main.zip", big, "9.8.8", mirrors=["/m8-mirror.zip"])
-    del Handler.files["/m8-main.zip"]
+    # 换到后面的线路时进度里有 mirror（页面上显示"备用线路"）：国内线路 404，换到 dl.evotracker.cn（慢慢发）
+    latest = latest_for(base, "/m8-main.zip", big, "9.8.8", mirrors=["/m8-cos.zip"])
+    Handler.slow.add("/m8-main.zip")
     with App("mirror-9.8.8"):
         updater.start_download(latest)
         end, seen = time.monotonic() + 10, {}
@@ -375,7 +377,7 @@ def mirror_checks(base):
             seen = updater.state(latest)
             time.sleep(0.02)
         wait_done(latest)
-    out["下载中：用的是备用线路时，进度里写着"] = seen.get("phase") == "downloading" and seen.get("mirror") is True
+    out["下载中：换到了后面的线路时，进度里写着"] = seen.get("phase") == "downloading" and seen.get("mirror") is True
     return out
 
 

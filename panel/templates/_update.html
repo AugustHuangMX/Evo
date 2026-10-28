@@ -8,7 +8,7 @@
 <input type="hidden" name="next" value="{{ next }}">
 {%- endmacro %}
 
-{# 主线路（dl.evotracker.cn）太慢或断了、换到备用线路时，进度后面写"备用线路"（job.mirror，脚本跟着改）。
+{# 第一条线路（0.4.3 起是国内线路 COS，之前是 dl.evotracker.cn）太慢或断了、换到下一条时，进度后面写"备用线路"（job.mirror，脚本跟着改）。
    live：顶部提示条里那一份是状态消息，读屏软件在换线路时念一次；设置页那一份不念，免得同一件事念两遍 #}
 {% macro progress(job, live=false) -%}
 {% if job.phase == 'downloading' %}

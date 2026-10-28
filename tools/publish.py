@@ -17,16 +17,17 @@
      然后显示更新日志页要加的这一版（原文），确认过才往下做，没确认就什么都不上传
   2. 上传压缩包和补丁包到 R2 存储桶（dl.evotracker.cn）；线上已经是同一个文件就跳过
   3. 从 dl.evotracker.cn 下载回来，核对 SHA-256
-  4. 上传压缩包和补丁包到腾讯云 COS（国内备用线路，2026-10-24 用户决定；官网的"国内备用下载"和一键更新都用它）；
+  4. 上传压缩包和补丁包到腾讯云 COS（国内线路，2026-10-24 用户决定；2026-10-28 起官网的"国内下载"和 0.4.3 起的
+     一键更新都先用它）；
      线上已经是同一个文件就跳过
   5. 从 COS 下载回来，核对 SHA-256
-  6. 改官网：site/index.html 的下载链接、国内备用下载链接、版本号、大小、SHA-256；
+  6. 改官网：site/index.html 的国内下载链接（COS）、海外下载链接（R2）、版本号、大小、SHA-256；
      site/changelog.html 最上面加这一版（内容来自 latest.json，也就是 release/更新内容.txt），"最新"标签挪过来
   7. 上传官网（Cloudflare Pages）；线上已经是新版本就跳过
   8. 打开 evotracker.cn，确认下载链接和 SHA-256 已经是新的，更新日志页有这一版
 第二段（--live）：
   9. 再核对一次线上的压缩包、补丁包（R2 比 MD5，COS 比记下的 SHA-256，不用重新下载）和官网
-  10. 上传 latest.json（R2 和 COS 各一份；Evo 先读 R2 的，读不到再读 COS 的）
+  10. 上传 latest.json（R2 和 COS 各一份；0.4.3 起 Evo 先读 COS 的，读不到再读 R2 的，之前的反过来）
   11. 下载回来，确认和本机的一样
 
 上传 R2 用 Wrangler（Cloudflare 的命令行工具，只装在开发电脑上，第一次用要 wrangler login），不用打开 Cloudflare 网站；
@@ -71,9 +72,10 @@ ZIP = DIST / ZIP_NAME
 ZIP_URL = f"{DL}/{ZIP_NAME}"
 LATEST = DIST / "latest.json"
 LATEST_URL = f"{DL}/latest.json"
-COS = update_check.COS_BASE  # 国内备用线路：腾讯云 COS 的存储桶（还没设时是 None，不能发布）
+COS = update_check.COS_BASE  # 国内线路：腾讯云 COS 的存储桶（还没设时是 None，不能发布）
 MIRROR_URL = f"{COS}/{ZIP_NAME}"
-# 官网下载区"下载慢？尝试备用下载方式"展开后的链接：<a … data-mirror href="COS 上的压缩包">，发版时换成新版本的
+# 官网的国内下载（首屏的下载按钮和下载区的"国内下载"）：<a … data-mirror href="COS 上的压缩包">，发版时换成新版本的
+MIRROR_LINKS = 2
 MIRROR_LINK = re.compile(r'(<a\s[^>]*\bdata-mirror\b[^>]*\bhref=")([^"]*)(")')
 
 
@@ -137,7 +139,7 @@ def online_version():
 
 
 def site_is_new(digest):
-    """线上官网的下载链接、国内备用下载链接和 SHA-256 是不是已经是这个压缩包的，更新日志页有没有这一版。"""
+    """线上官网的国内下载、海外下载链接和 SHA-256 是不是已经是这个压缩包的，更新日志页有没有这一版。"""
     html, changelog = remote_bytes(SITE_URL), remote_bytes(CHANGELOG_URL)
     html = html.decode("utf-8") if html is not None else ""
     return (ZIP_URL in html and MIRROR_URL in html and digest in html
@@ -155,7 +157,7 @@ def url_sha256(url, fresh=True):
     return digest.hexdigest()
 
 
-# ---------- 腾讯云 COS（国内备用线路） ----------
+# ---------- 腾讯云 COS（国内线路） ----------
 
 def cos_head(url):
     """COS 上有这个文件就返回 (大小, 上传时记下的 SHA-256)，没有返回 None。"""
@@ -216,7 +218,7 @@ def ready(head):
 def prepare():
     """确保 dist 里有当前提交打的压缩包和补丁包；没有就运行 release.py。返回 (SHA-256, 大小, latest.json 的内容)。"""
     if not COS:
-        raise Stop("还没有设国内备用线路的 COS 存储桶（code/update_check.py 的 COS_BASE）：设好、提交以后再发布")
+        raise Stop("还没有设国内线路的 COS 存储桶（code/update_check.py 的 COS_BASE）：设好、提交以后再发布")
     release.check_clean(False)
     head = git("rev-parse", "--short", "HEAD")
     if ready(head):
@@ -272,27 +274,29 @@ def verify(files, base, fresh):
 
 
 def update_site(digest, size, dry_run):
-    """改 site/index.html 里的下载链接、国内备用下载链接、版本号、大小、SHA-256。返回有没有改动。"""
+    """改 site/index.html 里的国内下载链接、海外下载链接、版本号、大小、SHA-256。返回有没有改动。"""
     html = INDEX.read_bytes().decode("utf-8")  # 按原样读写，不改换行符
     old_version = re.search(r"dl\.evotracker\.cn/Evo-(\d+\.\d+\.\d+)-win64\.zip", html)
     old_digest = re.search(r"<code>([0-9a-f]{64})</code>", html)
     if not (old_version and old_digest):
-        raise Stop("site/index.html 里找不到下载链接或 SHA-256，网页的写法可能变了，请手动改")
+        raise Stop("site/index.html 里找不到海外下载链接或 SHA-256，网页的写法可能变了，请手动改")
     old_version, old_digest = old_version.group(1), old_digest.group(1)
     sizes = re.findall(r"约 (\d+) MB", html)
     if len(sizes) != 2:
         raise Stop(f"site/index.html 里的\"约 … MB\"应该有 2 处，找到 {len(sizes)} 处：网页的写法可能变了，请手动改")
     changes = [  # (说明, 原文, 新文, 网页里应该有几处)
-        ("下载链接", f"{DL}/Evo-{old_version}-win64.zip", ZIP_URL, 2),
+        ("海外下载链接", f"{DL}/Evo-{old_version}-win64.zip", ZIP_URL, 1),
         ("首屏版本号", f"<span>v{old_version} 预览版</span>", f"<span>v{APP_VERSION} 预览版</span>", 1),
         ("下载区标题", f"<h3>Evo {old_version} 预览版</h3>", f"<h3>Evo {APP_VERSION} 预览版</h3>", 1),
         ("SHA-256", f"<code>{old_digest}</code>", f"<code>{digest}</code>", 1),
     ] + [("大小", f"约 {s} MB", f"约 {round(size / 2**20)} MB", sizes.count(s)) for s in sorted(set(sizes))]
 
-    mirrors = MIRROR_LINK.findall(html)  # "下载慢？尝试备用下载方式"展开后的国内备用下载（COS）
-    if len(mirrors) != 1:
-        raise Stop(f"site/index.html 里的国内备用下载链接（带 data-mirror 的 <a>）应该有 1 处，找到 {len(mirrors)} 处：网页的写法可能变了，请手动改")
-    changes.append(("国内备用下载链接", mirrors[0][1], MIRROR_URL, 1))
+    mirrors = {m[1] for m in MIRROR_LINK.findall(html)}  # 国内下载（COS）：首屏和下载区各一个，地址一样
+    found = len(MIRROR_LINK.findall(html))
+    if found != MIRROR_LINKS or len(mirrors) != 1:
+        raise Stop(f"site/index.html 里的国内下载链接（带 data-mirror 的 <a>）应该有 {MIRROR_LINKS} 处、地址一样，"
+                   f"找到 {found} 处、{len(mirrors)} 种地址：网页的写法可能变了，请手动改")
+    changes.append(("国内下载链接", mirrors.pop(), MIRROR_URL, MIRROR_LINKS))
 
     new = html
     for label, old, replacement, expected in changes:
@@ -438,7 +442,7 @@ def publish(dry_run, changelog_ok):
     else:
         verify(files, DL, fresh=True)
 
-    step(4, "上传压缩包和补丁包到腾讯云 COS（国内备用线路）")
+    step(4, "上传压缩包和补丁包到腾讯云 COS（国内线路）")
     upload_cos(files, dry_run)
 
     step(5, "从 COS 下载回来核对 SHA-256")
@@ -469,7 +473,7 @@ def publish(dry_run, changelog_ok):
             time.sleep(5)
         else:
             raise Stop(f"{SITE_URL} 上还不是新的下载链接和 SHA-256，或者 {CHANGELOG_URL} 还没有这一版，过一会儿重新运行 python tools/publish.py 看看")
-        print(f"    ✅ {SITE_URL} 的下载链接和国内备用下载链接是 {ZIP_NAME}，SHA-256 也对；{CHANGELOG_URL} 有 {APP_VERSION}")
+        print(f"    ✅ {SITE_URL} 的国内下载和海外下载链接是 {ZIP_NAME}，SHA-256 也对；{CHANGELOG_URL} 有 {APP_VERSION}")
 
     if dry_run:
         print("\n试运行完成，没有上传任何东西。正式上传：python tools/publish.py")
@@ -488,7 +492,7 @@ def go_live(yes):
     if latest.get("version") != APP_VERSION:
         raise Stop(f"dist/latest.json 写的是 {latest.get('version')}，不是 {APP_VERSION}：先运行 python tools/publish.py")
     if not COS or latest.get("download", {}).get("mirrors") != release.mirror_urls(ZIP_NAME):
-        raise Stop("dist/latest.json 里的国内备用线路和 update_check.COS_BASE 不一样：删掉 dist 里的压缩包，重新运行 python tools/publish.py")
+        raise Stop("dist/latest.json 里的国内线路和 update_check.COS_BASE 不一样：删掉 dist 里的压缩包，重新运行 python tools/publish.py")
     for name, path, digest in packages(latest):
         if not path.is_file() or remote_info(f"{DL}/{name}") != (path.stat().st_size, md5(path)):
             raise Stop(f"R2 上的 {name} 和本机的不一样（或者还没传）：先运行 python tools/publish.py")

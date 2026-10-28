@@ -6,7 +6,11 @@
 ## 〇、0.4.1 发布以后（2026-10-27 发布，见 progress.md"版本"）
 
 - [ ] 请反馈的两位群友一键更新：一位看窗口能不能打开、日志里有没有"去掉了 … 个文件上'从网上下载的'标记"；另一位在战绩页删掉 10-26 18:46 多出来的那局（第 2 名 +215，"这局没有总结页"）
-- [ ] **国内备用线路换成国内站账号的新存储桶**（旧存储桶 `evo-dl-1307698527` 所在的账号欠费、用户找不到，0.4.1 没传 COS）：用户在国内站实名、建存储桶（上海、公有读私有写）、子账号 `evo-publish`（只能编程访问）和只能写这个桶的策略（10-27 对话里给过；动作 PutObject、分块上传那几个、ListParts、HeadObject、GetObject、DeleteObject，资源 `qcs::cos:ap-shanghai:uid/APPID:evo-dl-APPID/*`），密钥填进 `%USERPROFILE%\.evo\cos.json`，充值并开余额预警；然后改 `update_check.COS_BASE`，`python tools/cos.py` 试传，随下一版发布（0.4.1 及以前的 Evo 只认旧存储桶，那一次更新只走主线路）。在这之前官网的"国内备用下载"是坏的，要不要先藏起来等用户定
+- [ ] **腾讯云 COS 换成国内站账号的新存储桶，并改成默认下载**（2026-10-28 用户决定：国内玩家太多。旧存储桶 `evo-dl-1307698527` 所在的账号欠费、用户找不到，0.4.1、0.4.2 都没传 COS）：
+  - 用户在国内站：实名、开通 COS、充值并开余额预警、建存储桶（上海、公有读私有写）、策略 `evo-dl-upload`（动作 PutObject、分块上传那几个、ListParts、HeadObject、GetObject、DeleteObject，资源 `qcs::cos:ap-shanghai:uid/APPID:evo-dl-APPID/*`）、子账号 `evo-publish`（只能编程访问），密钥填进 `%USERPROFILE%\.evo\cos.json`；在可观测平台加外网下行流量告警（COS 不能设上限自动停，只能告警）
+  - 然后：改 `update_check.COS_BASE`，`python tools/cos.py` 试传；把 0.4.2 的压缩包、补丁包、latest.json 传上新存储桶
+  - 官网（桶建好就改，不等发版）：下载区「国内下载」「海外下载（Cloudflare）」两个按钮并排（用户选的），顶部的下载按钮也换；`publish.py` 发版时两个链接都换；PRIVACY.md 和 `site/privacy.html` 跟着改
+  - 一键更新（随下一版发）：所有人先走 COS，慢了（低于 300 KB/s）或出错再换 dl.evotracker.cn；检查更新也先读 COS 上的 latest.json（用户选的）。`latest.json` 的 `download.url` 还是 dl.evotracker.cn（旧版 Evo 只认它）。0.4.2 及以前的 Evo 只认旧存储桶，升到下一版那一次只走 Cloudflare
 
 ## 一、先做：影响每局数据是否完整、日常用着是否顺手
 
