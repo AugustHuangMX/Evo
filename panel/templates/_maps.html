@@ -2,7 +2,7 @@
    还剩多久（每秒走，overview.html 的脚本）、下一张。在"最近对局"上面，不占六维图那一列。
    还没问过（maps.ask）：卡片上只问一句，点了"显示"才联网（隐私说明承诺过新的联网功能先问，代码签名也要求这样）。
    整张卡片由 POST /maps/refresh 重画（下载以后换掉）。maps：map_rotation.card()；error：这次没下载到的原因（只在重画时有）。
-   数据来源的链接交给系统浏览器打开，Evo 自己不打开网页 #}
+   不放数据来源的链接（2026-10-29 用户要求去掉，0.4.4；对方只要求排行榜、服务器状态注明来源，隐私说明里写着数据来自哪里） #}
 {% if maps.ask %}
 <section class="card maps-card maps-ask" id="maps-card" aria-labelledby="h-maps">
   <div class="card-head"><h2 id="h-maps">当前地图</h2></div>
@@ -21,10 +21,7 @@
 </section>
 {% else %}
 <section class="card maps-card" id="maps-card" aria-labelledby="h-maps"{% if maps.fetch %} data-fetch="1"{% endif %}>
-  <div class="card-head">
-    <h2 id="h-maps">当前地图</h2>
-    <a class="maps-source" href="https://apexlegendsstatus.com" target="_blank" rel="noopener noreferrer">数据来自 Apex Legends Status ↗</a>
-  </div>
+  <div class="card-head"><h2 id="h-maps">当前地图</h2></div>
   <div class="maps-row">
     {% for m in maps.modes %}
     {% set next_label = '下一场' if m.key == 'mixtape' else '下一张' %}

@@ -119,8 +119,8 @@ def checks():
     out["卡片在\"最近对局\"上面、左边那一列；六维图那一列不动"] = (
         re.search(r'<div class="ov-main">\s*<section class="card maps-card".*?aria-label="最近对局".*?</div>\s*'
                   r'(?:\{#.*?#\}\s*)?<div class="ov-side">', first, re.S) is not None)
-    out["写着数据来源（链接交给系统浏览器打开）"] = (
-        'href="https://apexlegendsstatus.com" target="_blank" rel="noopener noreferrer">数据来自 Apex Legends Status' in first)
+    out["卡片上没有跳转到别的网站的链接（2026-10-29 用户要求去掉数据来源的链接）"] = (
+        "apexlegendsstatus.com" not in card(first) and "<a " not in card(first))
 
     # ---- 下载 ----
     result = refresh(now=NOW)

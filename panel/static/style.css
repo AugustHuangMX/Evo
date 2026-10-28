@@ -847,9 +847,6 @@ table.stats-table { width: 100%; border-collapse: collapse; }
    在"最近对局"上面（左边一列），不占六维图那一列。三格：模式、现在的地图（大）、还剩多久（每秒走）、下一张 */
 .ov-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 .maps-card { padding: 24px; }
-.maps-source { color: var(--muted); font-size: 12px; transition: color 0.15s; }
-.maps-source:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
-.maps-source:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; border-radius: 2px; }
 .maps-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .maps-slot { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; min-width: 0;
   border: 1px solid var(--row-border); border-radius: 6px; background: var(--inset); }
