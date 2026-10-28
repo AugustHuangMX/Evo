@@ -4,9 +4,9 @@
 
 Evo 是一个开源的 Apex Legends 战绩记录工具，由个人开发者制作和维护，与 EA、Respawn 没有任何关系。
 
-**一句话说明：Evo 记录的所有数据都保存在你自己的电脑上。只有你同意了"匿名统计"，Evo 才会把你以后每一局的部分数据（传奇、名次、击杀、伤害等，不含游戏名、ID 和截图）发给开发者；默认不发。** 没有账号，没有广告，不收集崩溃报告。会联网的只有"检查新版本"、你点了才开始的"一键更新"、你同意后才发送的"匿名统计"（开着时，数据页"全体玩家"还会下载所有玩家的汇总），以及电脑上没有 WebView2 时、你同意后才运行的微软 WebView2 安装程序：自动检查和匿名统计在第一次打开 Evo 时都会先问你要不要开启，开了也可以随时关掉；一键更新只在你点了"立即更新"之后才下载（0.1.0 还没有这些功能，完全不联网；0.1.0 之后的版本才有检查新版本，0.3.3 起才有一键更新，0.3.4 起才有安装 WebView2，0.3.7 起才有匿名统计）。
+**一句话说明：Evo 记录的所有数据都保存在你自己的电脑上。只有你同意了"匿名统计"，Evo 才会把你以后每一局的部分数据（传奇、名次、击杀、伤害等，不含游戏名、ID 和截图）发给开发者；默认不发。** 没有账号，没有广告，不收集崩溃报告。会联网的只有"检查新版本"、你点了才开始的"一键更新"、你同意后才发送的"匿名统计"（开着时，数据页"全体玩家"还会下载所有玩家的汇总）、你在总览页点了"显示"才开始的"当前地图"（0.4.3 起，只下载各模式的地图轮换，不发送任何战绩），以及电脑上没有 WebView2 时、你同意后才运行的微软 WebView2 安装程序：自动检查和匿名统计在第一次打开 Evo 时都会先问你要不要开启，开了也可以随时关掉；一键更新只在你点了"立即更新"之后才下载（0.1.0 还没有这些功能，完全不联网；0.1.0 之后的版本才有检查新版本，0.3.3 起才有一键更新，0.3.4 起才有安装 WebView2，0.3.7 起才有匿名统计）。
 
-Evo 的源代码是公开的（[GitHub](https://github.com/AugustHuangMX/Evo)），这份说明里的每一条都能在代码里核对：Evo 联网的代码只在 `update_check.py`（检查新版本）、`updater.py`（一键更新）、`telemetry.py`（匿名统计）和 `global_stats.py`（数据页"全体玩家"下载汇总）；`webview2.py` 在你同意后运行微软的 WebView2 安装程序（由它联网）。接收匿名统计的服务器程序也在源代码里（`server/stats/`）。
+Evo 的源代码是公开的（[GitHub](https://github.com/AugustHuangMX/Evo)），这份说明里的每一条都能在代码里核对：Evo 联网的代码只在 `update_check.py`（检查新版本）、`updater.py`（一键更新）、`telemetry.py`（匿名统计）、`global_stats.py`（数据页"全体玩家"下载汇总）和 `map_rotation.py`（总览页下载地图轮换）；`webview2.py` 在你同意后运行微软的 WebView2 安装程序（由它联网）。接收匿名统计的服务器程序也在源代码里（`server/stats/`）。
 
 ---
 
@@ -22,6 +22,7 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 | 设置 | `settings.json` | 你在设置页选的选项、是否开启自动检查更新、上次检查的时间和结果、上次一键更新的结果、哪些提示已经显示过；0.3.7 起还有：是否同意匿名统计、从什么时候同意的、匿名编号、上次发送的时间和结果 |
 | 匿名统计的发送记录 | `data\telemetry_sent.json` | 0.3.7 起，只在你同意匿名统计以后才有：已经发送过哪些局（每局一串由匿名编号算出来的对局编号和一个摘要，用来避免重复发送） |
 | 全体玩家的汇总 | `data\global_stats.json` | 0.4.0 起，只在你开着匿名统计、打开过数据页"全体玩家"以后才有：从服务器下载的汇总（见第四节）和下载的时间 |
+| 地图轮换 | `data\map_rotation.json` | 0.4.3 起，只在你在总览页点了"显示"当前地图以后才有：各模式现在和下一张的地图名、换图时间，以及你电脑的时钟和服务器差几秒（见第三节） |
 | 窗口缓存 | `webview\` | Evo 窗口（WebView2）自己的缓存，只和 Evo 的本地页面有关 |
 | 数据库备份 | `data\evo.db.bak-…` | 只在你点"清空所有战绩"时自动生成，防止误删 |
 
@@ -39,7 +40,7 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 
 这些截图只留在你的电脑上。如果你要把截图发给别人（包括发给我反馈问题），请先看一眼里面有没有你不想公开的内容。
 
-## 三、会联网的功能：检查新版本、一键更新、安装 WebView2
+## 三、会联网的功能：检查新版本、一键更新、安装 WebView2、当前地图
 
 0.1.0 还没有这些功能；0.1.0 之后的版本才有检查新版本，0.3.3 起才有一键更新，0.3.4 起才有安装 WebView2。
 
@@ -53,6 +54,14 @@ Evo 检测到游戏在运行时，会定时截取屏幕，从截图里读出这�
 - **发现新版本以后**：Evo 只会提醒你，不会在你不知道的时候下载或安装任何东西。要不要更新、在 Evo 里更新还是去官网下载，由你决定。
 - **怎么关掉**：Evo 窗口 →【设置】→【更新】→ 关掉"自动检查新版本"。关掉以后 Evo 不再检查新版本（你手动点"检查更新"或"立即更新"、同意安装 WebView2、开着匿名统计时除外）。
 - **安装 WebView2（0.3.4 起）**：Evo 的窗口要用微软的 WebView2 组件显示（Windows 11 自带，Windows 10 一般随 Edge 装上）。打开窗口前 Evo 会检查电脑上有没有它；没有时弹一个对话框问你要不要安装。你点"是"，Evo 才运行微软的 WebView2 安装程序（随 Evo 一起提供，有微软的数字签名），由它从微软的服务器下载（一百多 MB）并安装，这一步适用[微软的隐私声明](https://privacy.microsoft.com/)，微软的服务器能看到你的 IP 地址。Evo 自己不发送任何数据。你点"否"，Evo 就用你的默认浏览器打开面板，不联网，下次打开 Evo 时再问。电脑上已经有 WebView2 时什么都不会发生。
+- **总览页的当前地图（0.4.3 起，你同意后才开启）**：Evo 窗口的总览页上可以显示一张"当前地图"卡片：匹配、排位、轮换模式现在是哪张图、还剩多久换、下一张是什么。
+  - **什么时候问你**：这张卡片第一次出现时只问一句"显示……现在的地图和倒计时？需要联网下载地图轮换"。你点"显示"之前，Evo 不会为它联网；点"不用了"就不再显示。
+  - **什么时候联网**：你点了"显示"以后，只在 Evo 窗口开着、你打开总览页时，并且是还没下载过、或者有一张图到了换图的时间；同一张图的时间里不重复下载（两次至少隔 30 秒）。Evo 窗口关着时不下载，托盘里的 Evo 和记录对局的部分从不下载。
+  - **下载了什么**：从 `https://stats.evotracker.cn/v1/maps` 下载一个几百字节的小文件：各模式现在和下一张的地图名、换图时间，以及服务器现在的时间（用来校正你电脑时钟的误差）。这些轮换信息是我的服务器从第三方网站 Apex Legends Status（apexlegendsstatus.com）取来的，你的电脑不直接连接那个网站，它也看不到你的 IP 地址。
+  - **发送了什么**：请求里只带 Evo 自己的版本号。**不发送任何战绩、截图、游戏名、匿名编号、电脑信息或设备编号。**
+  - **服务器能看到什么**：和打开任何网页一样，Cloudflare 能看到你的 IP 地址和请求时间；服务器程序（和匿名统计是同一个，见第四节）不记录请求日志、不保存 IP 地址。
+  - **存在哪里**：下载的轮换存在 `data\map_rotation.json`，下次打开窗口时还没过时就直接用。
+  - **怎么关掉**：【设置】→【常规】→ 关掉"总览页显示当前地图"（也可以在那里打开）。关掉以后总览页不再显示这张卡片，也不再下载。
 
 ## 四、匿名统计（0.3.7 起，默认不发）
 
@@ -152,6 +161,7 @@ Evo is an open-source match tracker for Apex Legends, made and maintained by an 
 - **Screenshots** show the whole screen at that moment, so they may contain other players' in-game names and anything else on screen (for example a Discord or Steam overlay). They stay on your computer. From 0.4.0, the post-match summary screenshot of every match is kept (saved as JPG) so you can look at it on the Matches page; it is deleted when you delete that match. Other screenshots are deleted once a match is recognized, except those needed for matches you still have to confirm.
 - **Update check and in-app update (network features added after version 0.1.0, which makes no network connections at all).** Evo asks on first launch whether to check for updates automatically (once each time Evo starts, then once every 8 hours while it keeps running); it stays off unless you agree, and it can be turned off at any time in Settings. You can also check manually. The check downloads the public file `latest.json` (latest version number, release date, release notes, and the address and SHA-256 checksum of the new package). It is available both at `https://dl.evotracker.cn/latest.json` (Cloudflare) and in the developer's own bucket on Tencent Cloud Object Storage (COS, Shanghai): from version 0.4.3 Evo reads the COS copy first and falls back to `dl.evotracker.cn`; versions 0.4.0–0.4.2 do the opposite; earlier versions only read `dl.evotracker.cn`. From version 0.3.3, when you click "立即更新" (Update now), Evo downloads the new package (the same file as on the website), verifies its SHA-256 and keeps it in the `_update` folder inside Evo's program folder; it installs it (closes for a few seconds, replaces its program files and reopens) only after you click "安装并重新启动" (Install and restart). Your match data is not affected. From version 0.4.0 the package is also in the developer's COS bucket in Shanghai. From version 0.4.3 Evo downloads from COS first and automatically switches to `dl.evotracker.cn` if COS is too slow or unreachable; versions 0.4.0–0.4.2 start with `dl.evotracker.cn` and switch to COS. A switch resumes where the download stopped. Since October 28, 2026, when versions 0.3.3–0.4.2 download a package from `dl.evotracker.cn` in mainland China, Cloudflare redirects the request to the same file on COS. Also from 0.4.0, when a patch package for your current version exists, Evo downloads only the changed files (usually around 10–20 MB), rebuilds the new version from them and your existing program files, and checks every file's SHA-256, falling back to the full package if anything does not match. Whichever route is used, files are checked against the SHA-256 in `latest.json`. The requests contain only Evo's version number in the User-Agent (`Evo/<version>`) — no match data, screenshots, player names or device information. As with any web request, the server (Cloudflare or Tencent Cloud) can see your IP address and the time of the request. Evo never downloads or installs updates without you asking.
 - **Installing WebView2 (from version 0.3.4).** The Evo window needs Microsoft Edge WebView2 (built into Windows 11, usually installed with Edge on Windows 10). If it is missing, Evo asks whether to install it. Only if you click "是" (Yes) does Evo run Microsoft's WebView2 installer (shipped with Evo, signed by Microsoft), which downloads and installs WebView2 from Microsoft's servers under the [Microsoft Privacy Statement](https://privacy.microsoft.com/); Microsoft's servers can see your IP address. Evo itself sends nothing. If you click "否" (No), Evo opens its panel in your default browser instead, without any network connection, and asks again the next time it starts.
+- **Current maps on the Overview page (from 0.4.3, off until you turn it on).** The Overview page can show which map is currently up in pubs, ranked and the mixtape mode, how long until it changes, and what comes next. The first time the card appears it only asks whether to show this (it needs to download the map rotation); Evo makes no connection for it unless you click "显示" (Show), and "不用了" (No thanks) hides it. You can change this at any time in Settings → General ("总览页显示当前地图"). When on, Evo downloads a few hundred bytes from `https://stats.evotracker.cn/v1/maps` only while the Evo window is open on the Overview page and a map is due to change (at most once every 30 seconds): map names, change times and the server's current time (to correct your computer's clock). The developer's server gets this rotation from the third-party site Apex Legends Status (apexlegendsstatus.com); your computer does not connect to that site. The request contains only Evo's version number — no match data, anonymous ID, player names or device information. As with any web request, Cloudflare can see your IP address; the server keeps no request logs and stores no IP addresses. The rotation is stored as `data\map_rotation.json`.
 - **Start with Windows (from 0.3.6).** Only if you turn it on, Evo adds one entry named `Evo Tracker` (the path of Evo.exe) under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`; turning it off removes the entry.
 - **Sharing (from 0.3.6).** Share images are created on your computer; Evo uploads nothing. They show your stats and, by default, your in-game name (you can untick it before sharing); teammates appear only as the legend they played and their stats for that match, without names or IDs. Where you send a copied or saved image is up to you.
 - **The Evo window** shows a local page served on `127.0.0.1` only, and loads nothing from the internet. It uses Microsoft Edge WebView2, whose diagnostic data is governed by your Windows privacy settings.

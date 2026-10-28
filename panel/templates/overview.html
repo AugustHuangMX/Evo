@@ -18,6 +18,7 @@
 <div class="card empty-card">
   Evo 当前还没有任何对局记录。
 </div>
+{% if maps %}{% with error=None %}{% include "_maps.html" %}{% endwith %}{% endif %}
 {% else %}
 
 <div class="ov-top">
@@ -98,6 +99,10 @@
 </div>
 
 <div class="ov-bottom">
+  {# 左边一列：地图轮换（还没问过时只问一句；不要了就没有）、最近对局 #}
+  <div class="ov-main">
+  {% if maps %}{% with error=None %}{% include "_maps.html" %}{% endwith %}{% endif %}
+
   <section class="card list-card" aria-label="最近对局">
     <div class="card-head">
       <h2>最近对局</h2>
@@ -120,6 +125,7 @@
       {% endfor %}
     </ul>
   </section>
+  </div>
 
   {# 右边一列：六维图（小图，"详细"到数据页）、传奇表现 #}
   <div class="ov-side">
@@ -168,6 +174,58 @@
 {% endblock %}
 
 {% block scripts %}
+{% if maps and not maps.ask %}
+<script>
+  // 地图轮换（_maps.html）：倒计时每秒走。到点了先把下一张挪上来，再下载一次（POST /maps/refresh），用服务器重画的卡片换掉；
+  // 页面打开时还没下载过、或者过了点的（data-fetch）马上下载。两次下载至少隔 30 秒，没下载到的一分钟后再试
+  (function () {
+    var busy = false, waitUntil = 0;
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    function leftText(s) {  // 和 map_rotation.left_text 一样："13:05:42"、"08:31"
+      s = Math.max(0, Math.floor(s));
+      var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+      return h ? h + ":" + pad(m) + ":" + pad(s % 60) : pad(m) + ":" + pad(s % 60);
+    }
+    function refresh() {
+      busy = true;
+      var body = new FormData();
+      body.append("token", "{{ token }}");
+      fetch("{{ url_for('refresh_maps') }}", { method: "POST", body: body })
+        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          var card = document.getElementById("maps-card");
+          if (card && r.html) card.outerHTML = r.html;
+          waitUntil = Date.now() + (r.ok ? 30000 : 60000);
+        })
+        .catch(function () { waitUntil = Date.now() + 60000; })
+        .finally(function () { busy = false; tick(); });
+    }
+    function tick() {
+      var card = document.getElementById("maps-card");
+      if (!card) return;
+      var now = Date.now() / 1000, due = card.dataset.fetch === "1";
+      card.querySelectorAll(".maps-slot[data-end]").forEach(function (slot) {
+        var end = Number(slot.dataset.end);
+        if (end <= now && slot.dataset.nextEnd) {  // 到点了：下一张挪上来（再下一张要等下载）
+          slot.querySelector("[data-title]").textContent = slot.dataset.next;
+          var sub = slot.querySelector("[data-sub]");
+          if (sub) sub.remove();
+          slot.querySelector("[data-next-name]").textContent = "…";
+          end = Number(slot.dataset.nextEnd);
+          slot.dataset.end = end;
+          delete slot.dataset.nextEnd;
+          due = true;
+        }
+        if (end <= now) due = true;
+        slot.querySelector("[data-left]").textContent = leftText(end - now);
+      });
+      if (due && !busy && Date.now() >= waitUntil) refresh();
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+</script>
+{% endif %}
 <script>
   // 打开总览页时，标了 data-count 的数字从 0 滚动到实际值。只是显示效果：格式（逗号、小数、+/−、%）
   // 和服务器给的一样，最后一帧换回原文。"—" 这种没有数字的不动

@@ -1,0 +1,46 @@
+{
+  "_说明": "总览页的地图轮换（code/map_rotation.py，2026-10-28 用户决定）：统计服务器 GET /v1/maps 给的英文名 → 简体中文名。只写核对过的，查不到的显示英文（不编译名：错的译名会让人以为是另一个地方）",
+  "modes": [
+    {"key": "pubs", "name": "匹配"},
+    {"key": "ranked", "name": "排位"},
+    {"key": "mixtape", "name": "轮换模式"}
+  ],
+  "_说明_modes": "总览页从左到右的顺序；key 是统计服务器的名字（pubs = 上游的 battle_royale，ranked，mixtape = 上游的 ltm）",
+  "maps": {
+    "Kings Canyon": "诸王峡谷",
+    "World's Edge": "世界尽头",
+    "Olympus": "奥林匹斯",
+    "Storm Point": "风暴点",
+    "Broken Moon": "残月",
+    "E-District": "电力区域",
+    "Caustic Treatment": "侵蚀疗法",
+    "Skulltown": "骷髅镇",
+    "Hammond Labs": "哈蒙德实验室",
+    "Lava Siphon": "熔岩虹吸",
+    "Fragment": "碎片",
+    "Fragment East": "碎片东部",
+    "Fragment West": "碎片西部",
+    "Barometer": "晴雨表",
+    "Dome": "穹顶",
+    "The Dome": "穹顶",
+    "Artillery": "火炮",
+    "Estates": "不动产",
+    "Habitat 4": "栖息地4",
+    "Party Crasher": "派对破坏者",
+    "Phase Runner": "相位穿梭器",
+    "Highpoint": "高墙",
+    "Monument": "纪念碑",
+    "Thunderdome": "雷霆穹顶",
+    "ZEUS Station": "宙斯站",
+    "Production Yard": "生产场地",
+    "Wattson's Treatment": "沃特森的塔"
+  },
+  "_说明_maps": "大逃杀的六张图是用户对着游戏核对过的（和派圈助手同一份）；其它模式的小地图取自萌娘百科的「其它模式地图」列表。大小写不分",
+  "events": {
+    "Gun Run": "子弹时间",
+    "TDM": "团队死斗",
+    "Team Deathmatch": "团队死斗",
+    "Control": "控制"
+  },
+  "_说明_events": "轮换模式的玩法（上游的 eventName）。三种玩法按 子弹时间 → 团队死斗 → 控制 轮流，每场 15 分钟"
+}

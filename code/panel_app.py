@@ -31,6 +31,7 @@ import data_move
 import game_aspect
 import game_lang
 import global_stats
+import map_rotation
 import radar
 import ranks
 import screenshots
@@ -880,6 +881,7 @@ def overview():
         total=len(rows),
         share=share,
         follow=FOLLOW_LINKS,
+        maps=map_rotation.card(),
     )
 
 
@@ -1012,6 +1014,16 @@ def stats_everyone(part=None):
 def refresh_everyone():
     """"全体玩家"右上角的刷新按钮（和页面打开时的自动下载）：现在下载一次汇总。回 {"ok", "error"}。"""
     return jsonify(global_stats.fetch())
+
+
+@app.post("/maps/refresh")
+def refresh_maps():
+    """总览页的地图轮换（map_rotation.py）：页面打开时没有、过了点，和倒计时到点时，下载一次。
+    回 {"ok", "error", "html": 重新画好的地图卡片}（下载不成时也画：用存着的，过了点的那格写"正在更新"）。"""
+    result = map_rotation.fetch()
+    maps = map_rotation.view(map_rotation.cached())
+    html = render_template("_maps.html", maps=maps, error=None if result["ok"] else result["error"])
+    return jsonify({**result, "html": html})
 
 
 def back_to_list(**changes):
@@ -1163,6 +1175,7 @@ def settings():
         autostart={**autostart.status(), "blocked": autostart.unavailable(),
                    "failed": session.pop("autostart_failed", None)},
         sounds_on=sounds.enabled(),
+        maps_on=map_rotation.enabled(),
         sound=sound_view(),
         data_dir=db_path().parent,
         db_file=db_path().name,
@@ -1472,6 +1485,16 @@ def telemetry_setting():
         flash("好的，不发送。以后可以在\"设置\"里打开。", "ok")
     else:
         flash("已关闭匿名统计，不会再发送任何数据。", "ok")
+    return back_to_page()
+
+
+@app.post("/settings/maps")
+def maps_setting():
+    """总览页的"当前地图"：卡片上问的那一次（"显示" / "不用了"，next 回到总览页），和设置页"常规"里的开关。
+    打开以后才联网下载地图轮换（2026-10-28 用户决定先问）。"""
+    on = request.form.get("on") == "1"
+    app_settings.set_value(map_rotation.SETTING_KEY, on)
+    flash("总览页会显示各模式现在的地图。" if on else "好的，总览页不显示地图，也不下载地图轮换。以后可以在\"设置\"里打开。", "ok")
     return back_to_page()
 
 

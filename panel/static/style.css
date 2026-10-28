@@ -828,3 +828,30 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 @media (max-width: 760px) {
   .radar-body { grid-template-columns: 1fr; }
 }
+
+/* ---------- 总览页：地图轮换（_maps.html，2026-10-28 用户决定）----------
+   在"最近对局"上面（左边一列），不占六维图那一列。三格：模式、现在的地图（大）、还剩多久（每秒走）、下一张 */
+.ov-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.maps-card { padding: 24px; }
+.maps-source { color: var(--muted); font-size: 12px; transition: color 0.15s; }
+.maps-source:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.maps-source:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; border-radius: 2px; }
+.maps-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.maps-slot { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; min-width: 0;
+  border: 1px solid var(--row-border); border-radius: 6px; background: var(--inset); }
+.maps-title { margin-top: 4px; font-size: 18px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.maps-sub { color: var(--muted); font-size: 13px; }
+.maps-left { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.maps-left .num { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }  /* 每秒变，宽度不乱跳 */
+.maps-next { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.maps-error { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+/* 还没问过：卡片上只问一句，点了"显示"才联网 */
+.maps-ask-text { margin: 0; color: var(--muted); line-height: 1.7; }
+.maps-ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 14px; }
+.maps-ask-actions form { margin: 0; }
+.maps-ask-actions .btn { min-height: 36px; }
+.maps-ask-actions .btn:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.maps-ask-foot { margin-left: 6px; color: var(--muted); font-size: 12px; }
+@media (max-width: 760px) {
+  .maps-row { grid-template-columns: 1fr; }
+}

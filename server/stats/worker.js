@@ -8,6 +8,10 @@
 // - GET /v1/summary：全体玩家的汇总（Evo 数据页"全体玩家"，2026-10-24 用户决定；格式见 makeSummary）。
 //   定时任务每小时算一次存进 summary 表（有新数据或换了一天才重算），这里只读出来；还没算过就现算一次。
 //   只有汇总的数字，没有任何一个编号的数据。Evo 里只有开了匿名统计的人才下载（限制在 Evo 那边，这个地址本身是公开的）
+// - GET /v1/maps：地图轮换（Evo 总览页，2026-10-28 用户决定）：匹配、排位、轮换模式现在 / 下一张是什么图、什么时候换。
+//   数据来自 Apex Legends Status 的接口（用户自己申请的 API Key，是 Worker 的机密变量 ALS_API_KEY：
+//   wrangler secret put ALS_API_KEY，不进 git、不进 Evo）。整理成自己的格式（见 maps），存在 Cloudflare 的缓存里，
+//   到最早换图的时候为止（最短 30 秒、最长 15 分钟）：不管多少人打开 Evo，一段时间里只去取一次
 // 只收认识的项，格式不对的那一局不存（整份格式不对就回 400）。不存 IP 地址、不写日志、不放 Cookie；
 // 不回 CORS 头，网页里的脚本没法往这里发。
 // 数据不自动删（2026-10-22 用户决定：留着做长期统计，比如看各赛季的变化）。
@@ -422,8 +426,62 @@ async function summary(env) {
   });
 }
 
+// ---------- 地图轮换（GET /v1/maps）----------
+
+const MAPS_UPSTREAM = "https://api.apexlegendsstatus.com/maprotation?version=2";  // version=2 才有排位和轮换模式
+const MAP_MODES = { pubs: "battle_royale", ranked: "ranked", mixtape: "ltm" };  // 我们的名字 → 上游的名字
+const MAPS_TTL = [30, 900];  // 缓存多久（秒）：到最早换图为止，但不短于 30 秒、不长于 15 分钟
+
+// 上游的一场 → {map: 英文名, code, event: 轮换模式的玩法（如 "TDM"，别的模式是 null）, start, end}（时间是秒）；不像样返回 null
+function rotationSlot(o) {
+  if (!o || typeof o !== "object") return null;
+  const map = typeof o.map === "string" ? o.map.trim().slice(0, 60) : "";
+  const end = Number(o.end);
+  if (!map || !Number.isFinite(end) || end <= 0) return null;
+  const start = Number(o.start);
+  return {
+    map,
+    code: typeof o.code === "string" ? o.code.slice(0, 60) : null,
+    event: typeof o.eventName === "string" && o.eventName.trim() ? o.eventName.trim().slice(0, 60) : null,
+    start: Number.isFinite(start) && start > 0 ? start : null,
+    end,
+  };
+}
+
+// 回给 Evo 的：{v: 1, now: 服务器现在的时间（秒，Evo 用来校正电脑时钟）, modes: {pubs | ranked | mixtape: {current, next}}}。
+// 缓存里存的是不带 now 的那部分，每次回答时现填 now
+async function maps(request, env, ctx) {
+  const cache = caches.default;
+  const key = new Request(new URL("/v1/maps", request.url).toString());
+  let body = await (await cache.match(key))?.text();
+  if (!body) {
+    if (!env.ALS_API_KEY) return reply({ ok: false, error: "no key" }, 503);
+    const upstream = await fetch(`${MAPS_UPSTREAM}&auth=${encodeURIComponent(env.ALS_API_KEY)}`);
+    if (!upstream.ok) return reply({ ok: false, error: `upstream ${upstream.status}` }, 502);
+    let raw;
+    try {
+      raw = JSON.parse(await upstream.text());  // Key 不对时上游回 200 + 一句纯文字，不是 JSON
+    } catch (e) {
+      return reply({ ok: false, error: "upstream format" }, 502);
+    }
+    const modes = {};
+    for (const [name, field] of Object.entries(MAP_MODES)) {
+      const current = rotationSlot(raw?.[field]?.current);
+      if (current) modes[name] = { current, next: rotationSlot(raw[field].next) };
+    }
+    if (!Object.keys(modes).length) return reply({ ok: false, error: "upstream format" }, 502);
+    body = JSON.stringify({ v: 1, modes });
+    const soonest = Math.min(...Object.values(modes).map((m) => m.current.end));
+    const ttl = Math.max(MAPS_TTL[0], Math.min(MAPS_TTL[1], soonest - Math.floor(Date.now() / 1000)));
+    ctx.waitUntil(cache.put(key, new Response(body, { headers: { "Cache-Control": `public, max-age=${ttl}` } })));
+  }
+  return new Response(JSON.stringify({ ...JSON.parse(body), now: Math.floor(Date.now() / 1000) }), {
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
     if (request.method === "GET" && pathname === "/") {
       return new Response("Evo 匿名统计的接收地址（只收 Evo 用户同意后发送的数据）。说明见 https://evotracker.cn/privacy.html\n",
@@ -434,6 +492,13 @@ export default {
         return await summary(env);
       } catch (e) {
         return reply({ ok: false, error: "server error" }, 500);
+      }
+    }
+    if (request.method === "GET" && pathname === "/v1/maps") {
+      try {
+        return await maps(request, env, ctx);
+      } catch (e) {
+        return reply({ ok: false, error: "server error" }, 500);  // 包括连不上上游
       }
     }
     const handler = { "/v1/report": report, "/v1/delete": remove }[pathname];

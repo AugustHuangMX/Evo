@@ -47,6 +47,23 @@
           </button>
         </form>
       </div>
+      {# 总览页的地图轮换（map_rotation.py）：打开了才联网（2026-10-28 用户决定先问：总览页的卡片上问一次，这里随时能改） #}
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name" id="maps-name">总览页显示当前地图</div>
+          <div class="setting-desc">匹配、排位、轮换模式现在是哪张图、还剩多久。打开后，看总览页时会联网下载地图轮换，不发送任何战绩</div>
+        </div>
+        <form method="post" action="{{ url_for('maps_setting') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <input type="hidden" name="next" value="{{ url_for('settings') }}">
+          <input type="hidden" name="on" value="{{ '0' if maps_on else '1' }}">
+          <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if maps_on else 'false' }}"
+                  aria-labelledby="maps-name">
+            <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+            <span class="switch-state" aria-hidden="true">{{ '已开启' if maps_on else '已关闭' }}</span>
+          </button>
+        </form>
+      </div>
     </section>
 
     {# 提示音（sounds.py，什么时候响见 live_collect.SoundCues）：开关、声音包（三声一起换）、音量、每一声的"试听"（不管开关；
