@@ -1,9 +1,9 @@
-"""总览页"关注我"：开发者的 B 站、小黑盒主页（panel_app.FOLLOW_LINKS、overview.html、panel/static/brands/）。
+"""总览页"关注我"：开发者的 B 站、小黑盒主页和 Evo 官网（panel_app.FOLLOW_LINKS、overview.html、panel/static/brands/）。
 不用截图，不开浏览器（用 Flask 自带的测试客户端）。
 
-- 总览页最下面有"关注我"和两个按钮，地址是正式地址（不带分享追踪参数），交给系统浏览器打开（target="_blank"、rel="noopener noreferrer"）
-- 没有对局时也显示
-- 两个图标是写对了的 SVG、单色（颜色跟随文字）、不引用别的文件，面板能取到
+- 总览页有"关注我"和三个按钮，地址是正式地址（不带分享追踪参数），交给系统浏览器打开（target="_blank"、rel="noopener noreferrer"）
+- 有对局时在左边一列"最近对局"下面（2026-10-28 用户要求）；没有对局时也显示
+- 三个图标是写对了的 SVG、单色（颜色跟随文字）、不引用别的文件，面板能取到
 - 右上角"Evo 官方合作小程序：派圈助手"（2026-10-28，每一页都有）：前面是派圈助手的图标，点了弹出小程序码（弹窗、码、扫码说明、关闭）；
   每一页都有；没有小程序码图片时不显示；有图片时两张都是真的 PNG、面板能取到，文件夹里有许可说明
 
@@ -25,7 +25,8 @@ from paths import PANEL_DIR
 FOLDER = Path(tempfile.mkdtemp(prefix="evo-follow-", dir=storage.DB_PATH.parent.parent))  # 在测试的临时数据文件夹里
 PNG_HEADER = bytes([0x89]) + b"PNG" + bytes([13, 10, 26, 10])  # PNG 文件开头的 8 个字节
 EXPECTED = {"哔哩哔哩": "https://space.bilibili.com/26649278",
-            "小黑盒": "https://www.xiaoheihe.cn/app/user/profile/765d6910c805"}
+            "小黑盒": "https://www.xiaoheihe.cn/app/user/profile/765d6910c805",
+            "Evo 官网": "https://evotracker.cn/"}
 
 
 def follow_links(page):
@@ -38,7 +39,7 @@ def follow_links(page):
 
 
 def main():
-    print("总览页\"关注我\"：B 站、小黑盒；右上角派圈助手")
+    print("总览页\"关注我\"：B 站、小黑盒、Evo 官网；右上角派圈助手")
     path = FOLDER / "follow.db"
     conn = storage.connect(path)
     storage.insert_match(conn, {"ended_at": "2026-10-22 20:00:00", "placement": 3, "legend": "恶灵"})
@@ -48,7 +49,8 @@ def main():
 
     panel_app.app.config.update(DB=path, TESTING=True)
     client = panel_app.app.test_client()
-    links = follow_links(client.get("/").get_data(as_text=True))
+    page = client.get("/").get_data(as_text=True)
+    links = follow_links(page)
     panel_app.app.config["DB"] = empty
     empty_links = follow_links(panel_app.app.test_client().get("/").get_data(as_text=True))
     panel_app.app.config["DB"] = path
@@ -66,12 +68,14 @@ def main():
             icons[f["name"]] = {}
 
     checks = {
-        "总览页有\"关注我\"，两个按钮：哔哩哔哩、小黑盒": [name for name, _, _ in links] == list(EXPECTED),
+        "总览页有\"关注我\"，三个按钮：哔哩哔哩、小黑盒、Evo 官网": [name for name, _, _ in links] == list(EXPECTED),
         "地址是正式地址（不带分享追踪参数）": {name: href for name, href, _ in links} == EXPECTED,
         "交给系统浏览器打开（target=_blank、rel=noopener noreferrer）":
             bool(links) and all('target="_blank"' in tag and 'rel="noopener noreferrer"' in tag for _, _, tag in links),
         "没有对局时也显示": [name for name, _, _ in empty_links] == list(EXPECTED),
-        "两个图标都是写对了的 SVG": all(i.get("svg") and i.get("paths") for i in icons.values()) and len(icons) == 2,
+        "有对局时在左边一列\"最近对局\"下面（不在最下面占满一行）":
+            -1 < page.find('class="card list-card"') < page.find('class="card follow-card"') < page.find('class="ov-side"'),
+        "三个图标都是写对了的 SVG": all(i.get("svg") and i.get("paths") for i in icons.values()) and len(icons) == 3,
         "图标单色、颜色跟随文字（fill=currentColor）": all(i.get("color") for i in icons.values()),
         "图标不引用别的文件（不联网）": all(i.get("external") is False for i in icons.values()),
         "面板能取到图标": all(i.get("served") == 200 for i in icons.values()),

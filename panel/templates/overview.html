@@ -4,6 +4,21 @@
 {% from "_radar.html" import radar_card, radar_script with context %}
 {% block title %}总览 · Evo{% endblock %}
 
+{% macro follow_card() %}
+{# 关注我：开发者的 B 站、小黑盒主页和 Evo 官网（有对局时在左边一列"最近对局"下面，2026-10-28 用户要求：放在下面全宽会凸出来；没有对局时在提示下面）。target="_blank" 交给系统浏览器打开（和设置页"意见反馈"一样），Evo 自己不联网。
+   没有对局时也显示。图标只是装饰，名字就在旁边 #}
+<section class="card follow-card" aria-labelledby="h-follow">
+  <h2 id="h-follow">关注我</h2>
+  <div class="follow-links">
+    {% for f in follow %}
+    <a class="btn" href="{{ f.url }}" target="_blank" rel="noopener noreferrer">
+      <span class="follow-icon" style="--icon: url('{{ url_for('static', filename=f.icon) }}')" aria-hidden="true"></span>{{ f.name }} ↗
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endmacro %}
+
 {% block content %}
 
 {% if review_count %}
@@ -19,6 +34,7 @@
   Evo 当前还没有任何对局记录。
 </div>
 {% if maps %}{% with error=None %}{% include "_maps.html" %}{% endwith %}{% endif %}
+{{ follow_card() }}
 {% else %}
 
 <div class="ov-top">
@@ -125,6 +141,7 @@
       {% endfor %}
     </ul>
   </section>
+  {{ follow_card() }}
   </div>
 
   {# 右边一列：六维图（小图，"详细"到数据页）、传奇表现 #}
@@ -159,18 +176,6 @@
 {{ radar_script() }}
 {% endif %}
 
-{# 关注我：开发者的 B 站、小黑盒主页。target="_blank" 交给系统浏览器打开（和设置页"意见反馈"一样），Evo 自己不联网。
-   没有对局时也显示。图标只是装饰，名字就在旁边 #}
-<section class="card follow-card" aria-labelledby="h-follow">
-  <h2 id="h-follow">关注我</h2>
-  <div class="follow-links">
-    {% for f in follow %}
-    <a class="btn" href="{{ f.url }}" target="_blank" rel="noopener noreferrer">
-      <span class="follow-icon" style="--icon: url('{{ url_for('static', filename=f.icon) }}')" aria-hidden="true"></span>{{ f.name }} ↗
-    </a>
-    {% endfor %}
-  </div>
-</section>
 {% endblock %}
 
 {% block scripts %}
