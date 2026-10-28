@@ -4,8 +4,8 @@
 - 总览页最下面有"关注我"和两个按钮，地址是正式地址（不带分享追踪参数），交给系统浏览器打开（target="_blank"、rel="noopener noreferrer"）
 - 没有对局时也显示
 - 两个图标是写对了的 SVG、单色（颜色跟随文字）、不引用别的文件，面板能取到
-- 总览页右上角"Evo 官方合作小程序：派圈助手"（2026-10-28）：点了弹出小程序码（弹窗、码、扫码说明、关闭）；
-  只在总览页；没有小程序码图片时不显示；有图片时是真的 PNG、面板能取到
+- 总览页右上角"Evo 官方合作小程序：派圈助手"（2026-10-28）：前面是派圈助手的图标，点了弹出小程序码（弹窗、码、扫码说明、关闭）；
+  只在总览页；没有小程序码图片时不显示；有图片时两张都是真的 PNG、面板能取到，文件夹里有许可说明
 
 运行：python tests/test_follow.py
 """
@@ -102,6 +102,11 @@ def partner_checks(client):
     image = PANEL_DIR / "static" / panel_app.PARTNER_QR
     if image.is_file():
         reply = client.get(f"/static/{panel_app.PARTNER_QR}")
+        icon = PANEL_DIR / "static" / panel_app.PARTNER_ICON
+        out["按钮前面是派圈助手的图标（PNG、面板能取到，读屏软件跳过）"] = (
+            icon.read_bytes()[:8] == PNG_HEADER and client.get(f"/static/{panel_app.PARTNER_ICON}").status_code == 200
+            and f'<img class="partner-icon" src="/static/{panel_app.PARTNER_ICON}" alt=""' in header)
+        out["两张图都写明了不适用 AGPL（同一个文件夹里的 LICENSE.txt）"] = (image.parent / "LICENSE.txt").is_file()
         out["小程序码图片是 PNG、面板能取到"] = (image.read_bytes()[:8] == PNG_HEADER and reply.status_code == 200
                                        and panel_app.partner_qr() == panel_app.PARTNER_QR)
     else:

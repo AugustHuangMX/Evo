@@ -58,9 +58,10 @@
     {% endfor %}
   </nav>
   {% if partner %}
-  {# 总览页右上角：Evo 官方合作小程序「派圈助手」（2026-10-28 用户要求）。点了弹出小程序码（电脑上打不开小程序，用手机微信扫） #}
+  {# 总览页右上角：Evo 官方合作小程序「派圈助手」（2026-10-28 用户要求）。点了弹出小程序码（电脑上打不开小程序，用手机微信扫）。
+     前面是派圈助手的图标（用户给的，属于派圈助手，见 panel/static/partner/LICENSE.txt；名字就在旁边，读屏软件跳过它） #}
   <button type="button" class="partner-btn" id="partner-open" aria-haspopup="dialog">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>
+    <img class="partner-icon" src="{{ url_for('static', filename=partner_icon) }}" alt="" width="20" height="20">
     <span class="partner-label">Evo 官方合作小程序：</span><span class="partner-name">派圈助手</span>
   </button>
   {% endif %}

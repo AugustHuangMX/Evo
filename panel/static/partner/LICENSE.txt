@@ -1,0 +1,9 @@
+这个文件夹里的两张图属于微信小程序「派圈助手」（Evo 的官方合作小程序），不适用 Evo 的 AGPL-3.0 许可证：
+
+- paiquan.png：派圈助手的小程序码（从微信公众平台下载），Evo 总览页右上角的弹窗里给玩家用手机微信扫
+- paiquan-icon.png：派圈助手的图标（原图 2048 像素，裁掉四周的空边、缩成 64 像素），放在那个按钮前面
+
+只用来在 Evo 里介绍、打开派圈助手；别的用途请先联系派圈助手。
+
+The two images in this folder belong to the WeChat mini program "派圈助手" (Evo's official partner mini program)
+and are not covered by Evo's AGPL-3.0 license. They are only used to show and open 派圈助手 from Evo.

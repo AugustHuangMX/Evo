@@ -122,6 +122,7 @@ FOLLOW_LINKS = (
 # 总览页右上角"Evo 官方合作小程序：派圈助手"（2026-10-28 用户要求，0.4.3 起）：点了弹出派圈助手的小程序码，用手机微信扫
 # （电脑上没有能直接打开小程序的链接）。图片是从微信公众平台"小程序码及线下物料下载"下载的；没有这张图时不显示按钮
 PARTNER_QR = "partner/paiquan.png"
+PARTNER_ICON = "partner/paiquan-icon.png"  # 按钮前面的派圈助手图标（用户给的 2048 像素原图裁掉空边、缩成 64 像素）
 
 
 def partner_qr():
@@ -876,6 +877,7 @@ def overview():
         share=share,
         follow=FOLLOW_LINKS,
         partner=partner_qr(),
+        partner_icon=PARTNER_ICON,
     )
 
 

@@ -149,7 +149,7 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer; transition: border-color 0.15s; }
 .partner-btn:hover { border-color: var(--muted); }
 .partner-btn:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
-.partner-btn svg { flex: none; color: var(--muted); }
+.partner-icon { flex: none; width: 20px; height: 20px; margin-left: -4px; border-radius: 5px; }  /* 图标自带深色底，圆角像小程序图标 */
 .partner-label { color: var(--muted); }
 .partner-name { font-weight: 500; }
 .partner-btn ~ .pill, .partner-btn ~ .account-switch, .partner-btn ~ .icon-btn { margin-left: 0; }
