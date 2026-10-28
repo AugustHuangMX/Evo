@@ -10,7 +10,7 @@ routes = [
 ]
 
 [triggers]
-crons = ["7 * * * *"]  # 每小时第 7 分钟重算全体玩家的汇总（worker.js 的 scheduled；没有新数据、没换天就不算）
+crons = ["7 * * * *", "* * * * *"]  # 每小时第 7 分钟重算全体玩家的汇总（没有新数据、没换天就不算）；每分钟看一眼地图轮换要不要重新取（到了换图的时间才去取，见 worker.js 的 refreshMaps）
 
 [[d1_databases]]
 binding = "DB"

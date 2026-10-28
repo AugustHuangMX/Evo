@@ -10,8 +10,10 @@
 //   只有汇总的数字，没有任何一个编号的数据。Evo 里只有开了匿名统计的人才下载（限制在 Evo 那边，这个地址本身是公开的）
 // - GET /v1/maps：地图轮换（Evo 总览页，2026-10-28 用户决定）：匹配、排位、轮换模式现在 / 下一张是什么图、什么时候换。
 //   数据来自 Apex Legends Status 的接口（用户自己申请的 API Key，是 Worker 的机密变量 ALS_API_KEY：
-//   wrangler secret put ALS_API_KEY，不进 git、不进 Evo）。整理成自己的格式（见 maps），存在 Cloudflare 的缓存里，
-//   到最早换图的时候为止（最短 30 秒、最长 15 分钟）：不管多少人打开 Evo，一段时间里只去取一次
+//   wrangler secret put ALS_API_KEY，不进 git、不进 Evo；Key 要在对方网站上验证过 Discord 才能用，没验证时回 429）。
+//   只有定时任务去取（每分钟看一眼，到了换图的时间、或者存着的超过 15 分钟才取，见 refreshMaps），整理成自己的格式
+//   存进 summary 表（name = maps_v1）；这里只读出来，再多人打开也不会去上游（2026-10-28：原来每个 Cloudflare 机房
+//   各取各的，换图那一刻一起去取，撞上对方每秒 5 次的限额）。取不到时照旧给上一次存的
 // 只收认识的项，格式不对的那一局不存（整份格式不对就回 400）。不存 IP 地址、不写日志、不放 Cookie；
 // 不回 CORS 头，网页里的脚本没法往这里发。
 // 数据不自动删（2026-10-22 用户决定：留着做长期统计，比如看各赛季的变化）。
@@ -201,6 +203,7 @@ async function remove(body, env) {
 // "近 7 天"按用户电脑上的日期，从 UTC 的今天往前数 6 天算起（recent_from）
 // 读数据库：每算一次大约把 matches 表读 9 遍（D1 免费额度每天读 500 万行；局数上了几万、每小时都有新数据时要改成几小时算一次）
 const SUMMARY_NAME = "v1";
+const SUMMARY_CRON = "7 * * * *";  // 重算汇总的定时任务（wrangler.toml 的 crons 里也写着；另一个 "* * * * *" 是地图轮换）
 const RECENT_DAYS = 7;
 const TOP_COMBOS = 30;
 const MIN_PLAYER_GAMES = 3;
@@ -430,7 +433,8 @@ async function summary(env) {
 
 const MAPS_UPSTREAM = "https://api.apexlegendsstatus.com/maprotation?version=2";  // version=2 才有排位和轮换模式
 const MAP_MODES = { pubs: "battle_royale", ranked: "ranked", mixtape: "ltm" };  // 我们的名字 → 上游的名字
-const MAPS_TTL = [30, 900];  // 缓存多久（秒）：到最早换图为止，但不短于 30 秒、不长于 15 分钟
+const MAPS_NAME = "maps_v1";  // 存在 summary 表的哪一行（body = {v, modes}，made_at = 取的时间，data_at = 最早换图的时间（秒））
+const MAPS_RECHECK = 15 * 60;  // 存着的超过这么久（秒），没到换图的时间也重新取一次
 
 // 上游的一场 → {map: 英文名, code, event: 轮换模式的玩法（如 "TDM"，别的模式是 null）, start, end}（时间是秒）；不像样返回 null
 function rotationSlot(o) {
@@ -448,34 +452,46 @@ function rotationSlot(o) {
   };
 }
 
-// 回给 Evo 的：{v: 1, now: 服务器现在的时间（秒，Evo 用来校正电脑时钟）, modes: {pubs | ranked | mixtape: {current, next}}}。
-// 缓存里存的是不带 now 的那部分，每次回答时现填 now
-async function maps(request, env, ctx) {
-  const cache = caches.default;
-  const key = new Request(new URL("/v1/maps", request.url).toString());
-  let body = await (await cache.match(key))?.text();
-  if (!body) {
-    if (!env.ALS_API_KEY) return reply({ ok: false, error: "no key" }, 503);
-    const upstream = await fetch(`${MAPS_UPSTREAM}&auth=${encodeURIComponent(env.ALS_API_KEY)}`);
-    if (!upstream.ok) return reply({ ok: false, error: `upstream ${upstream.status}` }, 502);
-    let raw;
-    try {
-      raw = JSON.parse(await upstream.text());  // Key 不对时上游回 200 + 一句纯文字，不是 JSON
-    } catch (e) {
-      return reply({ ok: false, error: "upstream format" }, 502);
-    }
-    const modes = {};
-    for (const [name, field] of Object.entries(MAP_MODES)) {
-      const current = rotationSlot(raw?.[field]?.current);
-      if (current) modes[name] = { current, next: rotationSlot(raw[field].next) };
-    }
-    if (!Object.keys(modes).length) return reply({ ok: false, error: "upstream format" }, 502);
-    body = JSON.stringify({ v: 1, modes });
-    const soonest = Math.min(...Object.values(modes).map((m) => m.current.end));
-    const ttl = Math.max(MAPS_TTL[0], Math.min(MAPS_TTL[1], soonest - Math.floor(Date.now() / 1000)));
-    ctx.waitUntil(cache.put(key, new Response(body, { headers: { "Cache-Control": `public, max-age=${ttl}` } })));
+// 去上游取一次，整理成 {pubs | ranked | mixtape: {current, next}}；取不到、格式不对返回 null
+async function fetchRotation(env) {
+  const upstream = await fetch(`${MAPS_UPSTREAM}&auth=${encodeURIComponent(env.ALS_API_KEY)}`);
+  if (!upstream.ok) return null;
+  let raw;
+  try {
+    raw = JSON.parse(await upstream.text());  // Key 不对时上游回 200 + 一句纯文字，不是 JSON
+  } catch (e) {
+    return null;
   }
-  return new Response(JSON.stringify({ ...JSON.parse(body), now: Math.floor(Date.now() / 1000) }), {
+  const modes = {};
+  for (const [name, field] of Object.entries(MAP_MODES)) {
+    const current = rotationSlot(raw?.[field]?.current);
+    if (current) modes[name] = { current, next: rotationSlot(raw[field].next) };
+  }
+  return Object.keys(modes).length ? modes : null;
+}
+
+// 定时任务每分钟一次：还没存过、到了换图的时间（上游晚几秒才换的话，下一分钟再取）、或者存着的超过 MAPS_RECHECK，
+// 才去上游取；取到了存起来，取不到就留着上一次的
+async function refreshMaps(env, now = Math.floor(Date.now() / 1000)) {
+  if (!env.ALS_API_KEY) return false;
+  const row = await env.DB.prepare("SELECT made_at, data_at FROM summary WHERE name = ?").bind(MAPS_NAME).first();
+  if (row && now < Number(row.data_at) && now - Math.floor(Date.parse(row.made_at) / 1000) < MAPS_RECHECK) return false;
+  const modes = await fetchRotation(env);
+  if (!modes) return false;
+  const soonest = Math.min(...Object.values(modes).map((m) => m.current.end));
+  await env.DB.prepare(
+    `INSERT INTO summary (name, body, made_at, data_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (name) DO UPDATE SET body = excluded.body, made_at = excluded.made_at, data_at = excluded.data_at`,
+  ).bind(MAPS_NAME, JSON.stringify({ v: 1, modes }), new Date(now * 1000).toISOString(), String(soonest)).run();
+  return true;
+}
+
+// 回给 Evo 的：{v: 1, now: 服务器现在的时间（秒，Evo 用来校正电脑时钟）, modes: {pubs | ranked | mixtape: {current, next}}}。
+// 只读存着的（不去上游）；还没存过（刚部署、定时任务还没跑）回 503
+async function maps(env) {
+  const row = await env.DB.prepare("SELECT body FROM summary WHERE name = ?").bind(MAPS_NAME).first();
+  if (!row) return reply({ ok: false, error: "not ready" }, 503);
+  return new Response(JSON.stringify({ ...JSON.parse(row.body), now: Math.floor(Date.now() / 1000) }), {
     headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
@@ -496,9 +512,9 @@ export default {
     }
     if (request.method === "GET" && pathname === "/v1/maps") {
       try {
-        return await maps(request, env, ctx);
+        return await maps(env);
       } catch (e) {
-        return reply({ ok: false, error: "server error" }, 500);  // 包括连不上上游
+        return reply({ ok: false, error: "server error" }, 500);
       }
     }
     const handler = { "/v1/report": report, "/v1/delete": remove }[pathname];
@@ -512,8 +528,8 @@ export default {
     }
   },
 
-  // 定时任务（wrangler.toml 的 crons，每小时一次）：重算全体玩家的汇总
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(refreshSummary(env, false));
+  // 定时任务（wrangler.toml 的 crons）：每小时第 7 分钟重算全体玩家的汇总；每分钟看一眼地图轮换要不要重新取
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(event.cron === SUMMARY_CRON ? refreshSummary(env, false) : refreshMaps(env));
   },
 };
