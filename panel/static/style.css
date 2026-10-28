@@ -142,7 +142,7 @@ a { color: inherit; text-decoration: none; }
 /* 切换账号（有 2 个以上账号时才有）：和主题按钮一起靠右 */
 .account-switch { margin-left: auto; display: flex; align-items: center; gap: 8px; margin-top: 0; margin-bottom: 0; }
 .pill ~ .account-switch, .account-switch ~ .icon-btn { margin-left: 0; }
-/* 总览页右上角"Evo 官方合作小程序：派圈助手"（base.html，2026-10-28）：描边的圆角按钮，把右边的东西推到最右；
+/* 右上角"Evo 官方合作小程序：派圈助手"（base.html，2026-10-28，每一页都有）：描边的圆角按钮，把右边的东西推到最右；
    窗口窄时只留"派圈助手"。弹窗里的小程序码总是白底（扫码要），深色主题也一样 */
 .partner-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 14px;
   border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--text); font: inherit; font-size: 13px;

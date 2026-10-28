@@ -119,7 +119,8 @@ FOLLOW_LINKS = (
     {"name": "哔哩哔哩", "url": "https://space.bilibili.com/26649278", "icon": "brands/bilibili.svg"},
     {"name": "小黑盒", "url": "https://www.xiaoheihe.cn/app/user/profile/765d6910c805", "icon": "brands/xiaoheihe.svg"},
 )
-# 总览页右上角"Evo 官方合作小程序：派圈助手"（2026-10-28 用户要求，0.4.3 起）：点了弹出派圈助手的小程序码，用手机微信扫
+# 右上角"Evo 官方合作小程序：派圈助手"（2026-10-28 用户要求，0.4.3 起；先只放总览页，用户觉得突兀，改成每一页都有）：
+# 点了弹出派圈助手的小程序码，用手机微信扫
 # （电脑上没有能直接打开小程序的链接）。图片是从微信公众平台"小程序码及线下物料下载"下载的；没有这张图时不显示按钮
 PARTNER_QR = "partner/paiquan.png"
 PARTNER_ICON = "partner/paiquan-icon.png"  # 按钮前面的派圈助手图标（用户给的 2048 像素原图裁掉空边、缩成 64 像素）
@@ -200,6 +201,9 @@ def template_globals():
         # 多账号：认出了新的玩家名 → 弹窗问"是不是同一个人"；有 2 个以上账号时，右上角切换账号
         "name_question": name_question(),
         "account_view": account_view(),
+        # 右上角"Evo 官方合作小程序：派圈助手"（每一页都有）：没有小程序码图片时是 None，不显示
+        "partner": partner_qr(),
+        "partner_icon": PARTNER_ICON,
     }
 
 
@@ -876,8 +880,6 @@ def overview():
         total=len(rows),
         share=share,
         follow=FOLLOW_LINKS,
-        partner=partner_qr(),
-        partner_icon=PARTNER_ICON,
     )
 
 

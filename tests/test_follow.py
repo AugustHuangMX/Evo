@@ -4,8 +4,8 @@
 - 总览页最下面有"关注我"和两个按钮，地址是正式地址（不带分享追踪参数），交给系统浏览器打开（target="_blank"、rel="noopener noreferrer"）
 - 没有对局时也显示
 - 两个图标是写对了的 SVG、单色（颜色跟随文字）、不引用别的文件，面板能取到
-- 总览页右上角"Evo 官方合作小程序：派圈助手"（2026-10-28）：前面是派圈助手的图标，点了弹出小程序码（弹窗、码、扫码说明、关闭）；
-  只在总览页；没有小程序码图片时不显示；有图片时两张都是真的 PNG、面板能取到，文件夹里有许可说明
+- 右上角"Evo 官方合作小程序：派圈助手"（2026-10-28，每一页都有）：前面是派圈助手的图标，点了弹出小程序码（弹窗、码、扫码说明、关闭）；
+  每一页都有；没有小程序码图片时不显示；有图片时两张都是真的 PNG、面板能取到，文件夹里有许可说明
 
 运行：python tests/test_follow.py
 """
@@ -84,7 +84,7 @@ def partner_checks(client):
     """右上角"Evo 官方合作小程序：派圈助手"。小程序码图片在不在都要能测：用 mock 换掉"有没有这张图"。"""
     with mock.patch.object(panel_app, "partner_qr", return_value=panel_app.PARTNER_QR):
         overview = client.get("/").get_data(as_text=True)
-        others = [client.get(url).get_data(as_text=True) for url in ("/matches", "/stats", "/settings")]
+        others = [client.get(url).get_data(as_text=True) for url in ("/matches", "/stats", "/stats?view=all", "/settings")]
     with mock.patch.object(panel_app, "partner_qr", return_value=None):
         without = client.get("/").get_data(as_text=True)
     header = overview.split("</header>")[0]
@@ -96,7 +96,8 @@ def partner_checks(client):
         "点了弹出小程序码：弹窗里有码（读屏写着是什么）、扫码说明、关闭按钮":
             f'src="/static/{panel_app.PARTNER_QR}"' in dialog and 'alt="派圈助手的小程序码"' in dialog and "扫一扫" in dialog
             and "data-partner-close" in dialog and 'getElementById("partner-open")' in overview,
-        "只在总览页（战绩、数据、设置页没有）": all("partner-open" not in page for page in others),
+        "每一页都有（战绩、数据、全体玩家、设置页也有按钮和弹窗）": all(
+            'id="partner-open"' in page.split("</header>")[0] and 'id="partner-dialog"' in page for page in others),
         "没有小程序码图片时不显示按钮和弹窗": "partner-open" not in without and "partner-dialog" not in without,
     }
     image = PANEL_DIR / "static" / panel_app.PARTNER_QR
