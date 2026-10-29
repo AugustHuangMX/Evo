@@ -8,7 +8,7 @@
 5. 压缩：最外层是一个 Evo 文件夹，附上《使用说明（先看这个）.txt》（原文在 release/使用说明.txt）
 6. 算 SHA-256：写在官网上，下载的人可以核对文件有没有被改过
 7. 做补丁包（增量更新，2026-10-24 用户决定，以后每次发布都这样；格式见 code/update_patch.py）：给 dist 里最近
-   PATCH_FROM 个旧版本（不早于 DELTA_SINCE：更早的 Evo 不会用补丁包）各做一个，只放变了的文件
+   PATCH_FROM 个旧版本（2026-10-29 起只做上一版的一个）（不早于 DELTA_SINCE：更早的 Evo 不会用补丁包）各做一个，只放变了的文件
 8. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt；
    还写上压缩包和补丁包的地址、SHA-256 和大小，Evo 里的一键更新（updater.py）按它下载、核对；
    以及国内线路（腾讯云 COS 上的同一个文件，update_check.COS_BASE）
@@ -49,7 +49,8 @@ NOTES = ROOT / "release" / "更新内容.txt"
 DOWNLOAD_PAGE = "https://evotracker.cn/#download"
 DOWNLOAD_BASE = "https://dl.evotracker.cn"  # 压缩包传到 R2 后的地址（publish.py 也是这个）
 DELTA_SINCE = "0.4.0"  # 从这个版本起 Evo 会用补丁包，更早的版本不做补丁包（它们只会下完整的）
-PATCH_FROM = 3  # 给最近几个旧版本做补丁包（更早的下完整的安装包）
+PATCH_FROM = 1  # 给最近几个旧版本做补丁包（更早的下完整的安装包）。2026-10-29 用户定只做上一版的一个：每多一个就多传约 10 MB（R2 和 COS 各一份），
+#   发版时上传太久；跟着更新的玩家照样只下 10 MB 左右，落后两个版本以上的下完整的
 
 
 def mirror_urls(name):

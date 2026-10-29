@@ -61,7 +61,7 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 - 截屏 `dxcam`（备选 `mss`）；图像 `opencv-python-headless` + `numpy`（不要装 `opencv-python`，会冲突）；引擎 RapidOCR + onnxruntime（模型内置、单线程）；存储 SQLite；面板 Flask + 纯 HTML/CSS；窗口 `pywebview` + WebView2；托盘 `pystray`；打包 PyInstaller（一个文件夹）。细节见 docs/底座.md
 - 小程序：微信原生写法（JavaScript + WXML / WXSS）+ 微信云开发（云函数用 Node.js），用微信开发者工具调试。细节见 docs/小程序.md
 - 打游戏用安装好的 Evo：程序在 `E:\Evo Tracker`，数据在 `E:\Evo Tracker Data`。用源码运行 `python code/evo_app.py` 时战绩也记进这个数据文件夹，所以源码版和安装版不能同时开；Evo 开着时不能重新安装
-- 下载和一键更新（2026-10-24 用户决定）：**一键更新只下载变了的文件**（增量更新：和玩家现在的版本比，只下变了的那些，0.3.7 → 0.3.8 是 11 MB，完整包是 112 MB），以后每次发布都这样；完整压缩包只给第一次安装和太旧的版本。**国内玩家多，默认走腾讯云 COS（上海）**（2026-10-28 用户决定）：官网下载区「国内下载」（COS）和「海外下载」（dl.evotracker.cn）两个一样大的按钮并排，首屏的下载按钮是国内下载；一键更新（0.4.3 起）先走 COS，太慢或出错再换 dl.evotracker.cn，检查更新也先读 COS 上的 latest.json。gh-proxy 用户决定暂时不用。细节见 docs/底座.md，剩下没做的见 todo.md
+- 下载和一键更新（2026-10-24 用户决定）：**一键更新只下载变了的文件**（增量更新：和玩家现在的版本比，只下变了的那些，0.3.7 → 0.3.8 是 11 MB，完整包是 112 MB），以后每次发布都这样；补丁包只做上一个版本的一个（2026-10-29 用户决定：多做几个上传太久），落后两个版本以上、第一次安装的下完整压缩包。**国内玩家多，默认走腾讯云 COS（上海）**（2026-10-28 用户决定）：官网下载区「国内下载」（COS）和「海外下载」（dl.evotracker.cn）两个一样大的按钮并排，首屏的下载按钮是国内下载；一键更新（0.4.3 起）先走 COS，太慢或出错再换 dl.evotracker.cn，检查更新也先读 COS 上的 latest.json。gh-proxy 用户决定暂时不用。细节见 docs/底座.md，剩下没做的见 todo.md
 
 ## 模型（怎么识别、记录）
 
