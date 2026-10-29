@@ -7,8 +7,8 @@ from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 ROOT = os.path.dirname(SPECPATH)  # 项目文件夹（本文件在 tools/ 里）
 CODE = os.path.join(ROOT, "code")  # 程序代码
 # 微信小程序（绑定、上传战绩：cloud_sync.py、panel_cloud.py、qr.py、_cloud.html）：这些文件只在开发者电脑上，不上传 GitHub
-# （2026-10-24 用户决定）。小程序上线以前不打进安装包（0.4.0 起），Evo 找不到它们就不显示那一栏、不同步；上线时改成 True
-WITH_CLOUD = False
+# （2026-10-24 用户决定）。小程序上线以前不打进安装包（0.4.0–0.4.3），Evo 找不到它们就不显示那一栏、不同步；2026-10-29 派圈助手过审发布，0.5.0 起打进去（用户确认）
+WITH_CLOUD = True
 CLOUD_MODULES = ["cloud_sync", "panel_cloud", "qr"]
 
 datas = [
