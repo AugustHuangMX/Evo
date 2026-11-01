@@ -8,6 +8,8 @@
 另开一个 Python 只导入 evo_app 和 panel_app，检查这些库没被带进来（不用截图）。
 读结算画面、大厅时不让 Windows 降频（live_collect.FullSpeed）：直接喂画面检查什么时候打开、交还，本机真的设置一次；
 上面那次记录里，到了总结页才打开、回到游戏画面后交还，日志里写了识别平均每次几秒。
+停在同一个画面上时不再每张都读关键字（screens.py，2026-11-01）：同一张图连着认几次只读第一次；
+大厅背景变了、字没变（实战同一次停留的两张）不读；字淡了一半要重新读；配置里去掉 unchanged 就每张都读。
 
 运行：python tests/test_light.py
 """
@@ -17,11 +19,12 @@ import subprocess
 import sys
 from unittest import mock
 
-from fake_game import CODE, FakeCamera, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
+from fake_game import BLACK, CODE, FakeCamera, MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入
 
 import live_collect
 import ocr
 import process_info
+from screens import ScreenDetector
 
 NIGHT = "live/20261016_211452/"
 HEAVY = ("cv2", "numpy", "rapidocr", "onnxruntime", "dxcam")  # 只该在记录子进程里加载的库
@@ -40,7 +43,8 @@ def main():
     ok = report({f"托盘程序和面板不加载识别用的库（加载了：{'、'.join(heavy) or '无'}）": not heavy})
     ok = speed_checks() and ok
     shots = recording_checks()
-    return ok if shots is None else ok and shots
+    same = same_screen_checks()
+    return ok and shots is not False and same is not False
 
 
 class StepClock:
@@ -133,6 +137,47 @@ def recording_checks():
         "结束时在日志里报告了这次的截屏、识别次数和内存": len(stats) == 1,
         "识别次数后面写了平均每次几秒": len(stats) == 1 and re.search(r"识别 \d+ 次（平均每次 \d+\.\d\d 秒）", stats[0]),
         f"到了总结页才不让 Windows 降频，回到游戏画面后交还（{speed}）": speed == [("总结页", True), ("游戏", False)],
+    })
+
+
+def same_screen_checks():
+    """停在同一个画面上时不再每张都读关键字（ScreenDetector.check）。找不到截图时返回 None。"""
+    try:
+        summary = load(shot(NIGHT + "05_222749.png"))
+        lobby_in, lobby_out = load(shot(NIGHT + "lobby_211506_enter.png")), load(shot(NIGHT + "lobby_211518_leave.png"))
+    except MissingShots as e:
+        print(f"  ⏭ 跳过：找不到截图 {e}（截图只在开发者电脑上，不在仓库里）")
+        return None
+    real = ocr.create_engine(ocr.SMALL_CROP_PARAMS)
+    calls = [0]
+
+    def engine(img, **kwargs):
+        calls[0] += 1
+        return real(img, **kwargs)
+
+    def run(detector, frame):
+        """认一张，返回 (画面, 这次读了几次)。"""
+        before = calls[0]
+        return detector.detect(frame), calls[0] - before
+
+    d = ScreenDetector(engine)
+    first = run(d, summary)
+    again = [run(d, summary) for _ in range(3)]
+    skipped = d.unchanged
+    faded = run(d, (summary * 0.5 + 64).astype(summary.dtype))  # 整张淡了一半（字淡出时那样）
+    lobby = [run(d, lobby_in), run(d, lobby_out)]
+    black = run(d, BLACK)
+    plain = ScreenDetector(engine, {k: v for k, v in d.cfg.items() if k != "unchanged"})
+    plain_runs = [run(plain, summary) for _ in range(2)]
+    return report({
+        f"第一次认出总结页时读了关键字（{first}）": first[0] == "summary" and first[1] > 0,
+        f"同一张总结页再认 3 次：都认出来，一次都没读（{again}）": again == [("summary", 0)] * 3 and skipped == 3,
+        f"字淡了一半：重新读（{faded}）": faded[1] > 0,
+        f"大厅同一次停留的两张（背景变亮了、字没变）：第二张没读（{lobby}）":
+            [s for s, _ in lobby] == ["lobby", "lobby"] and lobby[0][1] > 0 and lobby[1][1] == 0,
+        f"黑屏：不是任何画面（{black}）": black == (None, 0),
+        f"配置里去掉 unchanged：每张都读（{plain_runs}）": [s for s, _ in plain_runs] == ["summary"] * 2
+                                                      and all(n > 0 for _, n in plain_runs),
     })
 
 

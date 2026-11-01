@@ -2,7 +2,8 @@
 规则见 docs/对局全流程图.md。
 
 只截屏，不碰游戏（唯一的例外：读 Apex 自己的视频设置文件，知道游戏画面是 16:9、16:10 还是 4:3，见 game_aspect.py）。
-每截一张，先判断是哪个画面（见 screens.py：先比外观，几毫秒；像了才用识别引擎读关键字确认），
+每截一张，先判断是哪个画面（见 screens.py：先比外观，几毫秒；像了才用识别引擎读关键字确认，
+停在同一个画面上、关键字那一块没变就不再读），
 再交给对应的部分。识别引擎（OCR）用到时才加载，闲置 2 分钟后释放；对局中交火时一律不用引擎（原则 3）：
 - 大厅：读玩家名、段位和段内分数，连续两次一样就记下，并用它校准前后两次大厅之间各局的 RP（见 lobby.py、calibration.py）。
   回到大厅也算上一局结束
@@ -544,7 +545,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
             run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
         saved = total()
         per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
-        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次{per_call}，"
+        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike + detector.unchanged} 次"
+            f"（{detector.unchanged} 次画面没变，没再读关键字）；识别 {engine.calls} 次{per_call}，"
             f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
             f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
             f"玩家名 {post.player_name or '没认出'}；大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"

@@ -6,6 +6,8 @@
    长短不同，位置会左右移动）。字会慢慢变大的画面（淘汰画面），参照图按配置里的几种大小各比一次。
    打游戏的大部分时间画面都不是这几种，这一步就排除了，不用跑识别引擎
 2. 外观像了，再用识别引擎读这一块，关键字都在才算。所以多了第 1 步也不会认错，只会少跑识别
+   这一块的文字轮廓和上次读到关键字时几乎一样（停在同一个画面上），关键字就还在，不再读（2026-11-01：
+   以前停在大厅每秒读一次、总结页每 0.3 秒读一次，占了全部识别的约 3/4，笔记本上读一次要 0.4 秒，见 docs/识别经验.md）
 
 游戏更新后界面变了，参照图可能就不像了：重新截一张，用下面的命令重新生成。没有参照图的画面每次都直接跑识别（和以前一样）。
 
@@ -110,23 +112,42 @@ class ScreenDetector:
             self.templates[name] = None if template is None else template_outlines(template, spec)
         self.missing = [name for name, t in self.templates.items() if t is None]  # 没有参照图的画面
         self.looked_alike = 0  # 外观检查通过、跑了识别的次数（统计用）
+        self.unchanged = 0  # 外观像、文字轮廓和上次读到关键字时几乎一样，没再读的次数（统计用）
+        self.confirmed = {}  # 每种画面最近一次读到关键字时，检查区域的文字轮廓
 
-    def similarity(self, frame, name):
-        """检查区域和参照图的外观相似度（-1 到 1，越大越像；几种大小取最像的）。没有参照图返回 None。"""
+    def _region(self, frame, name):
+        """检查区域的文字轮廓（缩放成基准尺寸、再按 shrink 缩小）。"""
+        spec = self.cfg["screens"][name]
+        gray = gray_crop(frame, spec["roi"], self.cfg["base_resolution"], spec.get("anchor"))
+        return outline(shrunk(gray, spec.get("shrink", 1)))
+
+    def _similarity(self, region, name):
         templates = self.templates[name]
         if templates is None:
             return None
-        spec = self.cfg["screens"][name]
-        gray = gray_crop(frame, spec["roi"], self.cfg["base_resolution"], spec.get("anchor"))
-        region = outline(shrunk(gray, spec.get("shrink", 1)))
         # 纯色的区域（如黑屏）算不出相似度，当作不像（见 match）
         return max(float(match(region, t).max()) for t in templates)
 
-    def looks_like(self, frame, name):
-        """第 1 步：外观像不像。没有参照图的画面一律算像（直接交给识别）。"""
-        score = self.similarity(frame, name)
+    def _alike(self, region, name):
+        score = self._similarity(region, name)
         spec = self.cfg["screens"][name]
         return score is None or score >= spec.get("min_similarity", self.cfg["min_similarity"])
+
+    def similarity(self, frame, name):
+        """检查区域和参照图的外观相似度（-1 到 1，越大越像；几种大小取最像的）。没有参照图返回 None。"""
+        return self._similarity(self._region(frame, name), name)
+
+    def looks_like(self, frame, name):
+        """第 1 步：外观像不像。没有参照图的画面一律算像（直接交给识别）。"""
+        return self._alike(self._region(frame, name), name)
+
+    def _same_text(self, region, name):
+        """文字轮廓和上次读到关键字时几乎一样：差别（平均每个点差多少）不到上次轮廓本身的 unchanged 倍。
+        比的是轮廓，背景整体变亮变暗不算变；字淡出时轮廓变弱，差别就大了，照样去读。"""
+        limit, before = self.cfg.get("unchanged"), self.confirmed.get(name)
+        if limit is None or before is None or before.shape != region.shape:
+            return False
+        return float(np.mean(np.abs(region - before))) <= limit * max(float(np.mean(np.abs(before))), 1e-6)
 
     def has_keywords(self, frame, name):
         """第 2 步：用识别引擎读检查区域，关键字是不是全都在（不管空格和大小写：英文常读成"SQUADELIMINATED"）。"""
@@ -135,11 +156,18 @@ class ScreenDetector:
         return all(compact(k) in text for k in spec["keywords"])
 
     def check(self, frame, name):
-        """这一帧是不是这个画面：外观像了，再读关键字。"""
-        if not self.looks_like(frame, name):
+        """这一帧是不是这个画面：外观像了，再读关键字（文字轮廓和上次读到关键字时几乎一样就不再读）。"""
+        region = self._region(frame, name)
+        if not self._alike(region, name):
             return False
+        if self._same_text(region, name):
+            self.unchanged += 1
+            return True
         self.looked_alike += 1
-        return self.has_keywords(frame, name)
+        if self.has_keywords(frame, name):
+            self.confirmed[name] = region  # 以后都和读到关键字的这一张比（不跟着往后挪，慢慢变的也比得出来）
+            return True
+        return False
 
     def detect(self, frame):
         for name in self.cfg["screens"]:
@@ -187,6 +215,10 @@ class GameScreens:
     @property
     def looked_alike(self):
         return sum(d.looked_alike for d in self.detectors.values())
+
+    @property
+    def unchanged(self):
+        return sum(d.unchanged for d in self.detectors.values())
 
     @property
     def missing(self):
