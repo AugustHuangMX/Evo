@@ -4,7 +4,7 @@
 - 新表（不用截图）：读到的存成待核对，同一项再读到就换掉；保存时换掉原来保存的那一行、记下改过哪几项；删除；
   旧数据库（版本 8）打开时自动加上这张表；Evo 认识的名字 = 对局里出现过的
 - 录入模式：按一次开 10 分钟，还剩几秒，到时间、点"结束"就关
-- 记录程序（用假游戏喂用户 2026-11-01 截的数据页，见 test_season_stats.py）：
+- 记录程序（用假游戏喂用户 2026-11-01 截的数据页，游戏是 16:10 拉伸，和实际打游戏一样按 16:10 换算，见 test_season_stats.py）：
   - 录入模式开着：S30 全部、S30 排位、S29 全部、生涯合计存成待核对，数字和答案一样；下拉菜单开着的不读；
     被鼠标弹出的说明框挡住的（S27）不存、日志里提醒；0 局的（S13）不存；同一项再点回来、数字没变不再存；
     存一个赛季响一声（生涯合计不响）；停在数据页时每 0.3 秒一张
@@ -131,7 +131,7 @@ def collect_checks():
     season_import.start()
     SOUNDS_PLAYED.clear()
     with mock.patch.object(ocr, "create_engine", counting_engine):
-        _, sleeps, log = run_collect(frames, picture)
+        _, sleeps, log = run_collect(frames, picture, game_aspect="16:10")
     got = rows_of(fake_game.last_db)
     sounds = list(SOUNDS_PLAYED)
     want = {(30, "all"): "0036", (30, "ranked"): "0038", (29, "all"): "0040"}
@@ -162,13 +162,13 @@ def collect_checks():
     season_import.stop()
     ran_on.clear()
     with mock.patch.object(ocr, "create_engine", counting_engine):
-        run_collect(frames, picture)
+        run_collect(frames, picture, game_aspect="16:10")
     out[f"录入模式关着：一项都不存，数据页上一次识别都不跑（{len(ran_on)} 次）"] = (
         rows_of(fake_game.last_db) == [] and not ran_on)
 
     season_import.start()
     with mock.patch.object(live_collect.storage, "known_names", lambda conn: {"SomeoneElse"}):
-        _, _, log = run_collect(frames[:5], picture)
+        _, _, log = run_collect(frames[:5], picture, game_aspect="16:10")
     season_import.stop()
     told = [line for line in log if "不是 Evo 认识的你的名字" in line]
     out[f"页面上的名字不是 Evo 认识的（好友资料页）：不读，日志只说一次（{len(told)} 次）"] = (

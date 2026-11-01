@@ -1,6 +1,7 @@
 """游戏里的数据页（season_stats.py）：认出这一页、读右边一栏（选中的赛季）和中间一栏（生涯合计）、数字互相核对。
 
-- 截图：用户 2026-11-01 截的（captures/frames/20261101_161135，2560x1440，简体），第 30–115 张：大厅、好友列表、
+- 截图：用户 2026-11-01 截的（captures/frames/20261101_161135，2560x1440，简体；游戏全屏 2560x1600 = 16:10 拉伸，
+  和实际打游戏一样按 16:10 换算（layout.set_game_aspect）：第一版没换算就测，测试过了、实际一张都认不出），第 30–115 张：大厅、好友列表、
   数据页（下拉菜单一会儿开一会儿收，点了 S30 到 S6）。答案在 season_stats_20261101.csv（程序读出来以后逐项核对过：
   伤害 ÷ 局数 = 平均、击杀 ÷ 阵亡 = 击杀/阵亡比全部对得上，下面六行对着原图看过 S30 排位、S29、S16、S14 四张）。
   被鼠标弹出的说明框挡住的 5 张只核对"挡住了"，不对数字
@@ -65,8 +66,17 @@ def screenshot_checks():
         return None
     from ocr import SMALL_CROP_PARAMS, create_engine, load_image  # 用到截图才加载识别引擎
     from season_stats import SeasonPage
+    import layout
 
-    real = create_engine(SMALL_CROP_PARAMS)
+    layout.set_game_aspect(16 / 10)
+    try:
+        return _screenshot_checks(SeasonPage, create_engine(SMALL_CROP_PARAMS), load_image)
+    finally:
+        layout.set_game_aspect(None)
+
+
+def _screenshot_checks(SeasonPage, real, load_image):
+
     calls = [0]
 
     def engine(img, **kwargs):

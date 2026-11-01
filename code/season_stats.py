@@ -14,6 +14,7 @@
 
 检查截图：python code/season_stats.py 截图1.png [截图2.png ...]   （读两栏，打印结果和核对）
 生成参照图：python code/season_stats.py --save-template 截图.png
+游戏画面不是 16:9 时（比如拉伸的 16:10）两条命令都加 --aspect 16:10，和记录程序一样换算（见 layout.py）
 """
 
 import argparse
@@ -25,7 +26,8 @@ import cv2
 import numpy as np
 
 import game_lang
-from layout import cut
+from game_aspect import ASPECTS
+from layout import cut, set_game_aspect
 from ocr import load_config, load_image
 from player_name import pick_name
 from screens import ScreenDetector, save_template
@@ -55,7 +57,7 @@ class SeasonPage:
         cfg = self.cfg
         x, y, w, h = box
         up = cfg["upscale"]
-        piece = cut(frame, [x + dx, y, w, h], cfg["base_resolution"])
+        piece = cut(frame, [x + dx, y, w, h], cfg["base_resolution"], cfg.get("anchor"))  # 16:10 等比例见 layout.py
         piece = cv2.resize(piece, (w * up, h * up), interpolation=cv2.INTER_CUBIC)
         if cfg.get("grayscale"):
             piece = cv2.cvtColor(cv2.cvtColor(piece, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
@@ -185,7 +187,10 @@ def main():
     parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
                         help="游戏语言（默认简体中文 zh-CN）")
     parser.add_argument("--save-template", action="store_true", help="从第一张截图生成\"数据页\"的参照图")
+    parser.add_argument("--aspect", choices=tuple(ASPECTS), help="游戏画面的比例（不写 = 和截图一样）")
     args = parser.parse_args()
+    if args.aspect:
+        set_game_aspect(ASPECTS[args.aspect])
     cfg = load_config(CONFIG_NAME, args.lang)
     if args.save_template:
         print(f"已生成参照图：{save_template(PAGE, args.images[0], {**cfg['detect'], 'language': args.lang})}")
