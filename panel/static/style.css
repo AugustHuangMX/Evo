@@ -866,3 +866,31 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 @media (max-width: 760px) {
   .maps-row { grid-template-columns: 1fr; }
 }
+
+/* ---------- 赛季页：录入历史赛季数据（panel_seasons.py、seasons.html、_season_import.html） ---------- */
+.season-mode { padding: 8px 24px; }
+.season-live { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.season-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: season-pulse 1.6s ease-in-out infinite; }
+@keyframes season-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .season-dot { animation: none; } }
+.season-clock { font-size: 15px; }
+.season-section { display: flex; flex-direction: column; gap: 12px; }
+.season-section > .card-head { margin-bottom: 0; }
+.season-help { margin: 0; }
+.season-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 1100px) { .season-cards { grid-template-columns: minmax(0, 1fr); } }
+.season-card { padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.season-card.has-issues { border-color: var(--warn-border); }
+.season-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.season-card-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.season-issues { margin: 0; padding: 10px 12px 10px 28px; border: 1px solid var(--warn-border); border-radius: 6px;
+                 background: var(--warn-bg); color: var(--warn-text); font-size: 13px; line-height: 1.6; }
+.season-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 12px; }
+.season-grid .field input { text-align: right; min-width: 0; }
+.approx-tag { display: inline-block; padding: 0 5px; border: 1px solid var(--warn-border); border-radius: 3px;
+              background: var(--warn-bg); color: var(--warn-text); font-size: 11px; line-height: 16px; vertical-align: 1px; }
+.season-table .season-row.open { background: var(--nav-on-bg); }
+.season-detail .edit { flex: 1 1 100%; }
+.season-empty { margin: 0; color: var(--muted); }
+.season-players { margin: 12px 0 0; }
+@media (max-width: 760px) { .season-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

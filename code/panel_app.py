@@ -32,6 +32,7 @@ import game_aspect
 import game_lang
 import global_stats
 import map_rotation
+import panel_seasons
 import radar
 import ranks
 import screenshots
@@ -56,7 +57,7 @@ for _type, _ext in (("text/css", ".css"), ("text/javascript", ".js"), ("font/wof
 
 PER_PAGE = 20
 # 顶部导航：(页面, 显示名)。顺序也决定切换页面时，选中标签的底色从哪边滑过来
-NAV = (("overview", "总览"), ("matches", "战绩"), ("stats", "数据"), ("settings", "设置"))
+NAV = (("overview", "总览"), ("matches", "战绩"), ("stats", "数据"), ("seasons.page", "赛季"), ("settings", "设置"))
 MODES ={"ranked": "排位", "pubs": "匹配", "other": "其他"}
 # 修正表单里可以改的字段：(显示名, 最小值, 最大值)
 EDITABLE = {
@@ -141,6 +142,7 @@ app.config["TOKEN"] = secrets.token_urlsafe(16)  # 修改、删除时要带上�
 app.config["DB"] = storage.DB_PATH
 if panel_cloud is not None:
     app.register_blueprint(panel_cloud.bp)  # 设置页"微信小程序"：绑定、解绑、立即同步（panel_cloud.py）
+app.register_blueprint(panel_seasons.bp)  # "赛季"页面：录入历史赛季数据（panel_seasons.py）
 
 
 # ---------- 数据库连接：每次网页请求打开一次，请求结束时关闭 ----------
@@ -234,6 +236,9 @@ def account_view():
             view.update(current=current, names=current["raw"])
     g.account_view = view
     return view
+
+
+panel_seasons.account_names = lambda: account_view()["names"]  # "赛季"页面也只看选中的账号
 
 
 def name_question():

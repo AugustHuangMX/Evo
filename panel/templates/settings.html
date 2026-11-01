@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_season_import.html" import import_box, import_script with context %}
 {% block title %}设置 · Evo{% endblock %}
 
 {% block content %}
@@ -202,6 +203,8 @@
           <button type="submit" class="btn">保存</button>
         </div>
       </form>
+      {# 录入历史赛季数据（2026-11-01 用户要的按钮，panel_seasons.py）：和"赛季"页面最上面同一块 #}
+      {{ import_box(season_mode(), url_for('settings'), on_settings=True) }}
       <div class="setting-desc rec-note">识别规则写在 <code>config/</code> 文件夹里，坐标按 1920 × 1080 校准，运行时按分辨率和游戏画面比例自动换算。</div>
     </section>
 
@@ -507,6 +510,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ import_script() }}
 <script>
   // 支持我：一个弹窗点"下一步"就关掉、打开下一个；全关了以后焦点回到"支持我"按钮
   (function () {

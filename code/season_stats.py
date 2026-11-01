@@ -8,7 +8,7 @@
   （伤害：最高、平均；击杀：阵亡、击杀/阵亡比），下面六行（最高击杀、击倒、助攻、最长连胜、急救、重生）
 - 1000 以上游戏只写"1.03K"：局数用"伤害 ÷ 平均伤害"算出准确的（平均伤害有两位小数，够准）；算不出的（生涯的前 5 名）
   记约数，标出来
-- 数字互相核对（check）：伤害 ÷ 局数 = 平均、击杀 ÷ 阵亡 = 击杀/阵亡比、胜利 ≤ 前 5 名 ≤ 比赛……对不上的写进问题
+- 数字互相核对（season_rules.check）：伤害 ÷ 局数 = 平均、击杀 ÷ 阵亡 = 击杀/阵亡比、胜利 ≤ 前 5 名 ≤ 比赛……对不上的写进问题
 - 鼠标停在数字上弹出的说明框会挡住别的数字：读到带"%""："的字，这一张算被挡住（obscured），不用
 - 不读的：赛段的段位徽章、账号等级
 
@@ -29,33 +29,13 @@ from layout import cut
 from ocr import load_config, load_image
 from player_name import pick_name
 from screens import ScreenDetector, save_template
+from season_rules import (FIELDS, KIND_ALL, KIND_CAREER, KIND_RANKED, LABELS, NUMBER,  # noqa: F401  别的文件也从这里用
+                          check, empty, parse_number, show)
 from storage import name_key
 from summary_page import same_piece
 
 CONFIG_NAME = "season_stats.json"
 PAGE = "season_stats"  # detect 里这个画面的名字（参照图 config/templates/season_stats.png）
-FIELDS = ("games", "wins", "top5", "damage", "damage_max", "damage_avg", "kills", "deaths", "kd",
-          "kills_max", "knockdowns", "assists", "win_streak", "revives", "respawns")
-LABELS = {"games": "比赛", "wins": "胜利", "top5": "前 5 名", "damage": "伤害", "damage_max": "最高伤害",
-          "damage_avg": "平均伤害", "kills": "击杀", "deaths": "阵亡", "kd": "击杀/阵亡比", "kills_max": "最高击杀",
-          "knockdowns": "击倒", "assists": "助攻", "win_streak": "最长连胜", "revives": "急救队友", "respawns": "重生队友"}
-NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?K?")
-KIND_ALL, KIND_RANKED, KIND_CAREER = "all", "ranked", "career"
-
-
-def parse_number(text):
-    """"4,678,720" → (4678720, None)；"537.59" → (537.59, None)；"1.03K" → (1030, (1025, 1035))：
-    第二项是约数的范围（游戏把 1000 以上的写成几 K，只留三位有效数字），不是约数为 None。读不出返回 (None, None)。"""
-    m = NUMBER.search(text.replace("，", ","))
-    if not m:
-        return None, None
-    raw = m[0].replace(",", "")
-    if raw.endswith("K"):
-        digits = raw[:-1]
-        step = 10 ** -len(digits.split(".")[1]) if "." in digits else 1
-        value = float(digits)
-        return round(value * 1000), (round((value - step / 2) * 1000), round((value + step / 2) * 1000))
-    return (float(raw) if "." in raw else int(raw)), None
 
 
 class SeasonPage:
@@ -196,48 +176,6 @@ class SeasonPage:
         for field, text in found:
             take(field, text)
         return {"panel": panel, "values": values, "approx": approx, "obscured": obscured}
-
-
-def check(values, approx):
-    """核对一栏的 15 个数，局数是约数时用伤害 ÷ 平均伤害算出准确的。
-    返回 (核对后的 values, approx, 问题列表)。问题是给人看的一句话，如"伤害 ÷ 比赛 ≠ 平均伤害（…）"。"""
-    values, approx, problems = dict(values), dict(approx), []
-    missing = [LABELS[f] for f in FIELDS if f not in values]
-    if missing:
-        problems.append(f"没读到：{'、'.join(missing)}")
-    v = values.get
-    if "games" in approx and v("damage") is not None and v("damage_avg"):
-        games = round(v("damage") / v("damage_avg"))
-        low, high = approx["games"]
-        if low <= games < high:
-            values["games"] = games
-            approx.pop("games")
-        else:
-            problems.append(f"比赛 {v('games')}（约数）和伤害 ÷ 平均伤害 = {games} 对不上")
-    elif v("games") and v("damage") is not None and v("damage_avg") is not None:
-        if abs(v("damage") / v("games") - v("damage_avg")) > 0.006:
-            problems.append(f"伤害 {v('damage')} ÷ 比赛 {v('games')} = {v('damage') / v('games'):.2f}，"
-                            f"和平均伤害 {v('damage_avg')} 对不上")
-    if v("deaths") and v("kills") is not None and v("kd") is not None:
-        if abs(v("kills") / v("deaths") - v("kd")) > 0.006:
-            problems.append(f"击杀 {v('kills')} ÷ 阵亡 {v('deaths')} = {v('kills') / v('deaths'):.2f}，"
-                            f"和击杀/阵亡比 {v('kd')} 对不上")
-    for small, big in (("wins", "top5"), ("top5", "games"), ("kills_max", "kills"), ("damage_max", "damage"),
-                       ("win_streak", "wins")):
-        if v(small) is not None and v(big) is not None and small not in approx and big not in approx \
-                and v(small) > v(big):
-            problems.append(f"{LABELS[small]} {v(small)} 比{LABELS[big]} {v(big)} 还多")
-    return values, approx, problems
-
-
-def empty(values):
-    """这个赛季一局都没打（游戏里全是 0）。"""
-    return values.get("games") == 0
-
-
-def show(values, approx):
-    """一行字：比赛 821 · 胜利 47 · …（约数后面加"（约）"）。"""
-    return " · ".join(f"{LABELS[f]} {values[f]:,}{'（约）' if f in approx else ''}" for f in FIELDS if f in values)
 
 
 def main():

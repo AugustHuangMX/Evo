@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% from "_season_import.html" import import_box, import_script with context %}
+{% block title %}赛季 · Evo{% endblock %}
+
+{# "赛季"页面（panel_seasons.py，2026-11-01 用户选的单独一页）：录入模式、待核对、保存过的历史赛季 #}
+{% set here = url_for('seasons.page', kind=None if kind == 'all' else kind) %}
+
+{# 15 个数的输入框（三行五列）。对不上的格子：黄框、aria-invalid，读屏软件念到时连着念原因；约数在名字后面标"约" #}
+{% macro number_form(c, next) %}
+<form method="post" action="{{ url_for('seasons.save', stat_id=c.id) }}" id="f-{{ c.id }}" class="season-grid"
+      aria-label="{{ c.title }}的 15 个数">
+  <input type="hidden" name="token" value="{{ token }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  {% for line in c.cells %}{% for cell in line %}
+  <label class="field">
+    <span class="label">{{ cell.label }}{% if cell.approx %} <span class="approx-tag" title="游戏里只写了约数（如 2.82K）">约<span class="sr-only">数</span></span>{% endif %}</span>
+    <input type="text" inputmode="{{ 'decimal' if cell.decimal else 'numeric' }}" name="{{ cell.field }}"
+           value="{{ cell.value }}" class="num{{ ' warn' if cell.why }}" autocomplete="off"
+           {% if cell.why %}aria-invalid="true" aria-describedby="{{ cell.why | join(' ') }}"{% endif %}>
+  </label>
+  {% endfor %}{% endfor %}
+</form>
+{% endmacro %}
+
+{% macro delete_form(c, next) %}
+<form method="post" action="{{ url_for('seasons.delete', stat_id=c.id) }}"
+      onsubmit='return confirm({{ ("确定删除“" ~ c.title ~ "”吗？删除后无法恢复（可以再录一次）。") | tojson }})'>
+  <input type="hidden" name="token" value="{{ token }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <button type="submit" class="btn">删除</button>
+</form>
+{% endmacro %}
+
+{% macro pct(x) %}{{ '—' if x is none else '%.1f%%' | format(x) }}{% endmacro %}
+{% macro dec(x) %}{{ '—' if x is none else '%.2f' | format(x) }}{% endmacro %}
+{% macro whole(x) %}{{ '—' if x is none else '{:,.0f}'.format(x) }}{% endmacro %}
+
+{% block content %}
+
+<section class="card settings-card season-mode" aria-label="录入历史赛季数据">
+  {{ import_box(mode, here) }}
+</section>
+
+{% if pending %}
+<section class="season-section" id="pending" aria-labelledby="h-pending">
+  <div class="card-head">
+    <h2 id="h-pending">待核对 <span class="num muted">{{ pending | length }}</span></h2>
+    <form method="post" action="{{ url_for('seasons.save_clean') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="next" value="{{ here }}">
+      <button type="submit" class="btn btn-primary" {{ 'disabled' if not clean }}>保存全部没问题的（{{ clean }} 项）</button>
+    </form>
+  </div>
+  <p class="setting-desc season-help">和游戏里对一下：对不上的格子标了黄框，原因写在上面。改好点"保存"；不是你的、或者读错了就删除。</p>
+  <div class="season-cards">
+    {% for c in pending %}
+    <article class="card season-card{{ ' has-issues' if c.issues }}" id="season-{{ c.id }}" aria-labelledby="t-{{ c.id }}">
+      <header class="season-card-head">
+        <h3 id="t-{{ c.id }}">{{ c.title }}</h3>
+        <span class="note">{{ c.player }} · 读于 <span class="num">{{ c.read_at }}</span></span>
+      </header>
+      {% if c.issues %}
+      <ul class="season-issues">
+        {% for i in c.issues %}<li id="{{ i.id }}">{{ i.text }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {{ number_form(c, here) }}
+      <div class="actions">
+        {{ delete_form(c, here) }}
+        <button type="submit" form="f-{{ c.id }}" class="btn btn-primary">保存</button>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="card list-card" id="saved" aria-labelledby="h-saved">
+  <div class="card-head">
+    <h2 id="h-saved">历史赛季</h2>
+    <div class="seg" role="group" aria-label="看哪一种">
+      <a href="{{ url_for('seasons.page') }}#saved" class="{{ 'on' if kind == 'all' }}"{% if kind == 'all' %} aria-current="true"{% endif %}>全部</a>
+      <a href="{{ url_for('seasons.page', kind='ranked') }}#saved" class="{{ 'on' if kind == 'ranked' }}"{% if kind == 'ranked' %} aria-current="true"{% endif %}>排位</a>
+    </div>
+  </div>
+  {% if not saved_count %}
+  <p class="season-empty">还没有保存过历史赛季。{{ '核对好上面的，点"保存"就会出现在这里。' if pending else '点上面的"开始录入"，然后在游戏里打开数据页。' }}</p>
+  {% elif not shown and not (career and kind == 'all') %}
+  <p class="season-empty">还没有保存过{{ '排位' if kind == 'ranked' else '"全部"' }}的赛季。</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="stats-table season-table">
+    <thead>
+      <tr>
+        <th scope="col">赛季</th>
+        <th scope="col" class="right">局数</th>
+        <th scope="col" class="right">胜率</th>
+        <th scope="col" class="right">前 5 率</th>
+        <th scope="col" class="right">场均击杀</th>
+        <th scope="col" class="right">击杀/阵亡比</th>
+        <th scope="col" class="right">场均伤害</th>
+        <th scope="col"><span class="sr-only">详情</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set rows = ([career] if career and kind == 'all' else []) + shown %}
+      {% for r in rows %}
+      {% set is_open = detail and detail.id == r.id %}
+      <tr class="season-row{{ ' ref-row' if r.kind == 'career' }}{{ ' open' if is_open }}" id="season-{{ r.id }}">
+        <th scope="row">{{ r.title }}</th>
+        <td class="right num">{{ whole(r.games) }}</td>
+        <td class="right num">{{ pct(r.win_rate) }}</td>
+        <td class="right num">{{ pct(r.top5_rate) }}{% if r.approx_top5 %} <span class="approx-tag" title="游戏里只写了约数">约</span>{% endif %}</td>
+        <td class="right num">{{ dec(r.kills_per_game) }}</td>
+        <td class="right num">{{ dec(r.kd) }}</td>
+        <td class="right num">{{ whole(r.damage_avg) }}</td>
+        <td class="right">
+          <a class="detail-toggle" href="{{ url_for('seasons.page', kind=None if kind == 'all' else kind, open=None if is_open else r.id) }}#season-{{ r.id }}"
+             aria-expanded="{{ 'true' if is_open else 'false' }}">{{ '收起' if is_open else '全部 15 项' }}</a>
+        </td>
+      </tr>
+      {% if is_open %}
+      {% set back = url_for('seasons.page', kind=None if kind == 'all' else kind, open=r.id) %}
+      <tr class="detail-row">
+        <td colspan="8">
+          <div class="detail season-detail">
+            <div class="edit">
+              <p class="note">{{ detail.player }} · 读于 <span class="num">{{ detail.read_at }}</span>{{ ' · 改过' if detail.edited }}</p>
+              {% if detail.issues %}
+              <ul class="season-issues">
+                {% for i in detail.issues %}<li id="{{ i.id }}">{{ i.text }}</li>{% endfor %}
+              </ul>
+              {% endif %}
+              {{ number_form(detail, back) }}
+              <div class="actions">
+                {{ delete_form(detail, here) }}
+                <button type="submit" form="f-{{ detail.id }}" class="btn btn-primary">保存修改</button>
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if players | length > 1 %}<p class="note season-players">这里有 {{ players | join('、') }} 几个名字的数据</p>{% endif %}
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+{{ import_script() }}
+{% endblock %}

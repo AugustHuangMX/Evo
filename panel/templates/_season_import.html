@@ -1,0 +1,75 @@
+{# 录入历史赛季数据的开关（panel_seasons.py、season_import.py）：设置页"识别"一节和"赛季"页面最上面都用这一块。
+   没开：说明 + "开始录入"；开着：倒计时（每秒走，读屏软件不念）、读到几项（有变化时播报）+ "结束录入"。
+   next：按了按钮回到哪一页 #}
+{% macro import_box(mode, next, on_settings=False) %}
+<div class="setting season-import" id="season-import" data-active="{{ '1' if mode.active else '' }}"
+     data-remaining="{{ mode.remaining }}" data-pending="{{ mode.pending }}" data-status="{{ url_for('seasons.status') }}">
+  <div class="setting-text">
+    <div class="setting-name" id="season-import-name">录入历史赛季数据</div>
+    {% if mode.active %}
+    <div class="setting-desc season-live">
+      <span class="season-dot" aria-hidden="true"></span>
+      正在录入 · 还剩 <span class="num season-clock" aria-hidden="true">{{ mode.remaining | mmss }}</span>
+      <span class="sr-only">，{{ mode.minutes }} 分钟内有效</span>
+    </div>
+    <div class="setting-desc" id="season-import-count" role="status" aria-atomic="true">已读到 {{ mode.pending }} 项待核对</div>
+    <div class="setting-desc">在游戏里打开"数据"页（中间写着你的名字、右边能选赛季的那一页），一个一个点右边下拉菜单里的赛季，每读到一个响一声。鼠标别停在数字上，弹出的说明框会挡住数字</div>
+    {% else %}
+    <div class="setting-desc" id="season-import-desc">点"开始录入"以后的 {{ mode.minutes }} 分钟里，在游戏里打开"数据"页、一个一个点以前的赛季，Evo 会把每个赛季的合计读下来。读到的先放在"赛季"页面待核对，你看过、点保存才算数{% if on_settings and mode.pending %}（现在有 {{ mode.pending }} 项待核对）{% endif %}</div>
+    {% if mode.demo %}<div class="setting-desc">正在看演示数据，不能录入</div>{% endif %}
+    {% endif %}
+  </div>
+  <div class="setting-actions">
+    {% if on_settings and mode.pending %}
+    <a class="btn" href="{{ url_for('seasons.page') }}">去核对 →</a>
+    {% endif %}
+    {% if mode.active %}
+    <form method="post" action="{{ url_for('seasons.stop_import') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit" class="btn">结束录入</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('seasons.start_import') }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <button type="submit" class="btn btn-primary" aria-describedby="season-import-desc" {{ 'disabled' if mode.demo }}>开始录入</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{# 录入模式开着时：倒计时每秒走；每 3 秒问一次还剩几秒、读到几项。读到了新的、而且没在改的话刷新页面；
+   正在改某一项时不刷新（免得改的东西丢了），在"已读到"那一行说一句。到时间也刷新一次（变回"开始录入"） #}
+{% macro import_script() %}
+<script>
+  (function () {
+    var box = document.getElementById("season-import");
+    if (!box || !box.dataset.active) return;
+    var left = parseInt(box.dataset.remaining, 10) || 0;
+    var shown = parseInt(box.dataset.pending, 10) || 0;
+    var clock = box.querySelector(".season-clock");
+    var count = document.getElementById("season-import-count");
+    var dirty = false;
+    document.addEventListener("input", function (e) { if (e.target.closest("form")) dirty = true; });
+    function mmss(s) { return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+    var tick = setInterval(function () {
+      left = Math.max(0, left - 1);
+      if (clock) clock.textContent = mmss(left);
+      if (left === 0) { clearInterval(tick); if (!dirty) window.location.reload(); }
+    }, 1000);
+    setInterval(function () {
+      fetch(box.dataset.status, { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (s) {
+        left = s.remaining;
+        if (!s.active && !dirty) { window.location.reload(); return; }
+        if (s.pending !== shown) {
+          if (!dirty) { window.location.reload(); return; }
+          if (count) count.textContent = "已读到 " + s.pending + " 项待核对（保存正在改的这一项以后，刷新页面就能看到新读到的）";
+          shown = s.pending;
+        }
+      }).catch(function () {});
+    }, 3000);
+  })();
+</script>
+{% endmacro %}
