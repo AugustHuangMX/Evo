@@ -33,11 +33,14 @@ AFTER_END_SECONDS = 60  # 结算以后这么久之内又看到自己的界面（
 class InMatchWatcher:
     VOTES = 2  # 同一个传奇认出这么多次才算数
 
-    def __init__(self, hud, post, log, name_cfg, save=None, keep_all=lambda: False, weapons=None):
+    def __init__(self, hud, post, log, name_cfg, save=None, keep_all=lambda: False, weapons=None,
+                 before_hand_over=None):
         """save(截图, 文件名)：存一张截图（记录程序的截图文件夹）；keep_all()：现在是不是"保留全部截图"。
         保留全部截图时（用源码运行时永远是），一局结束时存下最后一张自己的界面（hud_时间_last.png），用来校准对局中的区域。
-        weapons：武器识别（weapons.WeaponDetector，不给就新建一个：读 config/weapons.json 和参照图）。"""
+        weapons：武器识别（weapons.WeaponDetector，不给就新建一个：读 config/weapons.json 和参照图）。
+        before_hand_over()：把数据交给 PostMatch 之前先调用（记录程序用它读总结页上先留着的队友，好和对局中认出的对上）。"""
         self.hud, self.post, self.log = hud, post, log
+        self.before_hand_over = before_hand_over
         self.weapons = WeaponTimer(weapons or WeaponDetector())
         self.save, self.keep_all = save, keep_all
         self.last_frame = None  # 保留全部截图时：最近一张右上角有变化的自己的界面（整张）
@@ -213,6 +216,8 @@ class InMatchWatcher:
         已经交过、还没结束的不用管）。"""
         if self.ending is None:
             return
+        if self.before_hand_over is not None:
+            self.before_hand_over()
         ended, end = self.done_at, self.ending
         self.ending = None
         if not self.saw_start and end not in END_SCREENS:

@@ -9,6 +9,7 @@
 - 总结页从读到的那一帧到存下用了几秒；存了几次，其中几次没读完就离开了（"总结页停留太短"）
 - 存下以后到响"总结页读完了"（读队友、名字）用了几秒
 - 响了"对局结束"的局里，后来响了"总结页读完了"的有几局，中间隔了几秒
+- 经验值页进了几次，其中几次离开时 RP 明细没读全（2026-11-01 加：以前读队友、名字时不截图，笔记本上常常只截到动画刚开始的那一帧）
 - 对局中记录程序的 CPU；"本次记录"里识别平均每次几秒（2026-10-27 起才有）
 """
 
@@ -28,7 +29,7 @@ def spread(values, unit="秒"):
 
 def analyse(path):
     top, save, after, gap, cpu, per_call = [], [], [], [], [], []
-    saves = short = ends = 0
+    saves = short = ends = xp_in = xp_partial = 0
     last_save = end_at = None  # 最近存下的总结页 (帧时间, 写日志时间)；这一局"对局结束"响的时刻
     for raw in open(path, encoding="utf-8", errors="replace"):
         m = LINE.match(raw.rstrip("\n").lstrip("\ufeff"))
@@ -57,6 +58,10 @@ def analyse(path):
                 end_at = None
         elif "进入开局画面" in text or "进入大厅" in text:
             end_at = None
+        elif text.startswith("进入经验值页"):
+            xp_in += 1
+        elif text.startswith("经验值页没读全"):
+            xp_partial += 1
         elif text.startswith("占用") and "对局中" in text:
             cpu.append(int(re.search(r"CPU 平均 (\d+)%", text)[1]))
         elif text.startswith("本次记录") and (found := re.search(r"平均每次 ([\d.]+) 秒", text)):
@@ -64,8 +69,9 @@ def analyse(path):
     print(f"== {path}")
     print(f"  读对局中存下的右上角：{spread(top)}")
     print(f"  总结页（从读到的那一帧到存下）：{spread(save)}；存了 {saves} 次，其中没读完就离开 {short} 次")
-    print(f"  存下以后到响'总结页读完了'（读队友、名字）：{spread(after)}")
+    print(f"  存下以后到响'总结页读完了'（0.5.0 及以前要先读队友、名字）：{spread(after)}")
     print(f"  响了'对局结束' {ends} 局，后来响了'总结页读完了' {len(gap)} 局，中间隔了：{spread(gap)}")
+    print(f"  经验值页：进了 {xp_in} 次，离开时没读全 {xp_partial} 次")
     print(f"  对局中 CPU：{spread(cpu, '% 个核')}")
     print(f"  识别平均每次：{spread(per_call)}")
 

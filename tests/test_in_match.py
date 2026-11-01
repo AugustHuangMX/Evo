@@ -8,6 +8,8 @@
   - 成盒后被复活：继续记录，RP 照常记
   - 拿冠军：冠军横幅 → 总结页；名次记第 1；总结页的名次还在滑进来也不用确认；队友按名字对上、补上传奇
   - 停在总结页时只读总结页：右上角回到大厅才读；从经验值页切到总结页时，总结页存下了才读经验值页
+  - 存总结页时只读自己的数据（2026-11-01）：总结页上的队友、自己的名字回到大厅才读，在交对局中的数据之前；
+    经验值页每 0.3 秒一张；没读全就直接回大厅，队友照样是总结页的两个（不会先记成对局中的、再被盖掉）
   - 靶场（没有开局画面、也没有结算画面）：不记；中途停止记录：记下，但标待确认
   - 对局中截图每 0.3 秒一张，结算后回到每秒一张；交火时不用识别引擎
   - 大厅：连续两次读到一样的段位和分数才记
@@ -118,6 +120,13 @@ def mates_of(match_id):
     return rows
 
 
+def storage_mates(match_id):
+    conn = storage.connect(fake_game.last_db)
+    rows = storage.teammates_of(conn, match_id)
+    conn.close()
+    return rows
+
+
 def readings_of(match_id, field):
     conn = storage.connect(fake_game.last_db)
     got = {r["source"]: r["value"] for r in storage.readings_of(conn, match_id, field)}
@@ -189,6 +198,7 @@ def collect_checks(images):
     # 从经验值页切到总结页时，经验值页等总结页存下了再读
     read_on = []  # (读的是什么, 当时屏幕上是哪一帧)
     real_top, real_xp, real_summary = Hud.read_top, live_collect.read_xp, live_collect.read_summary
+    real_mates, real_name = live_collect.read_teammates, live_collect.PlayerNameReader.read
 
     def spy(kind, real):
         def wrapped(*args, **kwargs):
@@ -198,12 +208,19 @@ def collect_checks(images):
 
     with mock.patch.object(Hud, "read_top", spy("右上角", real_top)), \
             mock.patch.object(live_collect, "read_xp", spy("经验值页", real_xp)), \
-            mock.patch.object(live_collect, "read_summary", spy("总结页", real_summary)):
-        r = run("pages_first", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, XP5, SUMMARY5, SUMMARY5, SUMMARY5,
-                                LOBBY, LOBBY])
+            mock.patch.object(live_collect, "read_summary", spy("总结页", real_summary)), \
+            mock.patch.object(live_collect, "read_teammates", spy("队友", real_mates)), \
+            mock.patch.object(live_collect.PlayerNameReader, "read", spy("名字", real_name)):
+        r = run("pages_first", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, XP5, XP5, XP5, SUMMARY5, SUMMARY5,
+                                SUMMARY5, LOBBY, LOBBY])
+        r["read_on"] = list(read_on)
+        r["got"] = [pick(row, "placement", "kills", "damage", "rp_source", "legend") for row in r["rows"]]
+        r["end_screen"] = readings_of(r["rows"][0]["match_id"], "end_screen") if r["rows"] else {}
+        # 总结页只停了一帧（还没存下）就直接回大厅：回大厅那一帧存下总结页、读队友，然后才交对局中的数据
+        read_on.clear()
+        r = run("left_early", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, SUMMARY5, LOBBY, LOBBY])
     r["read_on"] = read_on
-    r["got"] = [pick(row, "placement", "kills", "damage", "rp_source", "legend") for row in r["rows"]]
-    r["end_screen"] = readings_of(r["rows"][0]["match_id"], "end_screen") if r["rows"] else {}
+    r["slots"] = [sorted(row["slot"] for row in storage_mates(m["match_id"])) for m in r["rows"]]
     # 拿冠军
     r = run("champion", [START, PLAYING, PLAYING, PLAYING, CHAMP_MOMENT, CHAMP_MOMENT, CHAMP_SUMMARY, CHAMP_SUMMARY,
                          CHAMP_SUMMARY])
@@ -349,7 +366,9 @@ def main():
         return report(checks)
     s, c = screenshot_checks(images), collect_checks(images)
     last, first, revived, champ = c["last_down"], c["died_first"], c["revived"], c["champion"]
-    pages = c["pages_first"]
+    pages, early = c["pages_first"], c["left_early"]
+    later = [(kind, frame) for kind, frame in pages["read_on"] if kind in ("队友", "名字")]
+    xp_sleeps = [sec for frame, sec in pages["sleeps"] if frame == XP5]
     tops = [frame for kind, frame in pages["read_on"] if kind == "右上角"]
     order = [kind for kind, _ in pages["read_on"] if kind != "右上角"]
     match_sleeps = [sec for frame, sec in last["sleeps"] if frame in (START, PLAYING, KNOCKED)]
@@ -386,6 +405,13 @@ def main():
             "经验值页" in order and order[:order.index("经验值页")].count("总结页") >= 2,
         f"  对局中的数据照样补进这一局：传奇、怎么结束的；RP 用经验值页的（{pages['got']}；{pages['end_screen']}）":
             pages["got"] == [(8, 3, 688, "经验值页", "罗芭")] and pages["end_screen"] == {"对局中": "squad_out"},
+        f"  总结页上的队友、自己的名字回到大厅才读，在交对局中的数据（读右上角）之前（{later}）":
+            later == [("队友", LOBBY), ("名字", LOBBY)]
+            and pages["read_on"].index(("队友", LOBBY)) < pages["read_on"].index(("右上角", LOBBY)),
+        f"  经验值页上每 0.3 秒一张（{xp_sleeps}）": xp_sleeps and max(xp_sleeps) <= 0.3,
+        f"  总结页还没存下就直接回大厅：照样存下、读队友，队友是总结页的两个，没有先记成对局中的（{early['slots']}）":
+            len(early["rows"]) == 1 and early["slots"] == [["left", "right"]]
+            and [k for k, _ in early["read_on"] if k in ("队友", "右上角")][:2] == ["队友", "右上角"],
         f"0/0/0 时那一行不显示：背后画面上读出的单独一个数不算老板分（读到 {s['lone_kp'][0]}，记下 {s['lone_kp'][1]}）":
             s["lone_kp"] == (7, None, False),
         f"成盒后被复活：继续记录，RP 照常记（{revived['got']}）":

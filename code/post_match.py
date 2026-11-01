@@ -30,7 +30,9 @@
 - 经验值页和总结页对不上（名次不同、计分击杀比总结页多、时间相差太久），说明不是同一局：单独记一局并标记待确认
 - 开局画面读到的模式和地图、对局中认出的传奇，属于接下来这一局：存这一局时一起写进去。
   开局画面没读出模式、但有 RP 的局，记为排位（只有排位赛才有排位点数）
-- 队友：名字和传奇以对局中左下角为准，总结页（ID 和这一局的数据）按名字对上（_merge_mates）
+- 队友：名字和传奇以对局中左下角为准，总结页（ID 和这一局的数据）按名字对上（_merge_mates）。
+  总结页上的队友、自己的名字、顶部"捍卫者"先留着，回到大厅、下一局开局时再读（2026-11-01，on_summary_later），
+  在对局中的数据交来之前
 - 玩家名（区分账号用，见 player_name.py）：整次记录通用，不随每局清掉（换账号要重启游戏）。
   存一局时还不知道名字的，等认出名字后补上
 - 一局彻底结束（finish）时调用 on_round_end：记录程序在这里删掉不需要的截图（见 screenshots.py）
@@ -371,6 +373,26 @@ class PostMatch:
             self._merge_mates(match_id)
         self._settle(match_id)
         self._use_xp()
+
+    def on_summary_later(self, match_id, when, mates, name, champion):
+        """总结页上先留着、晚点才读的（2026-11-01，见 live_collect.SummaryWatcher.catch_up）：两名队友、自己的名字（没读到为 None）、
+        顶部是不是"捍卫者"。一般在对局中的数据交来之前读（队友等它来了再对上）；已经交来了就马上对上。
+        万一这一局已经收尾了（没认出大厅、开局画面就进了下一局），也补进那一局。"""
+        if name is not None:
+            before = self.player_name
+            self.on_player_name(name, when, "总结页")
+            if self.player_name != before:  # 第一次认出、或者换了账号：这一局记在新名字下
+                storage.update_match(self.conn, match_id, {"player_name": self.player_name})
+        storage.save_teammates(self.conn, match_id, mates)
+        current = match_id == self.match_id
+        if current and self.hud is not None:
+            self._merge_mates(match_id)
+        if champion and current:
+            self.on_champion(when, SOURCE_SUMMARY)
+        elif champion:
+            self.log(f"[{when:%H:%M:%S}] 总结页：捍卫者（冠军），记第 1 名（编号 {match_id}）")
+            storage.save_readings(self.conn, match_id, SOURCE_CHAMPION, {"placement": 1}, f"{when:%Y-%m-%d %H:%M:%S}")
+            self._settle(match_id)
 
     def on_xp(self, reading, problems, path, when):
         """每次离开经验值页、识别了最后一帧之后调用。"""
