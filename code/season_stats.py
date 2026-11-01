@@ -114,15 +114,21 @@ class SeasonPage:
         found = pick_name(result.boxes, result.txts, result.scores, spot["min_score"])
         return found[0] if found and len(name_key(found[0])) >= 2 else None
 
-    def label(self, frame):
-        """右边下拉框里选中的那一项：(赛季, 全部 / 排位, 赛季名, 原文)；读不出时前三项为 None。"""
+    def label(self, frame, memo=None):
+        """右边下拉框里选中的那一项：(赛季, 全部 / 排位, 赛季名, 原文)；读不出时前三项为 None。
+        memo：同 read，下拉框没变就沿用上次的。"""
         spec = self.cfg["label"]
-        raw = "".join(t for t, *_ in self._texts(self._piece(frame, spec["roi"])))
+        piece = self._piece(frame, spec["roi"])
+        before = memo.get("label") if memo is not None else None
+        if before is not None and same_piece(before[0], piece, self.cfg["unchanged"]):
+            return before[1]
+        raw = "".join(t for t, *_ in self._texts(piece))
         m = re.match(spec["pattern"], raw)
-        if not m:
-            return None, None, None, raw
-        name = m[2]
-        return int(m[1]), (KIND_RANKED if name == spec["ranked"] else KIND_ALL), name, raw
+        found = (None, None, None, raw) if not m else \
+            (int(m[1]), (KIND_RANKED if m[2] == spec["ranked"] else KIND_ALL), m[2], raw)
+        if memo is not None:
+            memo["label"] = (piece, found)
+        return found
 
     def _number(self, text):
         """这段文字是不是单独一个数，是就返回去掉"前5名"这类带数字的名字以后的文字，不是返回 None。"""

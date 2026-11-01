@@ -3,7 +3,8 @@
 数据库文件在数据文件夹的 data/evo.db（位置见 paths.py；在项目里时已被 .gitignore 排除，不会上传）。
 用 Stata 类比：数据库 ≈ 硬盘上的一个 .dta 文件，matches 表的每一行 = 一局。
 另有一张账号对照表 player_names（玩家名 → 账号），见下面"账号"一节；一张队友表 teammates（每局最多两行）；
-一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）；一张大厅读数表 lobby_readings（每次回大厅读到的段位，总分以它为准）；一张武器表 weapon_holds（每一段拿在手上的武器）。
+一张各来源读数表 readings（同一项在几个画面上读到的数，每个来源一行）；一张大厅读数表 lobby_readings（每次回大厅读到的段位，总分以它为准）；一张武器表 weapon_holds（每一段拿在手上的武器）；
+一张历史赛季表 season_stats（游戏里数据页上每个赛季的合计，录入历史赛季数据时读的，见下面"历史赛季"一节）。
 
 查看最近的记录：python code/storage.py
 导出成 CSV：    python code/storage.py --export data/matches.csv
@@ -18,7 +19,7 @@ from pathlib import Path
 from paths import DB_PATH
 
 APP_VERSION = "0.5.0"
-SCHEMA_VERSION = 8  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
+SCHEMA_VERSION = 9  # 表结构变了就加 1，并在 MIGRATIONS 里写上怎么从旧版本升级
 
 # 列名和类型，顺序也是导出 CSV 时的列顺序
 COLUMNS = {
@@ -117,6 +118,41 @@ WEAPON_TABLE = """CREATE TABLE IF NOT EXISTS weapon_holds (
   PRIMARY KEY (match_id, start_s)
 )"""
 
+# 历史赛季：游戏里数据页上每个赛季的合计（2026-11-01 用户要的"录入历史赛季数据"，见 season_stats.py、live_collect.SeasonWatcher）。
+# 每个账号 × 每个赛季 × 全部 / 排位一行，生涯合计另一行（season 为空）。和每局的数据分开，不混在一起。
+# 记录程序读到的先存成"待核对"（status = pending），玩家在"赛季"页面核对、改好点保存才是 saved；同一项最多一行待核对、
+# 一行已保存（再录一次当前赛季，数字变了：新的待核对，保存时换掉旧的）。
+# Stata 类比：一份面板数据（账号 × 赛季），和 matches 那份每局一行的数据分开存
+SEASON_FIELDS = ("games", "wins", "top5", "damage", "damage_max", "damage_avg", "kills", "deaths", "kd",
+                 "kills_max", "knockdowns", "assists", "win_streak", "revives", "respawns")
+SEASON_TABLE = """CREATE TABLE IF NOT EXISTS season_stats (
+  stat_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_name TEXT NOT NULL,  -- 数据页上的玩家名（按名字区分账号，同 matches.player_name）
+  season INTEGER,  -- 第几赛季；生涯合计为空
+  kind TEXT NOT NULL,  -- all = 这个赛季全部大逃杀（排位 + 匹配）；ranked = 只算排位；career = 大逃杀生涯合计
+  season_name TEXT,  -- 游戏里的赛季名，如 诸神烙印（ranked 写"排位"，career 写"大逃杀"）
+  games INTEGER,  -- 比赛（局数；游戏写"1.03K"时用伤害 ÷ 平均伤害算出的准确数）
+  wins INTEGER,
+  top5 INTEGER,  -- 前 5 名的次数
+  damage INTEGER,
+  damage_max INTEGER,  -- 一局最高伤害
+  damage_avg REAL,  -- 平均伤害（游戏里写的，两位小数）
+  kills INTEGER,
+  deaths INTEGER,  -- 阵亡
+  kd REAL,  -- 击杀/阵亡比（游戏里写的）
+  kills_max INTEGER,  -- 一局最高击杀
+  knockdowns INTEGER,
+  assists INTEGER,
+  win_streak INTEGER,  -- 最长连胜
+  revives INTEGER,  -- 急救队友次数
+  respawns INTEGER,  -- 重生队友次数
+  approx TEXT,  -- 游戏只写了约数的项（逗号分隔，如 top5：生涯的前 5 名只写"2.82K"）
+  read_at TEXT NOT NULL,  -- 读的时间
+  status TEXT NOT NULL,  -- pending = 待核对；saved = 已保存
+  review_note TEXT,  -- 读的时候对不上的地方（如"伤害 ÷ 比赛 ≠ 平均伤害"），一句一行
+  edited TEXT  -- 核对时改过哪几项（列名，逗号分隔）
+)"""
+
 # 旧数据库怎么升级：版本号 → 升到这个版本要做的事（SQL，或者 ("加列", 表, 列, 类型)）。只加列、加表，已有的数据不动
 # （Stata 类比：给已有的 .dta 文件 generate 一个空的新变量）。加列时已经有这一列就跳过
 MIGRATIONS = {
@@ -129,6 +165,7 @@ MIGRATIONS = {
         LOBBY_TABLE],  # 大厅读数
     7: [("加列", "matches", "edited", "TEXT")],  # 2026-10-22 0.3.7：用户改过哪几项（匿名统计里的"识别情况"用）
     8: [WEAPON_TABLE],  # 2026-10-24 武器：每一段拿在手上的武器（数据页"最常用武器"）
+    9: [SEASON_TABLE],  # 2026-11-01 历史赛季：游戏里数据页上每个赛季的合计
 }
 
 
@@ -159,6 +196,7 @@ def _upgrade(conn):
             conn.execute(READING_TABLE)
             conn.execute(LOBBY_TABLE)
             conn.execute(WEAPON_TABLE)
+            conn.execute(SEASON_TABLE)
         else:
             for v in range(version + 1, SCHEMA_VERSION + 1):
                 for step in MIGRATIONS[v]:
@@ -406,6 +444,61 @@ def delete_all_matches(conn):
     return n
 
 
+# ---------- 历史赛季（游戏里数据页上每个赛季的合计） ----------
+
+def _season_key(row):
+    """同一项：同一个账号名（不管空格）、同一个赛季、同一种（全部 / 排位 / 生涯）。"""
+    return name_key(row["player_name"]), row["season"], row["kind"]
+
+
+def save_season_pending(conn, row):
+    """记录程序读到一项：存成待核对（这一项已经有待核对的就换掉）。row 的键：player_name、season、kind、season_name、
+    SEASON_FIELDS 里的项、approx（项的列表）、read_at、review_note。返回 stat_id。"""
+    key = _season_key(row)
+    for old in conn.execute("SELECT stat_id, player_name, season, kind FROM season_stats WHERE status = 'pending'"):
+        if _season_key(old) == key:
+            conn.execute("DELETE FROM season_stats WHERE stat_id = ?", (old["stat_id"],))
+    data = {k: row.get(k) for k in ("player_name", "season", "kind", "season_name", "read_at", "review_note",
+                                     *SEASON_FIELDS)}
+    data["approx"] = ",".join(row.get("approx") or ()) or None
+    data["status"] = "pending"
+    cur = conn.execute(f"INSERT INTO season_stats ({', '.join(data)}) VALUES ({', '.join('?' for _ in data)})",
+                       list(data.values()))
+    conn.commit()
+    return cur.lastrowid
+
+
+def season_rows(conn, status=None):
+    """历史赛季的行（status 为 pending / saved 时只要那一种），按账号、赛季从新到旧、全部在排位前面、生涯在最后。"""
+    rows = conn.execute("SELECT * FROM season_stats" + (" WHERE status = ?" if status else ""),
+                        (status,) if status else ()).fetchall()
+    order = {"all": 0, "ranked": 1, "career": 2}
+    return sorted(rows, key=lambda r: (name_key(r["player_name"]), r["season"] is None, -(r["season"] or 0),
+                                       order.get(r["kind"], 3)))
+
+
+def save_season(conn, stat_id, fields=None):
+    """核对好了：这一项改成已保存（fields 是改过的项 {列名: 值}，记进 edited），同一项原来保存的那一行删掉。"""
+    row = conn.execute("SELECT * FROM season_stats WHERE stat_id = ?", (stat_id,)).fetchone()
+    if row is None:
+        return False
+    changed = {k: v for k, v in (fields or {}).items() if k in SEASON_FIELDS and v != row[k]}
+    for old in conn.execute("SELECT stat_id, player_name, season, kind FROM season_stats WHERE status = 'saved'"):
+        if _season_key(old) == _season_key(row) and old["stat_id"] != stat_id:
+            conn.execute("DELETE FROM season_stats WHERE stat_id = ?", (old["stat_id"],))
+    edited = sorted(set(filter(None, (row["edited"] or "").split(","))) | set(changed))
+    sets = {**changed, "status": "saved", "edited": ",".join(edited) or None}
+    conn.execute(f"UPDATE season_stats SET {', '.join(f'{k} = ?' for k in sets)} WHERE stat_id = ?",
+                 [*sets.values(), stat_id])
+    conn.commit()
+    return True
+
+
+def delete_season(conn, stat_id):
+    conn.execute("DELETE FROM season_stats WHERE stat_id = ?", (stat_id,))
+    conn.commit()
+
+
 # ---------- 账号：按玩家名区分，改过名的合并成一个账号 ----------
 
 def name_key(name):
@@ -439,6 +532,13 @@ def sync_names(conn):
                      (key, next_id, int(not have_confirmed)))
         next_id, have_confirmed = next_id + 1, True
     conn.commit()
+
+
+def known_names(conn):
+    """Evo 认识的、自己的玩家名（去掉空格的写法，见 name_key）：对局里出现过的所有名字。录入历史赛季数据时
+    用它分出数据页是不是自己的（好友资料页也是这一页）。"""
+    sync_names(conn)
+    return {r[0] for r in conn.execute("SELECT name_key FROM player_names")}
 
 
 def accounts(conn):

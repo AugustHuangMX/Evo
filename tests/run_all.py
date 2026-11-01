@@ -30,6 +30,7 @@ import test_radar
 import test_ranks
 import test_replay
 import test_screenshots
+import test_season_import
 import test_season_stats
 import test_share
 import test_simplified_pubs
@@ -69,7 +70,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "最常用武器（认武器、计时、记进数据库、数据页）": test_weapons,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
          "诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_diag,
-         "游戏里的数据页（认出、读两栏、核对，录入历史赛季数据用）": test_season_stats}
+         "游戏里的数据页（认出、读两栏、核对，录入历史赛季数据用）": test_season_stats,
+         "录入历史赛季数据（新表、录入模式、记录程序读数据页）": test_season_import}
 
 try:  # 云同步（微信小程序）的测试只在开发者电脑上，不上传 GitHub（2026-10-24 用户决定）：有就一起跑
     import test_cloud_sync

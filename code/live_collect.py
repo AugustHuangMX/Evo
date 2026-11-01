@@ -48,6 +48,7 @@ import dxcam
 
 import game_lang
 import screenshots
+import season_import
 import sounds
 import storage
 from eliminated import read_eliminated
@@ -378,6 +379,123 @@ class ScreenWatcher:
         return self.screens["screens"][screen]["label"]
 
 
+class SeasonWatcher:
+    """录入历史赛季数据（2026-11-01 用户定的，见 season_import.py、season_stats.py）：设置页按了"录入历史赛季数据"以后
+    的几分钟里，认出游戏里的数据页（右边的下拉菜单收着）就读，存成待核对，玩家在 Evo 窗口的"赛季"页面核对、保存：
+    - 右边一栏（玩家在下拉菜单里选的赛季）：连续两张读到的一样（刚切过来数字可能还在变）、没被鼠标弹出的说明框挡住，
+      就存下、响一声（"总结页读完了"那一声）。这一次录入里读过、数字没变的不再存、不再响；0 局的赛季不记
+    - 中间一栏（大逃杀生涯合计）：同样连续两张一样就存，每次录入存一次
+    - 只读自己的：页面上的名字要是 Evo 认识的自己的名字（对局里出现过的）；Evo 还没记过一局时都算自己的
+    对局中不读。认这一页、读数都只在录入模式里做，平时一点不多花。"""
+
+    OWNER_SECONDS = 30  # 读过一次页面上的名字，这么久之内回到数据页（比如下拉菜单收起来）不再读
+
+    def __init__(self, engine, conn, post, log, play=None, page=None):
+        """page：season_stats.SeasonPage（不给就在第一次用到时新建：读规则、参照图）。"""
+        self.engine, self.conn, self.post, self.log = engine, conn, post, log
+        self.play = play or sounds.play
+        self.page = page
+        self.on = False
+        self.saved = 0  # 这一次录入存了几项
+        self._reset()
+
+    def _reset(self):
+        self.memo = {}  # 每一块上次读的（没变就不再识别，见 season_stats.SeasonPage.read）
+        self.last = {}  # 每一栏上一张读到的：栏 → (哪一项, 读数)，连续两张一样才存
+        self.stored = {}  # 这一次录入存过的：哪一项 → 读数（数字没变就不再存）
+        self.said = set()  # 已经在日志里说过的（被挡住、0 局、不是自己的），每项只说一次
+        self.owner = None  # 页面上的名字和它是不是自己：(名字, 是不是自己, 读的时刻)
+        self.showing = False  # 上一张是数据页（截图加快）
+
+    def check_mode(self, now):
+        """看一眼设置里录入模式开没开（记录程序每隔几秒调用一次，和"游戏语言"一样）。"""
+        on = season_import.active(now)
+        if on and not self.on:
+            self.log(f"[{now:%H:%M:%S}] 录入历史赛季数据：开始（{season_import.until():%H:%M} 结束）。"
+                     "在游戏里打开数据页，一个一个点下拉菜单里的赛季")
+            self.saved = 0
+            self._reset()
+        elif self.on and not on:
+            self.stop(now)
+        self.on = on
+
+    def stop(self, now):
+        """录入模式结束了（到时间、点了"结束"、停止记录）。"""
+        if self.on:
+            self.log(f"[{now:%H:%M:%S}] 录入历史赛季数据：结束，这次存了 {self.saved} 项待核对"
+                     + ("，到 Evo 窗口的\"赛季\"页面核对、保存" if self.saved else ""))
+        self.on = False
+        self._reset()
+
+    def update(self, screen, frame, now, in_match):
+        """每截一帧调用一次。screen：认出的画面（数据页不在里面，是 None）；in_match：正在对局中。"""
+        self.showing = False
+        if not self.on or screen is not None or in_match:
+            return
+        if self.page is None:
+            from season_stats import SeasonPage
+            self.page = SeasonPage(self.engine)
+        if not self.page.on_page(frame):
+            return
+        self.showing = True
+        if not self._own(frame, now):
+            return
+        season, kind, season_name, raw = self.page.label(frame, self.memo)
+        if season is not None:
+            self._panel("season", (season, kind), season_name, frame, now)
+        self._panel("career", (None, "career"), "大逃杀", frame, now)
+
+    def _own(self, frame, now):
+        """页面上的名字是不是自己（结果留 OWNER_SECONDS 秒）。"""
+        if self.owner is None or (now - self.owner[2]).total_seconds() > self.OWNER_SECONDS:
+            name = self.page.name(frame)
+            mine = storage.known_names(self.conn) | ({storage.name_key(self.post.player_name)}
+                                                      if self.post.player_name else set())
+            own = name is not None and (not mine or storage.name_key(name) in mine)
+            self.owner = (name, own, now)
+            if not own:
+                self._say(("owner", name), now, f"数据页上是 {name or '（名字没读出来）'}，不是 Evo 认识的你的名字，不读"
+                          "（只录自己的；好友资料页也是这一页）")
+        else:
+            self.owner = (*self.owner[:2], now)
+        return self.owner[1]
+
+    def _panel(self, panel, key, season_name, frame, now):
+        from season_stats import check, empty, show
+        reading = self.page.read(frame, panel, self.memo)
+        what = "生涯合计" if key[0] is None else f"第 {key[0]} 赛季 {'排位' if key[1] == 'ranked' else '全部'}"
+        if reading["obscured"]:
+            self.last.pop(panel, None)
+            self._say(("obscured", key), now, f"数据页（{what}）被鼠标弹出的说明框挡住了，把鼠标移开一点")
+            return
+        values = reading["values"]
+        stable = self.last.get(panel) == (key, values)
+        self.last[panel] = (key, values)
+        if not stable or self.stored.get(key) == values:
+            return
+        values, approx, problems = check(values, reading["approx"])
+        if empty(values):
+            self.stored[key] = reading["values"]
+            self._say(("empty", key), now, f"数据页：{what} 0 局，不记")
+            return
+        storage.save_season_pending(self.conn, {
+            "player_name": self.owner[0], "season": key[0], "kind": key[1], "season_name": season_name,
+            **values, "approx": sorted(approx), "read_at": f"{now:%Y-%m-%d %H:%M:%S}",
+            "review_note": "\n".join(problems) or None})
+        self.stored[key] = reading["values"]
+        self.saved += 1
+        self.log(f"[{now:%H:%M:%S}] 数据页：{what} 存成待核对（{show(values, approx)}）")
+        for p in problems:
+            self.log(f"           ⚠ {p}")
+        if key[0] is not None:
+            self.play("summary")
+
+    def _say(self, what, now, text):
+        if what not in self.said:
+            self.said.add(what)
+            self.log(f"[{now:%H:%M:%S}] {text}")
+
+
 class Usage:
     """CPU、内存占用：每 USAGE_EVERY_SECONDS 秒在日志里写一行，记录结束时写整段的平均。"""
 
@@ -466,6 +584,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
                               keep_all=lambda: other.keep_all, before_hand_over=summary.catch_up)
     lobby = LobbyWatcher(LobbyReader(engine, load_config("lobby.json", lang)), post, conn, log)
+    seasons = SeasonWatcher(engine, conn, post, log)  # 录入历史赛季数据（设置页的按钮）
     aspect = AspectWatcher(log, clock=lambda: time.monotonic(), fixed=game_aspect)
 
     def use_language(lang):
@@ -520,6 +639,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 if tick >= next_lang_check:  # 设置页的"游戏语言"：每隔几秒看一眼，改了几秒内生效
                     next_lang_check = tick + game_lang.CHECK_SECONDS
                     detector.use_choice(game_lang.choice())
+                    seasons.check_mode(now)  # 录入历史赛季数据开没开（设置页的按钮），同样每隔几秒看一眼
                 screen = detector.detect(frame)
                 if detector.lang != lang:
                     lang = detector.lang
@@ -533,6 +653,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                 in_match.update(screen, frame, now)  # 一局结束时先记下；回到大厅、下一局开局时交对局中的数据（先交才收尾）
                 other.update(None if on_summary else screen, frame, now)  # 总结页还没存下时，经验值页先不读
                 lobby.update(screen, frame, now)
+                seasons.update(screen, frame, now, in_match.active)  # 录入模式里：游戏里的数据页
                 if screen is not None:
                     last_seen, warned = tick, False
                 elif not warned and tick - last_seen > NO_SCREEN_WARNING_MINUTES * 60 and not in_match.active:
@@ -545,8 +666,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
 
             if status is not None:
                 status["saved"] = total()
-            if (on_summary and summary.waiting) or on_xp:
-                wait = fast  # 在总结页等数字读全时、经验值页上（离开前最后一帧要尽量是动画播完的），检查得快一些
+            if (on_summary and summary.waiting) or on_xp or seasons.showing:
+                wait = fast  # 在总结页等数字读全时、经验值页上（离开前最后一帧要尽量是动画播完的）、录入模式里停在数据页时，检查得快一些
             elif in_match.active:
                 wait = match_interval
             else:
@@ -562,6 +683,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         other.leave()
         post.finish()
         aspect.reset()
+        seasons.stop(now)
         speed.stop()
         camera.release()
         conn.close()
@@ -581,7 +703,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         log(f"截图：留下 {left} 张（{kinds}）"
             + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
                f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
-        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed  # 释放识别模型和截屏，交还内存
+        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed, seasons  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved
