@@ -30,8 +30,15 @@
   10. 上传 latest.json（R2 和 COS 各一份；0.4.3 起 Evo 先读 COS 的，读不到再读 R2 的，之前的反过来）
   11. 下载回来，确认和本机的一样
 
+第三段（--github，2026-11-01 用户决定：多一个下载的地方）：
+  12. 把压缩包传到 GitHub Releases（标签 v<版本号>，说明是更新内容和 SHA-256）。要先 git push origin main
+
+COS 停用期间（release.COS_PAUSED，2026-11-01 起：COS 被封，用户决定找到替代方案之前都跳过）：第 4、5 步和
+latest.json 都不传 COS，官网的国内下载链接不动（照旧打开"国内下载暂时不可用"的提示框，提示框里的海外下载链接一起换）。
+
 上传 R2 用 Wrangler（Cloudflare 的命令行工具，只装在开发电脑上，第一次用要 wrangler login），不用打开 Cloudflare 网站；
-上传 COS 用 tools/cos.py（密钥在 %USERPROFILE%\\.evo\\cos.json，见 cos.py 开头）。
+上传 COS 用 tools/cos.py（密钥在 %USERPROFILE%\\.evo\\cos.json，见 cos.py 开头）；
+上传 GitHub 用 gh（GitHub 的命令行工具，只装在开发电脑上，第一次用要 gh auth login）。
 任何一步出问题就停下；改好后重新运行，已经做完的步骤会自动跳过。已经发布的版本不能再覆盖，要发就先改版本号。
 """
 
@@ -73,14 +80,18 @@ ZIP_URL = f"{DL}/{ZIP_NAME}"
 LATEST = DIST / "latest.json"
 LATEST_URL = f"{DL}/latest.json"
 COS = update_check.COS_BASE  # 国内线路：腾讯云 COS 的存储桶（还没设时是 None，不能发布）
+COS_PAUSED = release.COS_PAUSED  # COS 停用中：不传 COS、不改官网的国内下载链接（见上面）
 MIRROR_URL = f"{COS}/{ZIP_NAME}"
 # 官网的国内下载（首屏的下载按钮和下载区的"国内下载"）：<a … data-mirror href="COS 上的压缩包">，发版时换成新版本的
 MIRROR_LINKS = 2
 MIRROR_LINK = re.compile(r'(<a\s[^>]*\bdata-mirror\b[^>]*\bhref=")([^"]*)(")')
+PAUSED_HREF = "#cn-paused"  # COS 停用期间国内下载链接打开的提示框（site/index.html 最下面）；提示框里还有一个海外下载链接
+GITHUB_REPO = "AugustHuangMX/Evo"
+TAG = f"v{APP_VERSION}"
 
 
 def step(n, text):
-    print(f"\n[{n}/11] {text}", flush=True)
+    print(f"\n[{n}/12] {text}", flush=True)
 
 
 def version_tuple(text):
@@ -142,7 +153,7 @@ def site_is_new(digest):
     """线上官网的国内下载、海外下载链接和 SHA-256 是不是已经是这个压缩包的，更新日志页有没有这一版。"""
     html, changelog = remote_bytes(SITE_URL), remote_bytes(CHANGELOG_URL)
     html = html.decode("utf-8") if html is not None else ""
-    return (ZIP_URL in html and MIRROR_URL in html and digest in html
+    return (ZIP_URL in html and (COS_PAUSED or MIRROR_URL in html) and digest in html
             and changelog is not None and f'id="v{APP_VERSION}"' in changelog.decode("utf-8"))
 
 
@@ -217,7 +228,7 @@ def ready(head):
 
 def prepare():
     """确保 dist 里有当前提交打的压缩包和补丁包；没有就运行 release.py。返回 (SHA-256, 大小, latest.json 的内容)。"""
-    if not COS:
+    if not COS and not COS_PAUSED:
         raise Stop("还没有设国内线路的 COS 存储桶（code/update_check.py 的 COS_BASE）：设好、提交以后再发布")
     release.check_clean(False)
     head = git("rev-parse", "--short", "HEAD")
@@ -284,8 +295,8 @@ def update_site(digest, size, dry_run):
     sizes = re.findall(r"约 (\d+) MB", html)
     if len(sizes) != 2:
         raise Stop(f"site/index.html 里的\"约 … MB\"应该有 2 处，找到 {len(sizes)} 处：网页的写法可能变了，请手动改")
-    changes = [  # (说明, 原文, 新文, 网页里应该有几处)
-        ("海外下载链接", f"{DL}/Evo-{old_version}-win64.zip", ZIP_URL, 1),
+    changes = [  # (说明, 原文, 新文, 网页里应该有几处)；COS 停用期间提示框里也有一个海外下载链接
+        ("海外下载链接", f"{DL}/Evo-{old_version}-win64.zip", ZIP_URL, 2 if COS_PAUSED else 1),
         ("首屏版本号", f"<span>v{old_version} 预览版</span>", f"<span>v{APP_VERSION} 预览版</span>", 1),
         ("下载区标题", f"<h3>Evo {old_version} 预览版</h3>", f"<h3>Evo {APP_VERSION} 预览版</h3>", 1),
         ("SHA-256", f"<code>{old_digest}</code>", f"<code>{digest}</code>", 1),
@@ -296,7 +307,12 @@ def update_site(digest, size, dry_run):
     if found != MIRROR_LINKS or len(mirrors) != 1:
         raise Stop(f"site/index.html 里的国内下载链接（带 data-mirror 的 <a>）应该有 {MIRROR_LINKS} 处、地址一样，"
                    f"找到 {found} 处、{len(mirrors)} 种地址：网页的写法可能变了，请手动改")
-    changes.append(("国内下载链接", mirrors.pop(), MIRROR_URL, MIRROR_LINKS))
+    if COS_PAUSED:  # 国内下载照旧打开"暂时不可用"的提示框，不换成 COS 上的新版本（传不上去）
+        if mirrors != {PAUSED_HREF}:
+            raise Stop(f"COS 停用中，官网的国内下载链接应该是 {PAUSED_HREF}（打开提示框），现在是 {mirrors.pop()}：请手动核对")
+        print(f"    国内下载链接：COS 停用中，照旧打开提示框（{PAUSED_HREF}）")
+    else:
+        changes.append(("国内下载链接", mirrors.pop(), MIRROR_URL, MIRROR_LINKS))
 
     new = html
     for label, old, replacement, expected in changes:
@@ -443,11 +459,14 @@ def publish(dry_run, changelog_ok):
         verify(files, DL, fresh=True)
 
     step(4, "上传压缩包和补丁包到腾讯云 COS（国内线路）")
-    upload_cos(files, dry_run)
+    if COS_PAUSED:
+        print("    COS 停用中（release.COS_PAUSED），跳过")
+    else:
+        upload_cos(files, dry_run)
 
     step(5, "从 COS 下载回来核对 SHA-256")
-    if dry_run:
-        print("    （试运行）跳过")
+    if dry_run or COS_PAUSED:
+        print("    （试运行）跳过" if dry_run else "    COS 停用中，跳过")
     else:
         verify(files, COS, fresh=False)
 
@@ -473,7 +492,8 @@ def publish(dry_run, changelog_ok):
             time.sleep(5)
         else:
             raise Stop(f"{SITE_URL} 上还不是新的下载链接和 SHA-256，或者 {CHANGELOG_URL} 还没有这一版，过一会儿重新运行 python tools/publish.py 看看")
-        print(f"    ✅ {SITE_URL} 的国内下载和海外下载链接是 {ZIP_NAME}，SHA-256 也对；{CHANGELOG_URL} 有 {APP_VERSION}")
+        links = "海外下载链接" if COS_PAUSED else "国内下载和海外下载链接"
+        print(f"    ✅ {SITE_URL} 的{links}是 {ZIP_NAME}，SHA-256 也对；{CHANGELOG_URL} 有 {APP_VERSION}")
 
     if dry_run:
         print("\n试运行完成，没有上传任何东西。正式上传：python tools/publish.py")
@@ -491,20 +511,23 @@ def go_live(yes):
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
     if latest.get("version") != APP_VERSION:
         raise Stop(f"dist/latest.json 写的是 {latest.get('version')}，不是 {APP_VERSION}：先运行 python tools/publish.py")
-    if not COS or latest.get("download", {}).get("mirrors") != release.mirror_urls(ZIP_NAME):
-        raise Stop("dist/latest.json 里的国内线路和 update_check.COS_BASE 不一样：删掉 dist 里的压缩包，重新运行 python tools/publish.py")
+    if (not COS and not COS_PAUSED) or latest.get("download", {}).get("mirrors") != release.mirror_urls(ZIP_NAME):
+        raise Stop("dist/latest.json 里的国内线路和 update_check.COS_BASE、release.COS_PAUSED 不一样："
+                   "删掉 dist 里的压缩包，重新运行 python tools/publish.py")
     for name, path, digest in packages(latest):
         if not path.is_file() or remote_info(f"{DL}/{name}") != (path.stat().st_size, md5(path)):
             raise Stop(f"R2 上的 {name} 和本机的不一样（或者还没传）：先运行 python tools/publish.py")
-        if cos_head(f"{COS}/{name}") != (path.stat().st_size, digest):
+        if not COS_PAUSED and cos_head(f"{COS}/{name}") != (path.stat().st_size, digest):
             raise Stop(f"COS 上的 {name} 和本机的不一样（或者还没传）：先运行 python tools/publish.py")
     if not site_is_new(sha256(ZIP)):
         raise Stop("官网还不是这个版本：先运行 python tools/publish.py")
-    print("    ✅ R2 和 COS 上的压缩包、补丁包，还有官网，都是这个版本")
+    where = "R2" if COS_PAUSED else "R2 和 COS"
+    print(f"    ✅ {where}上的压缩包、补丁包，还有官网，都是这个版本")
     local = LATEST.read_bytes()
-    r2_done, cos_done = remote_bytes(LATEST_URL) == local, cos_bytes(f"{COS}/latest.json") == local
+    r2_done = remote_bytes(LATEST_URL) == local
+    cos_done = COS_PAUSED or cos_bytes(f"{COS}/latest.json") == local  # COS 停用中：不传
     if r2_done and cos_done:
-        print(f"\n线上的 latest.json（R2 和 COS）已经是 {APP_VERSION}，不用再传")
+        print(f"\n线上的 latest.json（{where}）已经是 {APP_VERSION}，不用再传")
         return
     online = online_version()
     if online and version_tuple(online) > version_tuple(APP_VERSION):
@@ -527,7 +550,9 @@ def go_live(yes):
     else:
         wrangler("r2", "object", "put", f"{BUCKET}/latest.json", "--file", str(LATEST), "--remote",
                  "--cache-control", "max-age=300", "--content-type", "application/json; charset=utf-8")
-    if cos_done:
+    if COS_PAUSED:
+        print("    COS 停用中，跳过（恢复时要先补传这个，见 release.COS_PAUSED）")
+    elif cos_done:
         print("    COS 上的已经是这个，跳过")
     else:
         try:
@@ -539,11 +564,80 @@ def go_live(yes):
     step(11, "确认线上的 latest.json 和本机的一样")
     if remote_bytes(LATEST_URL) != local:
         raise Stop(f"{LATEST_URL} 和本机的 dist/latest.json 不一样")
-    if cos_bytes(f"{COS}/latest.json") != local:
+    if not COS_PAUSED and cos_bytes(f"{COS}/latest.json") != local:
         raise Stop(f"{COS}/latest.json 和本机的 dist/latest.json 不一样")
-    print("    ✅ R2 和 COS 上的都一样")
+    print(f"    ✅ {where}上的都一样")
     print(f"\n{APP_VERSION} 已发布。CDN 缓存最多 5 分钟，之后所有 Evo 检查更新都会看到新版本。")
-    print("别忘了：在 claude/progress.md 的\"版本\"里记一笔，提交，git push origin main")
+    print("别忘了：在 claude/progress.md 的\"版本\"里记一笔，提交，git push origin main（推之前查一遍没有小程序的文件），"
+          "再 python tools/publish.py --github 传到 GitHub Releases")
+
+
+# ---------- 第三段：GitHub Releases（2026-11-01 用户决定：多一个下载的地方） ----------
+
+GH_PATHS = [Path(r"C:\Program Files\GitHub CLI\gh.exe")]  # 刚装好、终端还没重开时 PATH 里还没有它
+
+
+def gh(*args):
+    exe = shutil.which("gh") or next((str(p) for p in GH_PATHS if p.is_file()), None)
+    if not exe:
+        raise Stop("找不到 gh：先装 GitHub 的命令行工具（winget install --id GitHub.cli），再运行 gh auth login")
+    return subprocess.run([exe, *args], cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8").stdout
+
+
+def github_notes(latest, digest):
+    """GitHub Releases 上这一版的说明（Markdown）：更新内容按"新增""改进""修复"分组（同官网更新日志页），怎么用、SHA-256。"""
+    lines = []
+    for name, _, items in changelog_groups(latest["notes"]):
+        lines += [f"## {name}", *(f"- {item}" for item in items), ""]
+    lines += [
+        "---",
+        f"下载下面的 `{ZIP_NAME}`，解压后打开 `Evo` 文件夹里的 `Evo.exe`。已经装了 Evo 的，在设置页点\"立即更新\"就行。",
+        f"官网下载的是同一个文件：{SITE_URL}",
+        "",
+        f"SHA-256：`{digest}`",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def publish_github():
+    step(12, "传到 GitHub Releases")
+    if not (ZIP.is_file() and LATEST.is_file()):
+        raise Stop(f"dist 里没有 {ZIP_NAME} 或 latest.json：先运行 python tools/publish.py")
+    latest = json.loads(LATEST.read_text(encoding="utf-8"))
+    if latest.get("version") != APP_VERSION or online_version() != APP_VERSION:
+        raise Stop(f"线上的 latest.json 还不是 {APP_VERSION}：先运行 python tools/publish.py 和 --live")
+    commit = zip_commit(ZIP)
+    if not commit:
+        raise Stop(f"{ZIP_NAME} 不是从提交好的代码打的")
+    full = git("rev-parse", commit)
+    if "origin/main" not in git("branch", "-r", "--contains", full):
+        raise Stop(f"压缩包的提交 {commit} 还没推到 GitHub：先 git push origin main（推之前查一遍没有小程序的文件）")
+    digest = sha256(ZIP)
+    try:
+        assets = json.loads(gh("release", "view", TAG, "--repo", GITHUB_REPO, "--json", "assets"))["assets"]
+    except subprocess.CalledProcessError:
+        assets = None  # 还没有这一版
+    if assets is None:
+        notes = DIST / f"github-notes-{APP_VERSION}.md"
+        notes.write_text(github_notes(latest, digest), encoding="utf-8")
+        print(f"    新建 {TAG}（提交 {commit}），上传 {ZIP_NAME}（{ZIP.stat().st_size / 2**20:.0f} MB）…", flush=True)
+        gh("release", "create", TAG, str(ZIP), "--repo", GITHUB_REPO, "--target", full,
+           "--title", f"Evo {APP_VERSION} 预览版", "--notes-file", str(notes))
+    elif not any(a["name"] == ZIP_NAME for a in assets):
+        print(f"    {TAG} 已经有了，补传 {ZIP_NAME} …", flush=True)
+        gh("release", "upload", TAG, str(ZIP), "--repo", GITHUB_REPO)
+    else:
+        print(f"    {TAG} 和 {ZIP_NAME} 已经在 GitHub 上了")
+    print("    下载回来核对 SHA-256 …", flush=True)
+    url = f"https://github.com/{GITHUB_REPO}/releases/download/{TAG}/{ZIP_NAME}"
+    request = urllib.request.Request(url, headers={"User-Agent": f"Evo-publish/{APP_VERSION}"})
+    got = hashlib.sha256()
+    with urllib.request.urlopen(request, timeout=300) as r:
+        for block in iter(lambda: r.read(1 << 20), b""):
+            got.update(block)
+    if got.hexdigest() != digest:
+        raise Stop(f"{url} 的 SHA-256 是 {got.hexdigest()}，和本机的不一样")
+    print(f"    ✅ 和本机的一样：https://github.com/{GITHUB_REPO}/releases/tag/{TAG}")
 
 
 def main():
@@ -551,13 +645,16 @@ def main():
     parser = argparse.ArgumentParser(description="发布新版本：上传压缩包、官网和 latest.json（说明见 publish.py 开头）")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="试一遍：准备压缩包、预览官网要改的地方，不上传")
-    mode.add_argument("--live", action="store_true", help="最后一步：上传 latest.json，Evo 开始提醒更新")
+    mode.add_argument("--live", action="store_true", help="第二段：上传 latest.json，Evo 开始提醒更新")
+    mode.add_argument("--github", action="store_true", help="第三段：压缩包传到 GitHub Releases（先 git push origin main）")
     parser.add_argument("--yes", action="store_true", help="和 --live 一起用：已经确认过，不再问")
     parser.add_argument("--changelog-ok", metavar="核对码", help="第一段用：更新日志的原文已经确认过（核对码见 --dry-run 的输出）")
     args = parser.parse_args()
     try:
         if args.live:
             go_live(args.yes)
+        elif args.github:
+            publish_github()
         else:
             publish(args.dry_run, args.changelog_ok)
     except Stop as e:

@@ -25,7 +25,7 @@ import cos
 import notice_check
 import update_check
 from publish import BUCKET, COS, DL, cos_bytes, remote_bytes, wrangler
-from release import DIST, Stop, sha256
+from release import COS_PAUSED, DIST, Stop, sha256
 
 NAME = "notice.json"
 LOCAL = DIST / NAME
@@ -74,6 +74,9 @@ def upload(local):
     if remote_bytes(R2_URL) != local:
         raise Stop(f"{R2_URL} 和本机的 {LOCAL} 不一样")
     print("    ✅ 下载回来核对过，一样")
+    if COS_PAUSED:  # 2026-11-01 用户决定：COS 被封，找到替代方案之前都不传（恢复时把当时线上的公告补传上去）
+        print("COS 停用中（release.COS_PAUSED），不传 COS：Evo 读不到 COS 上的会改读 dl.evotracker.cn 的")
+        return
     print(f"上传到 COS：{COS}/{NAME}")
     try:
         cos.upload(LOCAL, NAME, CONTENT_TYPE, sha256(LOCAL), cache_control="no-cache")

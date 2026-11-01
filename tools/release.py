@@ -11,7 +11,7 @@
    PATCH_FROM 个旧版本（2026-10-29 起只做上一版的一个）（不早于 DELTA_SINCE：更早的 Evo 不会用补丁包）各做一个，只放变了的文件
 8. 写 dist/latest.json：Evo 检查新版本时读的就是它（update_check.py）。更新内容取自 release/更新内容.txt；
    还写上压缩包和补丁包的地址、SHA-256 和大小，Evo 里的一键更新（updater.py）按它下载、核对；
-   以及国内线路（腾讯云 COS 上的同一个文件，update_check.COS_BASE）
+   以及国内线路（腾讯云 COS 上的同一个文件，update_check.COS_BASE；COS_PAUSED 时不写，2026-11-01 起 COS 被封）
 
 版本号取自 storage.py 的 APP_VERSION。压缩包里没有 data_location.txt，所以别人的数据会放在他们自己电脑上程序旁边的
 Evo Tracker Data（规则见 paths.py）。
@@ -53,9 +53,15 @@ PATCH_FROM = 1  # 给最近几个旧版本做补丁包（更早的下完整的�
 #   发版时上传太久；跟着更新的玩家照样只下 10 MB 左右，落后两个版本以上的下完整的
 
 
+# 2026-11-01 用户决定：COS 被封（所有下载回 451，见 todo.md），找到替代方案之前发版都跳过 COS——不传压缩包、补丁包、
+# latest.json，latest.json 里也不写 COS 的备用地址（Evo 只从 dl.evotracker.cn 下）；官网的国内下载照旧打开提示框。
+# 恢复时改回 False，并先把当时最新的 latest.json 补传到 COS：0.4.3 起的 Evo 先读 COS 上的，那里还是 0.5.0 的话就收不到新版本提醒
+COS_PAUSED = True
+
+
 def mirror_urls(name):
-    """国内线路：腾讯云 COS 上的同一个文件（2026-10-24 用户决定；0.4.3 起 Evo 先用它）。还没设存储桶时没有。"""
-    return [f"{update_check.COS_BASE}/{name}"] if update_check.COS_BASE else []
+    """国内线路：腾讯云 COS 上的同一个文件（2026-10-24 用户决定；0.4.3 起 Evo 先用它）。还没设存储桶、COS 停用时没有。"""
+    return [f"{update_check.COS_BASE}/{name}"] if update_check.COS_BASE and not COS_PAUSED else []
 
 
 CHECK_IMAGE = ROOT / "captures" / "live" / "20261016_211452" / "05_222749.png"
