@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 import game_lang
 from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image
@@ -59,12 +60,28 @@ def in_range(value, bounds):
     return all(bounds[0] <= v <= bounds[1] for v in values)
 
 
-def read_field(engine, img, name, spec, cfg, save_crops):
-    """识别一个数据项，返回结果字典。"""
+def same_piece(a, b, rule):
+    """两小块是不是一样（数字停住了）：差别超过 rule["level"] 的点，占比不到 rule["share"]。"""
+    return a.shape == b.shape and float(np.mean(cv2.absdiff(a, b) > rule["level"])) <= rule["share"]
+
+
+def read_field(engine, img, name, spec, cfg, save_crops, memo=None):
+    """识别一个数据项，返回结果字典。
+    memo：同一次停在总结页时传同一个字典。这一小块和上次读的一样（见配置里的 unchanged），就沿用上次的结果，
+    不再识别（结果里多一项 "reused"）；不一样才读，读完记进 memo。"""
     piece = crop(img, spec["roi"], cfg, spec.get("anchor"))
     if save_crops:
         cv2.imencode(".png", piece)[1].tofile(CROPS_DIR / f"{name}.png")
+    before = memo.get(name) if memo is not None else None
+    if before is not None and "unchanged" in cfg and same_piece(before[0], piece, cfg["unchanged"]):
+        return {**before[1], "ms": 0.0, "reused": True}
+    out = _read_piece(engine, piece, name, spec, cfg)
+    if memo is not None:
+        memo[name] = (piece, out)
+    return out
 
+
+def _read_piece(engine, piece, name, spec, cfg):
     start = time.perf_counter()
     result = engine(piece)
     ms = (time.perf_counter() - start) * 1000
@@ -98,8 +115,9 @@ def read_field(engine, img, name, spec, cfg, save_crops):
     return out
 
 
-def read_summary(engine, img, cfg, save_crops=False):
-    results = {name: read_field(engine, img, name, spec, cfg, save_crops) for name, spec in cfg["fields"].items()}
+def read_summary(engine, img, cfg, save_crops=False, memo=None):
+    """memo：同一次停在总结页时传同一个字典，没变的项不再识别（见 read_field）。"""
+    results = {name: read_field(engine, img, name, spec, cfg, save_crops, memo) for name, spec in cfg["fields"].items()}
 
     # 常识检查：自己的击杀数不可能超过小队总击杀
     problems = []
@@ -114,12 +132,20 @@ def read_summary(engine, img, cfg, save_crops=False):
     return results, problems
 
 
-def is_champion(engine, img, cfg):
-    """总结页顶部的大字是不是"捍卫者"（拿冠军；被淘汰时是"全军覆没"）。配置里可以写几种（别的语言还没核实时）。"""
+def is_champion(engine, img, cfg, memo=None):
+    """总结页顶部的大字是不是"捍卫者"（拿冠军；被淘汰时是"全军覆没"）。配置里可以写几种（别的语言还没核实时）。
+    memo：和 read_field 的一样，这一块没变就沿用上次的结果。"""
     banner = cfg["banner"]
     names = [banner["champion"]] if isinstance(banner["champion"], str) else banner["champion"]
-    result = engine(crop(img, banner["roi"], cfg, banner.get("anchor")))
-    return any(name in text for text in result.txts or () for name in names)
+    piece = crop(img, banner["roi"], cfg, banner.get("anchor"))
+    before = memo.get("banner") if memo is not None else None
+    if before is not None and "unchanged" in cfg and same_piece(before[0], piece, cfg["unchanged"]):
+        return before[1]
+    result = engine(piece)
+    found = any(name in text for text in result.txts or () for name in names)
+    if memo is not None:
+        memo["banner"] = (piece, found)
+    return found
 
 
 def to_seconds(duration):

@@ -1,5 +1,7 @@
 """总结页停留时的几种情况：名次晚出现要等它；提前离开、等太久、停止记录时，用读得最全的一次存下并标记待确认；
 在总结页和别的画面之间来回切换，同一局不重复存。
+同一次停留里没变的项不再识别、沿用上次的（2026-11-01，summary_page.read_field 的 memo）：同一张读第二遍一次都不识别；
+名次滑进来时只重读名次、小队总击杀；伤害换了一个数时只重读伤害；配置里去掉 unchanged 就每遍都全读。
 
 用的是 2026-10-16 晚的真实截图，外加一张拼出来的"名次还没滑进来"的画面（见 late_placement）。
 截图不在仓库里，见 fake_game.py。
@@ -8,6 +10,11 @@
 """
 
 from fake_game import MissingShots, load, report, run_collect, shot  # 要在项目代码之前导入（设置临时数据文件夹）
+
+import re
+
+import ocr
+from summary_page import read_summary
 
 NIGHT = "live/20261016_211452/"
 
@@ -18,6 +25,50 @@ def late_placement(full, blank):
     frame = full.copy()
     frame[187:320, 1867:2507] = blank[187:320, 1867:2507]
     return frame
+
+
+def other_damage(full, other):
+    """拼一张"伤害换了一个数"的总结页：中间卡片上伤害那一格换成另一张截图的（1920×1080 下 [748, 472, 180, 46]，
+    换算到 2560×1440 再放宽一点）。"""
+    frame = full.copy()
+    frame[620:700, 990:1245] = other[620:700, 990:1245]
+    return frame
+
+
+def memo_checks(images):
+    """直接读几遍总结页（同一个 memo），数每一遍识别了几次。"""
+    real = ocr.create_engine(ocr.SMALL_CROP_PARAMS)
+    calls = [0]
+
+    def engine(img, **kwargs):
+        calls[0] += 1
+        return real(img, **kwargs)
+
+    cfg = ocr.load_config("summary.json")
+
+    def reads(names, config=cfg):
+        """按顺序读 names 里的几张（同一个 memo），返回每一遍 (识别了几次, 读到的值)。"""
+        memo, out = {}, []
+        for name in names:
+            before = calls[0]
+            results, _ = read_summary(engine, images[name], config, memo=memo)
+            out.append((calls[0] - before, {k: r["value"] for k, r in results.items()}))
+        return out
+
+    f5 = reads(["F5", "F5"])
+    late = reads(["B5", "F5"])
+    damage = reads(["F5", "F5改伤害"])
+    plain = reads(["F5", "F5"], {k: v for k, v in cfg.items() if k != "unchanged"})
+    return {
+        f"同一张读第二遍：一次都不识别，读到的一样（{f5[0][0]} → {f5[1][0]} 次）":
+            f5[0][0] == 7 and f5[1][0] == 0 and f5[0][1] == f5[1][1],
+        f"名次滑进来：只重读名次、小队总击杀，读到第 8 名（{late[1][0]} 次）":
+            late[0][1]["placement"] is None and late[1][0] == 2 and late[1][1] == f5[0][1],
+        f"伤害换了一个数：只重读伤害（{damage[1][0]} 次，{damage[0][1]['damage']} → {damage[1][1]['damage']}）":
+            damage[1][0] == 1 and (damage[0][1]["damage"], damage[1][1]["damage"]) == (688, 599)
+            and {k: v for k, v in damage[1][1].items() if k != "damage"} == {k: v for k, v in f5[0][1].items() if k != "damage"},
+        f"配置里去掉 unchanged：每遍都全读（{[n for n, _ in plain]}）": [n for n, _ in plain] == [7, 7],
+    }
 
 
 def main():
@@ -32,12 +83,15 @@ def main():
             "M8": load(shot(NIGHT + "08_231728.png")),  # 95 伤害
             "M7": load(shot(NIGHT + "07_231013.png")),  # 599 伤害
         }
+        images["F5改伤害"] = other_damage(f5, images["M7"])  # 第 8 名、3 杀，伤害换成 599
     except MissingShots as e:
         print(f"  ⏭ 跳过：找不到截图 {e}（截图只在开发者电脑上，不在仓库里）")
         return None
 
     frames = ["观战", "B5", "B5", "B5", "F5", "F5", "F5", "观战", "F5", "F5", "观战", "M9", "M9", "观战", "M8"]
-    rows, sleeps, _ = run_collect(frames, images.get)
+    rows, sleeps, log = run_collect(frames, images.get)
+    stats = next((line for line in log if line.startswith("本次记录")), "")
+    used = re.search(r"总结页读了 (\d+) 项（没变沿用 (\d+) 项）", stats)
     first, second, third = (rows + [None] * 3)[:3]
     checks = {
         "名次晚出现：等到第 8 名才存，不标待确认": first is not None and (
@@ -50,7 +104,9 @@ def main():
         "停止记录时总结页只读了一次：也存下，标待确认并注明停留太短": third is not None and (
             third["placement"] is None and third["damage"] == 95 and third["needs_review"] == 1
             and "停留太短" in (third["review_note"] or "")),
+        f"日志写了总结页读了几项、沿用了几项（{used and used[0]}）": used is not None and int(used[2]) > 0,
     }
+    checks.update(memo_checks(images))
 
     frames = ["观战"] + ["M7"] * 8
     rows, sleeps, _ = run_collect(frames, images.get, summary_timeout=1)

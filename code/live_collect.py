@@ -88,7 +88,9 @@ def save_png(path, frame):
 class SummaryWatcher:
     """总结页：名次、击杀/助攻/击倒、伤害都读到了，并且连续两次相同（名次会晚 1–2 秒滑进来，数字也可能有动画），
     就保存截图、把这一局写进数据库（冠军的总结页没有名次：其他数字连续两次相同、顶部是"捍卫者"就算读全）。还没读全就离开了、等太久、或者停止记录时，用读得最全的一次存下，标记"待确认"
-    （缺的项之后能用别的来源补上就取消，见 post_match.settle）。在总结页和别的画面之间来回切换，同一局不重复存。"""
+    （缺的项之后能用别的来源补上就取消，见 post_match.settle）。在总结页和别的画面之间来回切换，同一局不重复存。
+    同一次停留里，和上一张比没变的项不再识别、沿用上次的（2026-11-01，见 summary_page.read_field）：
+    数字停住了，第二张几乎不用读，名次滑进来时只重读名次那几项。"""
 
     def __init__(self, engine, cfg, conn, post, run_dir, log, timeout, names=None, on_read=None):
         """on_read(时间)：关键项读全、连续两次相同时调用（总结页读完了的提示音）；没读全就离开、等太久都不调用。"""
@@ -97,7 +99,8 @@ class SummaryWatcher:
         self.on_read = on_read
         self.saved = 0  # 这次记录存下了几局
         self.name_reads = 0  # 读了几次中间卡片上的名字（统计用）
-        self.visit = None  # 这一次停在总结页的情况：开始时间、上一次的读数、读得最全的一次
+        self.fields_read, self.fields_reused = 0, 0  # 总结页上识别了几项、没变沿用了几项（统计用）
+        self.visit = None  # 这一次停在总结页的情况：开始时间、上一次的读数、读得最全的一次、每一项上次读的那一小块
         self.done = False  # 这一次总结页已经存过了
         self.last_saved = None  # 最近存进数据库的那一局的读数（切到别的页再切回来时，用来认出是同一局）
 
@@ -116,9 +119,12 @@ class SummaryWatcher:
         if self.done:
             return
         if self.visit is None:
-            self.visit = {"start": time.monotonic(), "last": None, "best": None, "core_stable": False}
+            self.visit = {"start": time.monotonic(), "last": None, "best": None, "core_stable": False, "memo": {}}
         visit = self.visit
-        results, problems = read_summary(self.engine, frame, self.cfg)
+        results, problems = read_summary(self.engine, frame, self.cfg, memo=visit["memo"])
+        reused = sum(bool(r.get("reused")) for r in results.values())
+        self.fields_reused += reused
+        self.fields_read += len(results) - reused
         values = {name: r["value"] for name, r in results.items()}
         filled = sum(v is not None for v in values.values())
         if visit["best"] is None or filled >= visit["best"][0]:
@@ -133,7 +139,7 @@ class SummaryWatcher:
         # 冠军的总结页顶部是"捍卫者"、没有"第 X 名"，名次永远读不到：其他数字稳定了就算读完（第 1 名由冠军横幅补上，
         # 和以前离开时才存一样，只是存得早，"总结页读完了"的提示音也能响）
         champion = (not complete and visit["core_stable"] and values["placement"] is None and "banner" in self.cfg
-                    and is_champion(self.engine, frame, self.cfg))
+                    and is_champion(self.engine, frame, self.cfg, visit["memo"]))
         if (complete and values == visit["last"]) or champion:  # 关键项都读到了，且连续两次相同
             self._record(results, problems, frame, now)
             self.done = True
@@ -180,7 +186,7 @@ class SummaryWatcher:
             found = self.names.read(frame, "summary")
             name = found[0] if found else None
         self.post.on_summary_saved(match_id, values, when, name)
-        if "banner" in self.cfg and is_champion(self.engine, frame, self.cfg):
+        if "banner" in self.cfg and is_champion(self.engine, frame, self.cfg, self.visit and self.visit["memo"]):
             self.post.on_champion(when, SOURCE_SUMMARY)
 
     def _record_best(self, note):
@@ -549,7 +555,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
             f"（{detector.unchanged} 次画面没变，没再读关键字）；识别 {engine.calls} 次{per_call}，"
             f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
             f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
-            f"玩家名 {post.player_name or '没认出'}；大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
+            f"玩家名 {post.player_name or '没认出'}；总结页读了 {summary.fields_read} 项（没变沿用 {summary.fields_reused} 项）；"
+            f"大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
             f"{usage.total()}，内存峰值 {memory_mb()[1]:.0f} MB")
         kinds = "保留全部" if keep else "总结页截图、待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
         log(f"截图：留下 {left} 张（{kinds}）"
