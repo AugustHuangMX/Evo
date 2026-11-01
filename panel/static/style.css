@@ -39,6 +39,8 @@
   --p4-bg: #E6E9EE; --p4-fg: #0D0F13;
   --seg-other: #E6E9EE;
   --titlebar-bg: #08090C;
+  /* 一张图里几个人（和队友一起的 RP 走势）：一人一种颜色，按这个顺序（色盲也分得开，检查过卡片底色上的对比度） */
+  --series-0: #3987E5; --series-1: #D95926; --series-2: #199E70; --series-3: #C98500; --series-4: #D55181;
   color-scheme: dark;
 }
 
@@ -75,6 +77,7 @@
   --p4-bg: #E7E7E2; --p4-fg: #17191E;
   --seg-other: #A3A8B0;
   --titlebar-bg: #EAEAE5;
+  --series-0: #2A78D6; --series-1: #EB6834; --series-2: #1BAF7A; --series-3: #EDA100; --series-4: #E87BA4;
   color-scheme: light;
 }
 
@@ -898,3 +901,58 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .season-empty { margin: 0; color: var(--muted); }
 .season-players { margin: 12px 0 0; }
 @media (max-width: 760px) { .season-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* 和队友一起的 RP 走势（数据页"常一起玩的队友"，2026-11-01；_curves.html、panel_app.add_sparks / curve_chart）：
+   每行后面的小曲线（各自的比例，只看起伏）+ 完整表格页上面的大图。线 2px（小曲线 1.5px），终点圆点外面一圈卡片底色；颜色跟着人走（--series-0…4），
+   大图里的人表里那一行的小曲线也是这种颜色，其余的小曲线是灰色。文字不用线的颜色（累计 RP 照旧红绿 + 正负号） */
+.series-0 { --c: var(--series-0); }
+.series-1 { --c: var(--series-1); }
+.series-2 { --c: var(--series-2); }
+.series-3 { --c: var(--series-3); }
+.series-4 { --c: var(--series-4); }
+.spark-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 10px; vertical-align: middle; }
+.spark-cell .num { min-width: 44px; text-align: right; }
+.spark, .spark-none { flex: none; display: block; width: 88px; height: 28px; }
+.spark-zero { stroke: var(--border); stroke-width: 1; }
+.spark-line { fill: none; stroke: var(--c, var(--muted)); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.spark-end { fill: var(--c, var(--muted)); stroke: var(--card); stroke-width: 1.5; }
+.mates-table tr[data-hl]:hover { background: var(--nav-on-bg); }  /* 鼠标停在这一行：大图里只突出这个人 */
+
+.curve-card { padding: 24px; }
+.curve-key { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 20px; font-size: 13px; }
+.curve-key > span { display: inline-flex; align-items: center; gap: 8px; cursor: default; }
+.curve-key i { flex: none; width: 18px; border-top: 2px solid var(--c); }
+.curve-key .num { font-weight: 500; }
+.curve-key .key-ref { color: var(--muted); }
+.curve-key .key-ref i { border-top: 2px dashed var(--muted); }
+.curve-key .key-ref .num { color: var(--text); }
+.curve-plot { position: relative; height: 260px; margin-left: 48px; }
+.curve-plot:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 6px; border-radius: 2px; }
+.curve-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+.curve-grid { stroke: var(--row-border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.curve-grid.zero { stroke: var(--dashed); }
+.curve-ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 5; stroke-opacity: 0.8; vector-effect: non-scaling-stroke; }
+.curve-line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke;
+              transition: opacity 0.15s; }
+.curve-end, .curve-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--c);
+                         box-shadow: 0 0 0 2px var(--card); pointer-events: none; transition: opacity 0.15s; }
+.curve-dot { z-index: 2; width: 12px; height: 12px; margin: -6px 0 0 -6px; }
+.curve-card.focusing [data-line]:not(.on) { opacity: 0.18; }
+.curve-ytick { position: absolute; right: calc(100% + 10px); transform: translateY(-50%); font-size: 11px; font-weight: 500; color: var(--muted);
+               white-space: nowrap; font-variant-numeric: tabular-nums; }
+.curve-cross { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--dashed); pointer-events: none; }
+.curve-tip { position: absolute; top: 8px; z-index: 3; min-width: 200px; padding: 10px 12px; transform: translateX(16px); pointer-events: none;
+             border: 1px solid var(--border); border-radius: 6px; background: var(--card); box-shadow: 0 8px 24px rgb(0 0 0 / 0.35); font-size: 12px; }
+.curve-tip.flip { transform: translateX(calc(-100% - 16px)); }
+[data-theme="light"] .curve-tip { box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }
+.curve-tip-head { margin-bottom: 6px; color: var(--muted); }
+.curve-tip-row { display: grid; grid-template-columns: 14px auto minmax(0, 1fr); align-items: center; gap: 0 8px; padding: 4px 0; }
+.curve-tip-row i { border-top: 2px solid var(--c); }
+.curve-tip-row .num { min-width: 44px; text-align: right; font-size: 14px; color: var(--text); }
+.curve-tip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.curve-tip-sub { grid-column: 2 / -1; color: var(--muted); }
+.curve-xaxis { position: relative; height: 16px; margin: 8px 0 0 48px; font-size: 11px; color: var(--muted); }
+.curve-xaxis span { position: absolute; transform: translateX(-50%); font-weight: 500; }
+.curve-caption { margin: 8px 0 0 48px; color: var(--muted); font-size: 12px; }
+.curve-plot svg { animation: evo-wipe 800ms cubic-bezier(0.4, 0, 0.2, 1) 100ms backwards; }  /* 和总览页的走势图一样从左往右画出来 */
+.curve-end { animation: evo-pop 300ms cubic-bezier(0.3, 1.6, 0.6, 1) 800ms backwards; }

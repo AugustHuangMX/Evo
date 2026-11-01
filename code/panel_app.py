@@ -600,22 +600,127 @@ def teammate_table(rows, mates):
         person["player_id"] = m["player_id"] or person["player_id"]
 
     listed = []
-    for person in people.values():
+    for key, person in people.items():
         if len(person["games"]) < MIN_MATE_GAMES:
             continue
         together = sorted(person["games"].values(), key=lambda r: (r["ended_at"] or "", r["match_id"]))
         names = {}  # 名字 → (次数, 最后一次的先后)
         for order, name in enumerate(person["names"][-MATE_NAME_GAMES:]):
             names[name] = (names.get(name, (0, 0))[0] + 1, order)
+        steps, total = [], 0  # RP 走势：一局局加起来。只算读到了 RP 的排位局，读不到的跳过（不当 0）
+        for r in together:
+            if r["rp_delta"] is not None:
+                total += r["rp_delta"]
+                steps.append({"total": total, "delta": r["rp_delta"], "when": time_text(r["ended_at"])})
         listed.append({
+            "key": key,
             "name": max(names, key=names.get) if names else "（没读到名字）",
             "player_id": person["player_id"],
             "last": time_text(together[-1]["ended_at"]),
             "order": together[-1]["ended_at"] or "",
+            "rp_steps": steps,
+            "rp_total": signed(total) if steps else "—",
+            "rp_total_class": "none" if not steps else ("good" if total >= 0 else "bad"),
             **group_numbers(together),
         })
     listed.sort(key=lambda p: (p["games"], p["order"]), reverse=True)
+    add_sparks(listed)
     return listed
+
+
+MIN_CURVE_GAMES = 5  # 和队友的 RP 走势：一起打满这么多局排位（读到了 RP 的）才画线（2026-11-01 用户定的）
+CURVE_LINES = 5  # 完整表格页的大图最多画几个人（一人一种颜色，只有 5 种：style.css 的 --series-0…4）
+SPARK_W, SPARK_H = 88, 28  # 每行后面的小曲线（像素，不拉伸）
+CURVE_W, CURVE_H = 600, 240  # 大图的坐标范围（网页上按卡片宽度拉伸）
+
+
+def add_sparks(listed):
+    """常一起玩的队友每行后面的小曲线（2026-11-01 用户要的"和每个队友的上分趋势"）：累计 RP，从 0 开始，
+    一起打满 MIN_CURVE_GAMES 局排位才画（不够的只写累计，没有线）。每条线上下左右都各自占满，只看起伏
+    （所有行用同一个比例时差不多都是平的）；画出 0 那条线，涨了多少写在旁边，几个人之间比高低看大图。
+    slot：大图里的颜色（curve_chart 填上；不在大图里的是 None）。"""
+    pad = 4  # 上下、左右留出线和终点圆点的位置
+    for m in listed:
+        m["spark"], m["slot"] = None, None
+        if len(m["rp_steps"]) < MIN_CURVE_GAMES:
+            continue
+        totals = [0] + [s["total"] for s in m["rp_steps"]]
+        high, span = max(totals), (max(totals) - min(totals)) or 1
+
+        def y(v):
+            return round(pad + (high - v) / span * (SPARK_H - 2 * pad), 1)
+
+        xs = [round(pad + i / (len(totals) - 1) * (SPARK_W - 2 * pad), 1) for i in range(len(totals))]
+        m["spark"] = {"w": SPARK_W, "h": SPARK_H, "zero": y(0), "end": (xs[-1], y(totals[-1])),
+                      "line": " ".join(f"{x},{y(v)}" for x, v in zip(xs, totals))}
+
+
+def nice_step(span, most):
+    """坐标轴刻度的间隔：1、2、5、10、20、50、100……里刻度不超过 most 个的最小的那个。"""
+    step = 1
+    while span / step > most:
+        step = step * 5 // 2 if str(step)[0] == "2" else step * 2  # 1 → 2 → 5 → 10 → 20 → 50…
+    return step
+
+
+def curve_slots(keys, stable):
+    """大图里每个人的颜色（第几种）：跟着人走，不跟着排第几——换了范围，同一个人还是同一种颜色。
+    stable：所有对局里有走势的队友（按一起打的局数排）；排在前 CURVE_LINES 的人固定用自己那一种，其余的人用剩下的。"""
+    fixed = {k: i for i, k in enumerate(stable[:CURVE_LINES])}
+    slots = {k: fixed[k] for k in keys if k in fixed}
+    free = [i for i in range(CURVE_LINES) if i not in slots.values()]
+    return [slots[k] if k in slots else free.pop(0) for k in keys]
+
+
+def curve_chart(listed, rows, stable):
+    """完整表格页上的大图：前 CURVE_LINES 个有走势的队友，横轴是一起打的第几局，纵轴是累计 RP（都从 0 开始）。
+    灰色虚线是参照：这个范围里所有排位局的场均 RP 一直打下去的样子（线在它上面 = 和这个人一起比平时上分快）。
+    rows：这个范围里的所有对局；stable：见 curve_slots。没有可画的队友返回 None。
+    表里这几个人那一行的小曲线也换成同一种颜色（m["slot"]）。"""
+    shown = [m for m in listed if m["spark"]][:CURVE_LINES]
+    if not shown:
+        return None
+    n = max(len(m["rp_steps"]) for m in shown)
+    values = [0] + [s["total"] for m in shown for s in m["rp_steps"]]
+    low, high = min(values), max(values)
+    pad = max(20, (high - low) * 0.08)
+    low, high = low - pad, high + pad
+
+    def x(i):
+        return i / n * CURVE_W
+
+    def y(v):
+        return CURVE_H - (v - low) / (high - low) * CURVE_H
+
+    def top(v):  # 网页上的位置（百分比）：刻度、圆点是 HTML，不跟着图拉伸变形
+        return round(y(v) / CURVE_H * 100, 2)
+
+    step = nice_step(high - low, 4)
+    ticks = range(math.ceil(low / step) * step, math.floor(high / step) * step + 1, step)
+    x_step = nice_step(n, 6)
+    rps = [r["rp_delta"] for r in rows if r["rp_delta"] is not None]
+    avg = sum(rps) / len(rps) if rps else None
+    series = []
+    for m, slot in zip(shown, curve_slots([m["key"] for m in shown], stable)):
+        m["slot"] = slot
+        totals = [0] + [s["total"] for s in m["rp_steps"]]
+        series.append({
+            "name": m["name"], "slot": slot, "games": len(m["rp_steps"]), "total": m["rp_total"],
+            "total_class": m["rp_total_class"],
+            "line": " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(totals)),
+            "end": {"left": round(x(len(totals) - 1) / CURVE_W * 100, 2), "top": top(totals[-1])},
+            # 页面上的脚本用：鼠标停在第 i 局时每个人的 [位置, 累计, 这局, 时间]
+            "points": [[top(s["total"]), signed(s["total"]), signed(s["delta"]), s["when"]] for s in m["rp_steps"]],
+        })
+    return {
+        "w": CURVE_W,
+        "h": CURVE_H,
+        "n": n,
+        "series": series,
+        "y_ticks": [{"y": round(y(v), 1), "top": top(v), "label": "0" if v == 0 else signed(v), "zero": v == 0} for v in ticks],
+        "x_ticks": [{"left": round(i / n * 100, 2), "label": i} for i in range(x_step, n + 1, x_step)],
+        "ref": None if avg is None else {"y1": round(y(0), 1), "y2": round(y(avg * n), 1), "avg": signed(round(avg))},
+    }
 
 
 MIN_COMBO_GAMES = 2  # 传奇组合：出现过这么多局才列出
@@ -959,6 +1064,10 @@ def stats(part=None):
     in_range = rows[-30:] if range_key == "30" else rows
     all_mates = storage.all_teammates(db(), names)
     mates = teammate_table(in_range, all_mates)
+    curves = None
+    if part == "mates":  # 和队友一起的 RP 走势（大图）只在完整的表格页；颜色按所有对局里的顺序，换范围不变色
+        stable = mates if in_range is rows else teammate_table(rows, all_mates)
+        curves = curve_chart(mates, in_range, [m["key"] for m in stable if m["spark"]])
     legends, no_legend = legend_table(in_range)
     combos, combo_known = combo_table(in_range, all_mates)
     weapons, weapon_all = weapon_table(in_range, storage.all_weapon_holds(db(), names))
@@ -972,6 +1081,8 @@ def stats(part=None):
         everyone=group_numbers(in_range),  # 参照：这个范围里的所有对局
         mates=mates,
         min_mate_games=MIN_MATE_GAMES,
+        curves=curves,
+        min_curve_games=MIN_CURVE_GAMES,
         legends=legends,
         no_legend=no_legend,
         combos=combos,

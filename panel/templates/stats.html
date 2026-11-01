@@ -2,6 +2,7 @@
 {% from "_legend.html" import legend_icon, combo_icons %}
 {% from "_peek.html" import peek_foot, back_link with context %}
 {% from "_radar.html" import radar_card, radar_script with context %}
+{% from "_curves.html" import spark_cell, spark_head, curve_card, curve_script %}
 {% block title %}数据 · Evo{% endblock %}
 
 {# 数据页"我的"：两列卡片（2026-10-28 用户决定），每张先列 peek 行、只放最要紧的几列；点卡片打开完整的表格
@@ -72,19 +73,20 @@
   {% endif %}
 </section>
 
-{# 常一起玩的队友：一起打几局、场均名次（自己的）；"所有对局"参照缩成表下一行 #}
+{# 常一起玩的队友：一起打几局、场均名次（自己的）、RP 走势（小曲线 + 累计）；"所有对局"参照缩成表下一行 #}
 <section class="card stats-card peek-card" aria-labelledby="h-mates">
   <div class="card-head"><h2 id="h-mates">常一起玩的队友 · {{ ranges[range_key] }}</h2></div>
   {% if mates %}
   <div class="table-wrap">
     <table class="stats-table peek-table">
-      <thead><tr><th scope="col">队友</th><th scope="col" class="right">一起打</th><th scope="col" class="right">场均名次</th></tr></thead>
+      <thead><tr><th scope="col">队友</th><th scope="col" class="right">一起打</th><th scope="col" class="right">场均名次</th>{{ spark_head(min_curve_games) }}</tr></thead>
       <tbody>
         {% for m in mates[:peek] %}
         <tr>
           <th scope="row"><span class="stats-name">{{ m.name }}</span></th>
           <td class="right"><span class="num">{{ m.games }}</span> 局</td>
           <td class="right num">{{ m.avg_place }}</td>
+          {{ spark_cell(m) }}
         </tr>
         {% endfor %}
       </tbody>
@@ -198,7 +200,8 @@
 </section>
 
 {% elif part == 'mates' %}
-{# 每张表第一行是"所有对局"（参照）：和某个队友、某个传奇的数字对着看，才知道是好是坏 #}
+{# 上面是和队友一起的 RP 走势（大图）；每张表第一行是"所有对局"（参照）：和某个队友、某个传奇的数字对着看，才知道是好是坏 #}
+{% if mates %}{{ curve_card(curves, ranges[range_key], min_curve_games) }}{% endif %}
 <section class="card stats-card" aria-labelledby="h-mates">
   <div class="card-head"><h2 id="h-mates">常一起玩的队友 · {{ ranges[range_key] }}</h2></div>
   {% if mates %}
@@ -211,6 +214,7 @@
           <th scope="col" class="right">冠军</th>
           <th scope="col" class="right">场均名次</th>
           <th scope="col" class="right">场均 RP</th>
+          {{ spark_head(min_curve_games) }}
         </tr>
       </thead>
       <tbody>
@@ -220,9 +224,10 @@
           <td class="right"><span class="num">{{ everyone.wins }}</span> 次<span class="stats-rate num">{{ everyone.win_rate }}</span></td>
           <td class="right num">{{ everyone.avg_place }}</td>
           <td class="right num rp-{{ everyone.rp_class }}">{{ everyone.avg_rp }}</td>
+          <td></td>
         </tr>
         {% for m in mates %}
-        <tr>
+        <tr{% if m.slot is not none %} data-hl="{{ m.slot }}"{% endif %}>
           <th scope="row">
             <span class="stats-name"{% if m.player_id %} title="ID {{ m.player_id }}"{% endif %}>{{ m.name }}</span>
             <span class="stats-sub">上次一起：{{ m.last }}</span>
@@ -231,12 +236,14 @@
           <td class="right"><span class="num">{{ m.wins }}</span> 次<span class="stats-rate num">{{ m.win_rate }}</span></td>
           <td class="right num">{{ m.avg_place }}</td>
           <td class="right num rp-{{ m.rp_class }}">{{ m.avg_rp }}</td>
+          {{ spark_cell(m) }}
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   <p class="stats-note">*将鼠标停在队友名字上可以看到ID</p>
+  {% if curves %}{{ curve_script() }}{% endif %}
   {% else %}
   <div class="stats-empty">这个范围里还没有一起打过 {{ min_mate_games }} 局以上的队友</div>
   {% endif %}

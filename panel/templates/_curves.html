@@ -1,0 +1,136 @@
+{# 和队友一起的 RP 走势（2026-11-01 用户要的"和每个队友的上分趋势"，数字在 panel_app.add_sparks / curve_chart）：
+   累计 RP，从 0 开始，只算读到了 RP 的排位局；一起打满 5 局排位才画线。
+   用 {% from "_curves.html" import ... %} 导入 #}
+
+{# 队友表每行最后一格：小曲线（上下所有行同一个比例）+ 累计 RP。在大图里的人用大图里那种颜色 #}
+{% macro spark_cell(m) -%}
+<td class="right spark-col"><span class="spark-cell">
+  {%- if m.spark %}<svg class="spark{% if m.slot is not none %} series-{{ m.slot }}{% endif %}" width="{{ m.spark.w }}" height="{{ m.spark.h }}" viewBox="0 0 {{ m.spark.w }} {{ m.spark.h }}" aria-hidden="true">
+    <line class="spark-zero" x1="0" x2="{{ m.spark.w }}" y1="{{ m.spark.zero }}" y2="{{ m.spark.zero }}"></line>
+    <polyline class="spark-line" points="{{ m.spark.line }}"></polyline>
+    <circle class="spark-end" cx="{{ m.spark.end[0] }}" cy="{{ m.spark.end[1] }}" r="3"></circle>
+  </svg>
+  {%- else %}<span class="spark-none" aria-hidden="true"></span>{% endif -%}
+  <span class="num rp-{{ m.rp_total_class }}">{{ m.rp_total }}</span>
+</span></td>
+{%- endmacro %}
+
+{% macro spark_head(min_games) -%}
+<th scope="col" class="right spark-col" title="和这名队友一起打的排位局，RP 一局一局加起来；一起打满 {{ min_games }} 局排位才画线">RP 走势</th>
+{%- endmacro %}
+
+{# 完整表格页上面的大图：前 5 个人一人一条线，灰色虚线是所有对局的平均。鼠标停在图上（或用方向键）逐局看 #}
+{% macro curve_card(chart, range_label, min_games) %}
+<section class="card curve-card" aria-labelledby="h-curves">
+  <div class="card-head"><h2 id="h-curves">和队友一起的 RP 走势 · {{ range_label }}</h2></div>
+  {% if chart %}
+  <div class="curve-key">
+    {% for s in chart.series %}
+    <span class="series-{{ s.slot }}" data-hl="{{ s.slot }}"><i aria-hidden="true"></i>{{ s.name }}<span class="num rp-{{ s.total_class }}">{{ s.total }}</span></span>
+    {% endfor %}
+    {% if chart.ref %}<span class="key-ref"><i aria-hidden="true"></i>你的平均<span class="num">每局 {{ chart.ref.avg }}</span></span>{% endif %}
+  </div>
+  <div class="curve-plot" tabindex="0" data-curves
+       aria-label="累计 RP：{% for s in chart.series %}{{ s.name }} {{ s.games }} 局 {{ s.total }}；{% endfor %}{% if chart.ref %}你的平均每局 {{ chart.ref.avg }}。{% endif %}用左右方向键逐局查看">
+    <svg viewBox="0 0 {{ chart.w }} {{ chart.h }}" preserveAspectRatio="none" aria-hidden="true">
+      {% for t in chart.y_ticks %}<line class="curve-grid{% if t.zero %} zero{% endif %}" x1="0" x2="{{ chart.w }}" y1="{{ t.y }}" y2="{{ t.y }}"></line>{% endfor %}
+      {% if chart.ref %}<line class="curve-ref" x1="0" x2="{{ chart.w }}" y1="{{ chart.ref.y1 }}" y2="{{ chart.ref.y2 }}"></line>{% endif %}
+      {% for s in chart.series|reverse %}<polyline class="curve-line series-{{ s.slot }}" data-line="{{ s.slot }}" points="{{ s.line }}"></polyline>{% endfor %}
+    </svg>
+    {% for t in chart.y_ticks %}<span class="curve-ytick num" style="top: {{ t.top }}%" aria-hidden="true">{{ t.label }}</span>{% endfor %}
+    {% for s in chart.series %}<span class="curve-end series-{{ s.slot }}" data-line="{{ s.slot }}" style="left: {{ s.end.left }}%; top: {{ s.end.top }}%" aria-hidden="true"></span>{% endfor %}
+    <span class="curve-cross" hidden aria-hidden="true"></span>
+    <div class="curve-tip" hidden aria-live="polite"></div>
+  </div>
+  <div class="curve-xaxis" aria-hidden="true">
+    {% for t in chart.x_ticks %}<span class="num" style="left: {{ t.left }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+  <p class="curve-caption">横轴：一起打的第几局（只算读到了 RP 的排位局）</p>
+  <script type="application/json" class="curve-data">{{ {"n": chart.n, "series": chart.series}|tojson }}</script>
+  {% else %}
+  <div class="stats-empty">这个范围里还没有和同一名队友一起打满 {{ min_games }} 局排位</div>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{# 大图的脚本：竖线跟着鼠标对到最近的一局，提示框列出每个人到这一局的累计、这局的 RP 和时间；
+   键盘：左右方向键逐局、Esc 收起。鼠标停在图例或表里那一行上：只突出那个人的线 #}
+{% macro curve_script() %}
+<script>
+(function () {
+  document.querySelectorAll("[data-curves]").forEach(function (plot) {
+    var card = plot.closest(".curve-card");
+    var data = JSON.parse(card.querySelector(".curve-data").textContent);
+    var cross = plot.querySelector(".curve-cross"), tip = plot.querySelector(".curve-tip");
+    var dots = data.series.map(function (s) {
+      var dot = document.createElement("span");
+      dot.className = "curve-dot series-" + s.slot;
+      dot.hidden = true;
+      plot.appendChild(dot);
+      return dot;
+    });
+    var at = 0;
+
+    function part(tag, cls, text) {  // 名字是识别出来的文字：用 textContent，不拼成 HTML
+      var el = document.createElement(tag);
+      if (cls) el.className = cls;
+      if (text) el.textContent = text;
+      return el;
+    }
+
+    function show(i) {
+      at = Math.max(1, Math.min(data.n, i));
+      var left = at / data.n * 100;
+      cross.style.left = left + "%";
+      cross.hidden = false;
+      tip.replaceChildren(part("div", "curve-tip-head", "一起打的第 " + at + " 局"));
+      data.series.forEach(function (s, k) {
+        var p = s.points[at - 1];  // 和这个人一起打的局比 at 少：这条线已经到头了，不列
+        dots[k].hidden = !p;
+        if (!p) return;
+        dots[k].style.left = left + "%";
+        dots[k].style.top = p[0] + "%";
+        var row = part("div", "curve-tip-row series-" + s.slot);
+        row.append(part("i"), part("span", "num", p[1]), part("span", "curve-tip-name", s.name),
+                   part("span", "curve-tip-sub", "这局 " + p[2] + " · " + p[3]));
+        tip.appendChild(row);
+      });
+      tip.classList.toggle("flip", left > 55);  // 靠右时提示框放到竖线左边
+      tip.style.left = left + "%";
+      tip.hidden = false;
+    }
+
+    function hide() {
+      cross.hidden = tip.hidden = true;
+      dots.forEach(function (dot) { dot.hidden = true; });
+    }
+
+    plot.addEventListener("pointermove", function (e) {
+      var box = plot.getBoundingClientRect();
+      show(Math.round((e.clientX - box.left) / box.width * data.n));
+    });
+    plot.addEventListener("pointerleave", function () { if (document.activeElement !== plot) hide(); });
+    plot.addEventListener("focus", function () { show(at || data.n); });
+    plot.addEventListener("blur", hide);
+    plot.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        show((at || data.n) + (e.key === "ArrowRight" ? 1 : -1));
+      } else if (e.key === "Escape") {
+        hide();
+      }
+    });
+
+    document.querySelectorAll("[data-hl]").forEach(function (el) {
+      el.addEventListener("mouseenter", function () {
+        card.classList.add("focusing");
+        card.querySelectorAll("[data-line]").forEach(function (line) {
+          line.classList.toggle("on", line.dataset.line === el.dataset.hl);
+        });
+      });
+      el.addEventListener("mouseleave", function () { card.classList.remove("focusing"); });
+    });
+  });
+})();
+</script>
+{% endmacro %}
