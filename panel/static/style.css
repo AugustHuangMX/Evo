@@ -176,6 +176,10 @@ a { color: inherit; text-decoration: none; }
   background: var(--info-bg); border-radius: 6px; color: var(--info-text); }
 .banner-info svg { flex: none; }
 .banner-info form { margin: 0; }
+/* 开发者公告（notice_check.py）：普通的和"有新版本"一样是蓝色；重要的是黄色，前面写"重要公告"（不只靠颜色区分） */
+.notice-important { border-color: var(--warn-border); background: var(--warn-bg); color: var(--warn-text); }
+.notice-important .btn-text:hover { background: color-mix(in srgb, var(--warn-text) 12%, transparent); }
+.notice-tag { font-weight: 600; margin-right: 8px; }
 .banner-link { font-weight: 500; text-decoration: underline; text-underline-offset: 3px; padding: 6px 4px; }
 .banner-link:hover { text-decoration-thickness: 2px; }
 .btn-text { font: inherit; padding: 6px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }

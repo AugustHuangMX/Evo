@@ -1,5 +1,5 @@
-"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；会联网的只有"检查更新"（update_check.py，可以关掉）、
-你点了才下载的一键更新（updater.py），和你同意了才发送的匿名统计（telemetry.py）。
+"""本地面板：用浏览器查看和修正战绩。只在本机（127.0.0.1）运行；会联网的只有"检查更新"和公告（update_check.py、
+notice_check.py，共用一个开关，可以关掉）、你点了才下载的一键更新（updater.py），和你同意了才发送的匿名统计（telemetry.py）。
 
 运行：python code/panel_app.py                    读正式数据库 data/evo.db
 演示：python code/panel_app.py --db data/demo.db   读伪数据（先运行 python tools/demo_data.py 生成）
@@ -32,6 +32,7 @@ import game_aspect
 import game_lang
 import global_stats
 import map_rotation
+import notice_check
 import panel_seasons
 import radar
 import ranks
@@ -198,6 +199,8 @@ def template_globals():
         "update_offer": offer,
         "update_job": updater.state(offer),
         "update_result": updater.take_result(),  # 刚一键更新过：顶部说一次"已更新到 x.y.z"或"没装上"
+        # 开发者公告（notice_check.py）："自动检查新版本"开着才有；点了"知道了"的不再显示
+        "notices": notice_check.visible(),
         # 搬数据文件夹（data_move.py）：正在搬时顶部显示进度；刚搬好时顶部说一次搬到了哪里
         "move_job": data_move.state(),
         "move_result": data_move.take_result(),
@@ -1520,11 +1523,23 @@ def update_auto():
     on = request.form.get("auto") == "1"
     app_settings.set_value("update_auto", on)
     if on:
-        # 马上在后台查一次（最多几秒），页面不用等；托盘程序之后每 8 小时查一次
-        threading.Thread(target=update_check.check, name="update-check-now", daemon=True).start()
-        flash("已开启自动检查：Evo 开着时每 8 小时联网检查一次有没有新版本。", "ok")
+        # 马上在后台查一次新版本、读一次公告（最多几秒），页面不用等；托盘程序之后每 8 小时查新版本、每 30 分钟读公告
+        threading.Thread(target=check_now, name="update-check-now", daemon=True).start()
+        flash("已开启自动检查：Evo 开着时每 8 小时检查一次新版本、每 30 分钟看一次有没有公告。", "ok")
     else:
-        flash("已关闭自动检查。需要时可以在设置页手动检查更新。", "ok")
+        flash("已关闭自动检查，也不再显示公告。需要时可以在设置页手动检查更新。", "ok")
+    return back_to_page()
+
+
+def check_now():
+    update_check.check()
+    notice_check.check()
+
+
+@app.post("/notice/dismiss")
+def dismiss_notice():
+    """公告上的"知道了"：这条不再显示（notice_check.dismiss）。"""
+    notice_check.dismiss(request.form.get("id", ""))
     return back_to_page()
 
 

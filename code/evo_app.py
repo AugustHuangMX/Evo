@@ -154,6 +154,53 @@ def start_update_checker(log, notify, stop, first_delay=UPDATE_FIRST_DELAY):
     threading.Thread(target=loop, name="update-check", daemon=True).start()
 
 
+NOTICE_FIRST_DELAY = 20  # 秒：启动后等一会儿再读公告，排在检查新版本后面
+NOTICE_FIRST_DELAY_BACKGROUND = 125  # 开机自启时：等网络连上
+NOTICE_EVERY = 30 * 60  # 之后每 30 分钟读一次（2026-11-01 用户决定）
+NOTICE_AGAIN = 5 * 60  # 打开窗口时，上次读过了 5 分钟就再读一次
+NOTICE_GAME_WAIT = 60  # 有重要公告要提醒、Apex 开着：每分钟看一次游戏关了没有
+
+
+def start_notice_checker(log, notify, stop, game_running, first_delay=NOTICE_FIRST_DELAY):
+    """开发者公告（notice_check.py）："自动检查新版本"开着才联网：启动 20 秒（开机自启时约 2 分钟）后读一次，
+    之后每 30 分钟一次；打开窗口时（notice_check.wake）上次读过了 5 分钟也读一次。
+    重要公告用托盘通知提醒一次，Apex 开着时不弹（游戏画面上不盖东西），等关了游戏再弹。
+    日志只在结果变了的时候写（读到的公告变了、读不到了、又读到了），免得每半小时写一行。"""
+    import notice_check
+
+    def loop():
+        if stop.wait(first_delay):
+            return
+        next_check, said = 0.0, None
+        while not stop.is_set():
+            if time.monotonic() >= next_check:
+                next_check = time.monotonic() + NOTICE_EVERY
+                result = notice_check.check()
+                if result is not None:
+                    if result["ok"]:
+                        ids = "、".join(n["id"] for n in result["notices"])
+                        text = f"公告：现在有 {len(result['notices'])} 条（{ids}）" if ids else "公告：现在没有公告"
+                    else:
+                        text = f"公告：没读到（{result['error']}）"
+                    if text != said:
+                        log(text)
+                        said = text
+            pending = notice_check.to_notify()
+            if pending and not game_running():
+                for notice in pending:
+                    notify(notice["text"], "Evo 公告")
+                    notice_check.mark_notified(notice["id"])
+                    log(f"公告：用托盘通知提醒了 {notice['id']}")
+                pending = []
+            wait = NOTICE_GAME_WAIT if pending else max(1.0, next_check - time.monotonic())
+            if notice_check.wake.wait(wait):
+                notice_check.wake.clear()
+                if notice_check.due(NOTICE_AGAIN):
+                    next_check = 0.0
+
+    threading.Thread(target=loop, name="notice-check", daemon=True).start()
+
+
 STATS_FIRST_DELAY = 60  # 秒：启动后等一会儿再发匿名统计，排在检查新版本后面
 STATS_FIRST_DELAY_BACKGROUND = 180  # 开机自启时：等网络连上
 STATS_EVERY = 3600  # 之后每小时一次（没有要发的就不联网；2026-10-22 用户决定，原来是 8 小时）
@@ -622,10 +669,16 @@ def main():
         recorder.toggle_pause()
 
     stop_update_checker = threading.Event()
+    import notice_check
+
+    def show_window():
+        notice_check.wake.set()  # 上次读公告过了 5 分钟就再读一次
+        panel.open()
 
     def shut_down(reason):
         log(reason)
         stop_update_checker.set()
+        notice_check.wake.set()  # 读公告的线程在等它，不用等满半小时
         recorder.quit()
         panel.close()
         icon.stop()
@@ -642,7 +695,7 @@ def main():
                       relaunch=data_move.relaunch)
 
     icon.menu = pystray.Menu(
-        pystray.MenuItem("打开 Evo", lambda _i, _m: panel.open(), default=True),
+        pystray.MenuItem("打开 Evo", lambda _i, _m: show_window(), default=True),
         pystray.MenuItem(lambda _m: "继续记录" if recorder.paused else "暂停记录", toggle_pause),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("退出", quit_app),
@@ -652,9 +705,12 @@ def main():
         try:
             ic.visible = True
             recorder.start()
-            listen_for_show(lambda: panel.open())  # 再次双击 Evo 时弹出窗口
+            listen_for_show(show_window)  # 再次双击 Evo 时弹出窗口
             start_update_checker(log, icon.notify, stop_update_checker,  # 用户同意了才联网检查新版本
                                  UPDATE_FIRST_DELAY_BACKGROUND if args.background else UPDATE_FIRST_DELAY)
+            start_notice_checker(log, icon.notify, stop_update_checker,  # 公告：和检查新版本共用一个开关
+                                 lambda: game_running(recorder.game_names),
+                                 NOTICE_FIRST_DELAY_BACKGROUND if args.background else NOTICE_FIRST_DELAY)
             start_telemetry(log, stop_update_checker,  # 用户同意了才发匿名统计
                             STATS_FIRST_DELAY_BACKGROUND if args.background else STATS_FIRST_DELAY)
             try:  # 绑定了微信小程序才联网，定时上传战绩（cloud_sync.py）。小程序的文件只在开发者电脑上，

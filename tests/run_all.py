@@ -25,6 +25,7 @@ import test_legend_icons
 import test_legends
 import test_light
 import test_map_rotation
+import test_notice
 import test_player_name
 import test_radar
 import test_ranks
@@ -68,6 +69,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "六维图（和同分段的玩家比、没开匿名统计时锁住、后台下载）": test_radar,
          "总览页\"关注我\"（B 站、小黑盒、Evo 官网）、右上角派圈助手、设置页支持我": test_follow,
          "总览页的地图轮换（下载、中文名、倒计时、过了点、连不上、设置页的开关）": test_map_rotation,
+         "开发者公告（和检查新版本共用开关、读公告、显示规则、托盘提醒、提示条）": test_notice,
          "最常用武器（认武器、计时、记进数据库、数据页）": test_weapons,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
          "诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_diag,

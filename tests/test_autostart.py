@@ -136,7 +136,7 @@ def panel_checks():
         app_settings.set_value("update_auto", None)
         app_settings.set_value(autostart.ASKED_KEY, None)
         first = page()
-        out["第一次打开：先只问\"自动检查新版本\"，不同时问开机自启"] = "要不要自动检查新版本？" in first and ask not in first
+        out["第一次打开：先只问\"自动检查新版本\"，不同时问开机自启"] = "要不要自动检查新版本和公告？" in first and ask not in first
         app_settings.set_value("update_auto", False)
         out["回答了检查更新以后：顶部问开机自启"] = ask in page() and ask in page("/matches")
 
