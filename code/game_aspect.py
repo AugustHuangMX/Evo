@@ -10,7 +10,7 @@
 
 查看自动检测的结果：python code/game_aspect.py
 
-app_settings 用到时才 import：诊断工具（evo_diag.py）只读视频设置文件，不能连带 import paths.py
+app_settings 用到时才 import：测试工具（evo_tester.py）只读视频设置文件，不能连带 import paths.py
 （它一 import 就会在程序旁边建数据文件夹）。
 """
 

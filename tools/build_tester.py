@@ -1,7 +1,7 @@
-"""打包诊断工具：python tools/build_diag.py  →  dist/Evo诊断工具.exe（单个 exe，发给记不下战绩的玩家；见 code/evo_diag.py）
+"""打包测试工具：python tools/build_tester.py  →  dist/Evo测试工具.exe（单个 exe，发给测试员和记不下战绩的玩家；见 code/evo_tester.py）
 
 1. 没有程序图标就先生成（和 Evo 同一个，见 build.py）
-2. 用 PyInstaller 按 tools/diag.spec 打包（单个 exe，不带识别引擎和 OpenCV）
+2. 用 PyInstaller 按 tools/tester.spec 打包（单个 exe，不带识别引擎和 OpenCV）
 3. 自检：真的运行打包好的 exe 截几秒（把 explorer.exe 当作游戏），压缩包里要有截图和诊断信息
 4. 打印大小和 SHA-256（发群文件、官网时核对用）
 
@@ -17,14 +17,14 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent  # 项目文件夹（本文件在 tools/ 里）
-SPEC = ROOT / "tools" / "diag.spec"
-EXE = ROOT / "dist" / "Evo诊断工具.exe"
+SPEC = ROOT / "tools" / "tester.spec"
+EXE = ROOT / "dist" / "Evo测试工具.exe"
 ICON = ROOT / "build" / "icon" / "evo.ico"
 
 
 def self_check():
     """真的运行打包好的 exe 截几秒，返回 (通过没有, 说明)。"""
-    with tempfile.TemporaryDirectory(prefix="evo-diag-check-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="evo-tester-check-") as tmp:
         result = subprocess.run([str(EXE), "--minutes", "0.12", "--game", "explorer.exe", "--out", tmp, "--no-wait"],
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
                                 errors="replace", timeout=180)
@@ -47,7 +47,7 @@ def main():
 
         build.make_icon()
     subprocess.run([sys.executable, "-m", "PyInstaller", str(SPEC), "--noconfirm", "--distpath", str(ROOT / "dist"),
-                    "--workpath", str(ROOT / "build" / "diag")], check=True)
+                    "--workpath", str(ROOT / "build" / "tester")], check=True)
     ok, text = self_check()
     print(f"\n自检{'通过' if ok else '没通过'}：{text}")
     size = EXE.stat().st_size / 2 ** 20

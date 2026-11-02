@@ -1,6 +1,6 @@
-"""诊断工具（code/evo_diag.py，打包成 Evo诊断工具.exe 给玩家用）和看压缩包的脚本（tools/diag_report.py）。
+"""测试工具（code/evo_tester.py、tester_capture.py、tester_info.py，打包成 Evo测试工具.exe 给玩家用）和看压缩包的脚本（tools/diag_report.py）。
 
-- 轻：另开一个 Python 只导入 evo_diag，检查没加载 paths.py（它一 import 就会在程序旁边建数据文件夹）、识别引擎、OpenCV
+- 轻：另开一个 Python 只导入 evo_tester，检查没加载 paths.py（它一 import 就会在程序旁边建数据文件夹）、识别引擎、OpenCV
 - 截屏（假摄像头、假时钟，不真的等）：游戏没开时每 10 秒看一眼、每分钟最多存一张；看到游戏后每 2 秒一张；画面没变不存；
   比 1920 宽的缩到 1920 宽，每分钟另存一张原尺寸；没有新画面、出错都记下，连续 30 次没有新画面提示一次；
   游戏关掉（连续 3 次看不到进程）就停；到时间、截满、硬盘快满、按回车也停；每次截屏 captures.csv 一行；每分钟一次缩略图
@@ -12,7 +12,7 @@
 - diag_report：用真实截图（简体 16:9、英文 16:10 拉伸，按工具的做法缩到 1920 宽）做压缩包，认得出各画面、传奇和游戏语言
   （截图找不到就跳过）
 
-运行：python tests/test_diag.py
+运行：python tests/test_tester.py
 """
 
 import csv
@@ -30,8 +30,9 @@ from fake_game import CODE, ROOT, SHOTS, MissingShots, load, report, shot  # 要
 import numpy as np
 from PIL import Image
 
-import evo_diag
 import game_aspect
+import tester_capture
+import tester_info
 
 GAME = "r5apex.exe"
 
@@ -79,7 +80,7 @@ class ScriptCamera:
 
 def make_recorder(folder, camera, names, clock, **options):
     logs = []
-    rec = evo_diag.Recorder(folder, camera, names, logs.append, clock=clock.monotonic, wait=clock.wait, now=clock.now,
+    rec = tester_capture.Recorder(folder, camera, names, logs.append, clock=clock.monotonic, wait=clock.wait, now=clock.now,
                             free_mb=options.pop("free_mb", lambda: 10 ** 6), **options)
     return rec, logs
 
@@ -177,9 +178,9 @@ def finder_checks(tmp):
     lonely = evo_dir(tmp / "find" / "lonely")
     exes = [(tmp / "find" / "progA" / "Evo.exe", "正在运行的 Evo"), (prog_b / "Evo.exe", "开机自启"),
             (tmp / "find" / "progA" / "Evo.exe", "开机自启")]
-    found = evo_diag.find_evo_data_dirs(exes=exes, local_dir=local)
-    only_legacy = evo_diag.find_evo_data_dirs(exes=[], local_dir=lonely)
-    none = evo_diag.find_evo_data_dirs(exes=[(empty / "x" / "Evo.exe", "开机自启")], local_dir=empty)
+    found = tester_info.find_evo_data_dirs(exes=exes, local_dir=local)
+    only_legacy = tester_info.find_evo_data_dirs(exes=[], local_dir=lonely)
+    none = tester_info.find_evo_data_dirs(exes=[(empty / "x" / "Evo.exe", "开机自启")], local_dir=empty)
     want = [(default, "正在运行的 Evo"), (moved, "开机自启"), (pointed, "指路文件")]
     return {
         f"程序旁边的 Evo Tracker Data、data_location.txt、指路文件都找到，同一个只算一次（{found}）": found == want,
@@ -193,17 +194,17 @@ def info_checks(tmp):
     video.write_text('"VideoConfig"\n{\n\t"setting.defaultres"\t\t"3840"\n\t"setting.defaultresheight"\t\t"2160"\n'
                      '\t"setting.fullscreen"\t\t"1"\n\t"setting.nowindowborder"\t\t"0"\n\t"setting.gamma"\t\t"1.0"\n}\n',
                      encoding="utf-8")
-    apex = evo_diag.apex_video()
+    apex = tester_info.apex_video()
     video.unlink()
     settings_dir = tmp / "settings"
     settings_dir.mkdir()
     (settings_dir / "settings.json").write_text(json.dumps({"game_language": "auto", "game_aspect": "16:10",
                                                             "keep_all_screenshots": False, "cloud_device": "秘密",
                                                             "telemetry_id": "x"}), encoding="utf-8")
-    picked = evo_diag.evo_settings(settings_dir)
-    info = evo_diag.collect_info(None, None, "测试时不建截屏对象", [(settings_dir, "开机自启")])
+    picked = tester_info.evo_settings(settings_dir)
+    info = tester_info.collect_info(None, None, "测试时不建截屏对象", [(settings_dir, "开机自启")])
     mons = info["显示器"]
-    text = evo_diag.render_info(info)
+    text = tester_info.render_info(info)
     return {
         f"这台电脑上读得到显示器，有一个是主显示器、每个都有 HDR 一栏（{mons}）":
             isinstance(mons, list) and sum(m["primary"] for m in mons) == 1 and all("hdr" in m for m in mons),
@@ -216,14 +217,14 @@ def info_checks(tmp):
 def zip_checks(tmp):
     folder = tmp / "pack" / "Evo诊断_x"
     (folder / "frames").mkdir(parents=True)
-    (folder / "frames" / "0001.jpg").write_bytes(evo_diag.encode_jpeg(np.zeros((1080, 1920, 3), np.uint8)))
+    (folder / "frames" / "0001.jpg").write_bytes(tester_capture.encode_jpeg(np.zeros((1080, 1920, 3), np.uint8)))
     (folder / "info.txt").write_text("信息\n" * 100, encoding="utf-8")
     logs = tmp / "pack" / "evo" / "logs"
     logs.mkdir(parents=True)
     for name in ("evo.log", "evo.log.1"):
         (logs / name).write_text("Evo 0.3.8 启动\n", encoding="utf-8")
-    copied = evo_diag.copy_evo_logs([(logs.parent, "开机自启")], folder)
-    zip_path = evo_diag.make_zip(folder, tmp / "pack" / "Evo诊断_x.zip")
+    copied = tester_info.copy_evo_logs([(logs.parent, "开机自启")], folder)
+    zip_path = tester_capture.make_zip(folder, tmp / "pack" / "Evo诊断_x.zip")
     with zipfile.ZipFile(zip_path) as zf:
         kinds = {i.filename: i.compress_type for i in zf.infolist()}
     return {
@@ -237,17 +238,17 @@ def zip_checks(tmp):
 
 
 def light_checks():
-    code = ("import sys, evo_diag; print(','.join(m for m in ('paths', 'app_settings', 'cv2', 'rapidocr', 'onnxruntime')"
+    code = ("import sys, evo_tester; print(','.join(m for m in ('paths', 'app_settings', 'cv2', 'rapidocr', 'onnxruntime')"
             " if m in sys.modules))")
     out = subprocess.run([sys.executable, "-c", code], cwd=CODE, capture_output=True, text=True, check=True)
     loaded = [m for m in out.stdout.strip().split(",") if m]
-    return {f"只导入 evo_diag 不加载 paths.py、识别引擎、OpenCV（加载了：{'、'.join(loaded) or '无'}）": not loaded}
+    return {f"只导入 evo_tester 不加载 paths.py、识别引擎、OpenCV（加载了：{'、'.join(loaded) or '无'}）": not loaded}
 
 
 def real_checks(tmp):
     """真的截几秒：dxcam 截主显示器，把 explorer.exe 当作游戏（一定开着）。"""
     out = tmp / "real"
-    result = subprocess.run([sys.executable, str(CODE / "evo_diag.py"), "--minutes", "0.12", "--game", "explorer.exe",
+    result = subprocess.run([sys.executable, str(CODE / "evo_tester.py"), "--minutes", "0.12", "--game", "explorer.exe",
                              "--out", str(out), "--no-wait"], stdin=subprocess.DEVNULL, capture_output=True,
                             text=True, encoding="utf-8", timeout=120)
     zips = list(out.glob("*.zip"))
@@ -274,18 +275,18 @@ def fake_zip(tmp, name, images, video=None):
     for i, img in enumerate(images, 1):
         h, w = img.shape[:2]
         file = f"frames/{i:04d}_150000_{w}x{h}.jpg"
-        (folder / file).write_bytes(evo_diag.encode_jpeg(img, evo_diag.SMALL_WIDTH))
+        (folder / file).write_bytes(tester_capture.encode_jpeg(img, tester_capture.SMALL_WIDTH))
         rows.append({"序号": i, "时间": "15:00:00", "游戏开着": "是", "结果": "存了", "宽": w, "高": h, "文件": file})
     with open(folder / "captures.csv", "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, evo_diag.CSV_FIELDS)
+        writer = csv.DictWriter(f, tester_capture.CSV_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
-    info = evo_diag.collect_info(None, None, "测试", [])
+    info = tester_info.collect_info(None, None, "测试", [])
     info["Apex"]["视频设置"] = video or "没找到视频设置文件"
     info["截屏结果"] = {"看到的游戏进程": {GAME: "15:00:00"}}
     Path(folder, "info.json").write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
     Path(folder, "info.txt").write_text("测试\n", encoding="utf-8-sig")
-    return evo_diag.make_zip(folder, tmp / f"{name}.zip")
+    return tester_capture.make_zip(folder, tmp / f"{name}.zip")
 
 
 def run_report(zip_path):
@@ -320,8 +321,8 @@ def report_checks(tmp):
 
 
 def main():
-    print("诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）")
-    with tempfile.TemporaryDirectory(prefix="evo-diag-") as name:
+    print("测试工具（截屏、找 Evo、诊断信息、打包、看压缩包）")
+    with tempfile.TemporaryDirectory(prefix="evo-tester-") as name:
         tmp = Path(name)
         checks = {**light_checks(), **recorder_checks(tmp), **stop_checks(tmp), **finder_checks(tmp),
                   **info_checks(tmp), **zip_checks(tmp), **real_checks(tmp)}

@@ -14,7 +14,7 @@ import test_accounts
 import test_autostart
 import test_aspect
 import test_data_move
-import test_diag
+import test_tester
 import test_eliminated
 import test_follow
 import test_english
@@ -72,7 +72,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "开发者公告（和检查新版本共用开关、读公告、显示规则、托盘提醒、提示条）": test_notice,
          "最常用武器（认武器、计时、记进数据库、数据页）": test_weapons,
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
-         "诊断工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_diag,
+         "测试工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_tester,
          "游戏里的数据页（认出、读两栏、核对，录入历史赛季数据用）": test_season_stats,
          "录入历史赛季数据（新表、录入模式、记录程序读数据页）": test_season_import,
          "\"赛季\"页面（录入按钮、待核对、保存、历史赛季表、设置页那一行）": test_seasons_page}

@@ -1,4 +1,4 @@
-"""看玩家发来的诊断压缩包（开发工具；压缩包由 Evo诊断工具.exe 生成，见 code/evo_diag.py）。
+"""看玩家发来的诊断压缩包（开发工具；压缩包由 Evo测试工具.exe（原来的 Evo诊断工具.exe）生成，见 code/evo_tester.py）。
 
 用法：python tools/diag_report.py Evo诊断_xxx.zip [--csv 每张的结果.csv]
 
