@@ -1,5 +1,5 @@
 {
-  "_说明": "测试工具（code/evo_tester.py）的测试项目，窗口里按这个顺序列出来，测试员选一个。name、summary、steps 是给测试员看的。capture 是截法（做法在 code/tester_capture.py）：every = 游戏开着时每隔 interval 秒一张（画面没变不存），每 full_seconds 秒另存一张原尺寸；still = 画面停稳了、和上一张存的不一样才存一张原尺寸，嘀一声；weapons = 右下角手上的武器换了就存几张（整张缩小的 + 右下角无损的一块），嘀一声。evo：required = 要 Evo 开着（打完对答案），recommended = 最好开着，none = 不用。answers：打完要确认什么（matches = Evo 记下的每局，season_stats = Evo 读到的赛季数据）。checklist：给测试员看的名单（weapons = config/weapons.json 里的武器）。max_minutes、max_mb：最多录多久、多大",
+  "_说明": "测试工具（code/evo_tester.py）的测试项目，窗口里按这个顺序列出来，测试员选一个。name、summary、steps 是给测试员看的。capture 是截法（做法在 code/tester_capture.py）：every = 游戏开着时每隔 interval 秒一张（画面没变不存），每 full_seconds 秒另存一张原尺寸；still = 画面停稳了、和上一张存的不一样才存一张原尺寸，嘀一声；weapons = 右下角手上的武器换了就存几张（整张缩小的 + 右下角无损的一块），嘀一声。evo：required = 要 Evo 开着（打完对答案），recommended = 最好开着，none = 不用。answers：打完要确认什么（matches = Evo 记下的每局，season_stats = Evo 读到的赛季数据）。checklist：给测试员看的名单（weapons = config/weapons.json 里的武器）。remind_review、remind_minutes（打一局）：Evo 标了待确认的局攒到几局、游戏开着几分钟 Evo 一局没记下（或者 Evo 没开着录了几分钟）时提醒测试员可以结束了。max_minutes、max_mb：最多录多久、多大",
   "languages": ["简体中文", "繁體中文", "English", "其他"],
   "projects": {
     "match": {
@@ -15,6 +15,8 @@
       "full_seconds": 60,
       "evo": "required",
       "answers": "matches",
+      "remind_review": 2,
+      "remind_minutes": 60,
       "max_minutes": 180,
       "max_mb": 6000
     },

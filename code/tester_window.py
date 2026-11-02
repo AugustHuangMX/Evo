@@ -4,8 +4,10 @@
 - 档案：第一次打开时填（昵称、游戏语言、启动项），存在 exe 旁边，以后直接到"选项目"（可以点"改"）
 - 选项目：config/tester.json 里的几项，选一项看它的步骤；"打一局"要 Evo 开着，没看到就提醒（照样能开始）
 - 录制：截屏在另一个线程里跑（evo_tester.Session），窗口每 0.2 秒刷新一次：录了多久、游戏开没开、存了多少；
-  这一项的步骤；"靶场：武器"多一份武器名单可以打勾（只是给测试员自己记，不认图）；工具的提示（最近几行）
-- 收尾：备注（可以不写）→ 打包（也在另一个线程里，窗口不卡）
+  提醒（"截图够了，可以结束了"，黄色框）；这一项的步骤；"靶场：武器"多一份武器名单可以打勾（只是给测试员自己记，不认图）；工具的提示（最近几行）
+- 收尾："打一局"一局一局确认 Evo 记下的战绩（对 / 不对，不对就改成正确的），再问有没有漏记的局、大厅的段位和分数对不对，
+  可以勾"全部带上"（开发者要样本时）；"赛季数据页"看 Evo 读到了几项、核对了没有。备注（可以不写）→ 打包（也在另一个
+  线程里，窗口不卡；确认对了的局的截图打包前删掉，见 tester_answers.py）
 - 完成：压缩包在哪、多大，"打开文件夹""再测一项"
 关窗口时还在录、还没打包，先问一句，不悄悄丢掉。只用本窗口的按钮，不注册全局键盘钩子（原则 1）。
 
@@ -23,6 +25,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
+
+from tester_answers import FIELDS, rank_text
 
 # 颜色：同 panel/static/style.css 的深色
 BG, CARD, INSET = "#0D0F13", "#151820", "#0D0F13"
@@ -191,7 +195,8 @@ class TesterApp:
                 canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
 
         inner.bind("<Configure>", fit)
-        canvas.bind("<Configure>", lambda e: (canvas.itemconfigure(item, width=e.width), fit()))
+        # 等空闲时再看要不要滚动条：在这里直接放上 / 拿掉滚动条，里面那层不会跟着变窄（2026-11-02 试出来的）
+        canvas.bind("<Configure>", lambda e: (canvas.itemconfigure(item, width=e.width), canvas.after_idle(fit)))
         canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", wheel))
         canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
         return inner
@@ -323,7 +328,8 @@ class TesterApp:
     def start(self, project):
         self.project = project
         self.stop = threading.Event()
-        self.session = self.new_session(project, self.profile, lambda text: self.queue.put(("log", text)))
+        self.session = self.new_session(project, self.profile, lambda text: self.queue.put(("log", text)),
+                                        lambda text: self.queue.put(("notice", text)))
         self.state = "starting"
         self.started_at = time.monotonic()
         self.show_recording()
@@ -398,6 +404,16 @@ class TesterApp:
         self.v_log.see("end")
         self.v_log.config(state="disabled")
 
+    def _show_notice(self, text):
+        """录的时候的提醒：黄色框放在状态下面（最多留 3 条），提示区也写一行。"""
+        self._append_log(f"提醒：{text}")
+        if not hasattr(self, "notice") or not self.notice.winfo_exists():
+            return
+        boxes = self.notice.winfo_children()
+        if len(boxes) >= 3:
+            boxes[0].destroy()
+        self.warn(self.notice, f"{time.strftime('%H:%M')}  {text}", pady=(10, 0))
+
     def _refresh_recording(self):
         rec = self.session.recorder if self.session else None
         if not hasattr(self, "v_time") or not self.v_time.winfo_exists():
@@ -435,26 +451,141 @@ class TesterApp:
             self.button(bar, "返回", self.show_projects).pack(side="right", padx=(0, 8))
             return
         self.title(self.body, "录好了", f"结束的原因：{reason}。存了 {rec.saved} 张，{rec.mb:.0f} MB。")
-        box = self.card(self.body, pady=(14, 0))
+        bar = tk.Frame(self.body, bg=BG)  # 先放最下面的："打包"一直看得见
+        bar.pack(fill="x", side="bottom", pady=(12, 0))
+        status = tk.Label(bar, text="", font=self.f_body, fg=MUTED, bg=BG)
+        status.pack(side="left")
+        area = self.scroll_area(self.body)
+        kind = self.project.get("answers")
+        collect = lambda: None  # noqa: E731  对答案的项目才有要交给打包的答案
+        if kind == "matches":
+            collect = self.match_answers(area)
+        elif kind == "season_stats":
+            self.season_answers(area)
+        box = self.card(area, pady=(10, 0))
         self.label(box, "备注（可以不写）", bold=True)
         self.label(box, "比如哪里不对、大概几点几分，开发者看截图时好找", muted=True)
-        note = tk.Text(box, height=5, font=self.f_body, fg=TEXT, bg=INSET, insertbackground=TEXT, relief="flat",
+        note = tk.Text(box, height=4, font=self.f_body, fg=TEXT, bg=INSET, insertbackground=TEXT, relief="flat",
                        highlightthickness=1, highlightbackground=BORDER, highlightcolor=ACCENT, wrap="word",
                        padx=8, pady=6)
         note.pack(fill="x", pady=(4, 0))
-        bar = tk.Frame(self.body, bg=BG)
-        bar.pack(fill="x", side="bottom")
-        status = tk.Label(bar, text="", font=self.f_body, fg=MUTED, bg=BG)
-        status.pack(side="left")
 
         def pack_up():
             button.config(text="正在打包……", state="disabled")
             status.config(text="截图多时要一会儿，别关窗口")
-            text = note.get("1.0", "end").strip()
-            threading.Thread(target=lambda: self.queue.put(("packed", self.session.finish(text))), daemon=True).start()
+            text, answers = note.get("1.0", "end").strip(), collect()
+            threading.Thread(target=lambda: self.queue.put(("packed", self.session.finish(text, answers))),
+                             daemon=True).start()
 
         button = self.button(bar, "打包", pack_up, primary=True)
         button.pack(side="right")
+
+    def choice_row(self, parent, options, variable, bg=CARD):
+        """一排单选（还没选时都不选中）。"""
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill="x", pady=(4, 0))
+        for text, value in options:
+            tk.Radiobutton(row, text=text, value=value, variable=variable, font=self.f_body, fg=TEXT, bg=bg,
+                           selectcolor=INSET, tristatevalue="-", activebackground=bg, activeforeground=TEXT,
+                           highlightthickness=0).pack(side="left", padx=(0, 18))
+        return row
+
+    def match_answers(self, area):
+        """打一局：一局一局确认 Evo 记下的战绩，再问漏记、大厅。返回 collect()：交给 Session.finish 的答案。"""
+        record = self.session.evo_record()
+        matches = record["局"]
+        if record["数据库"] is None:
+            self.warn(area, "没找到 Evo 的战绩（这台电脑上没装 Evo，或者没打开过）。截图会全部带上")
+        elif not matches:
+            self.warn(area, "这段时间 Evo 一局都没记下，截图会全部带上。请在下面的备注里写一下打了几局、大概几点、第几名")
+        else:
+            self.label(area, f"这段时间 Evo 记下了 {len(matches)} 局。请一局一局看看对不对，不对就改成正确的。"
+                             "确认对了的局不带截图，压缩包会小很多；没选的局截图照样带上", bg=BG)
+        judged = {}
+        for i, match in enumerate(matches, 1):
+            box = self.card(area, pady=(10, 0))
+            facts = [f"第 {i} 局", f"{match['last_read']:%H:%M} 读完"]
+            facts += [str(match[k]) for k in ("mode", "map", "legend") if match.get(k)]
+            self.label(box, " · ".join(facts), bold=True)
+            if match.get("needs_review"):
+                self.label(box, f"Evo 标了待确认：{match.get('review_note') or '读得不确定'}", muted=True)
+            grid = tk.Frame(box, bg=CARD)
+            grid.pack(fill="x", pady=(6, 0))
+            values = {}
+            verdict = tk.StringVar(value="")
+            for col, (key, name) in enumerate(FIELDS):
+                tk.Label(grid, text=name, font=self.f_small, fg=MUTED, bg=CARD, anchor="w").grid(
+                    row=0, column=col, sticky="w", padx=(0, 10))
+                var = tk.StringVar(value="" if match[key] is None else str(match[key]))
+                tk.Entry(grid, textvariable=var, width=7, font=self.f_body, fg=TEXT, bg=INSET, insertbackground=TEXT,
+                         relief="flat", highlightthickness=1, highlightbackground=BORDER, highlightcolor=ACCENT).grid(
+                    row=1, column=col, sticky="we", padx=(0, 10), ipady=3)
+                var.trace_add("write", lambda *_a, v=verdict: v.set("不对"))  # 改了数字就是"不对"
+                values[key] = var
+            self.choice_row(box, [("对", "对"), ("不对（在上面改成正确的）", "不对")], verdict)
+            judged[match["match_id"]] = (match, values, verdict)
+
+        missed = tk.StringVar(value="")
+        lobby_verdict, lobby_fix = tk.StringVar(value=""), tk.StringVar(value="")
+        keep_all = tk.BooleanVar(value=False)
+        box = self.card(area, pady=(10, 0))
+        self.label(box, "这段时间还有 Evo 没记下的局吗？", bold=True)
+        self.choice_row(box, [("没有", "没有"), ("有（在备注里写一下大概几点、第几名）", "有")], missed)
+        lobby = record["大厅"][-1] if record["大厅"] else None
+        if lobby is not None:
+            self.label(box, f"大厅现在显示的段位和分数是「{rank_text(lobby)}」吗？", bold=True).pack_configure(pady=(12, 0))
+            row = self.choice_row(box, [("对", "对"), ("不对，是", "不对")], lobby_verdict)
+            tk.Entry(row, textvariable=lobby_fix, width=16, font=self.f_body, fg=TEXT, bg=INSET, insertbackground=TEXT,
+                     relief="flat", highlightthickness=1, highlightbackground=BORDER, highlightcolor=ACCENT).pack(
+                side="left", ipady=3)
+            lobby_fix.trace_add("write", lambda *_a: lobby_verdict.set("不对"))
+        tk.Checkbutton(box, text="这次的截图全部带上（开发者要样本时勾）", variable=keep_all, font=self.f_body, fg=TEXT,
+                       bg=CARD, selectcolor=INSET, activebackground=CARD, activeforeground=TEXT, highlightthickness=0,
+                       anchor="w").pack(fill="x", pady=(12, 0))
+
+        def collect():
+            out = {"局": {}, "漏记": missed.get() or None, "大厅": None, "全部带上": keep_all.get()}
+            for match_id, (match, values, verdict) in judged.items():
+                fixed = {}
+                if verdict.get() == "不对":
+                    for key, var in values.items():
+                        text = var.get().strip()
+                        if text != ("" if match[key] is None else str(match[key])):
+                            fixed[key] = int(text) if text.lstrip("+-").isdigit() else text
+                out["局"][match_id] = {"判断": verdict.get() or None, "正确的": fixed}
+            if lobby is not None:
+                out["大厅"] = {"Evo 读的": rank_text(lobby), "判断": lobby_verdict.get() or None,
+                             "正确的": lobby_fix.get().strip()}
+            return out
+
+        return collect
+
+    def season_answers(self, area):
+        """赛季数据页：Evo 读到了几项、核对保存了几项（没核对的提醒先去 Evo 的"赛季"页核对）。"""
+        frame = tk.Frame(area, bg=BG)
+        frame.pack(fill="x")
+
+        def fill():
+            for child in frame.winfo_children():
+                child.destroy()
+            record = self.session.evo_record()
+            rows = record["赛季"]
+            if record["数据库"] is None:
+                self.warn(frame, "没找到 Evo 的数据（这台电脑上没装 Evo，或者没打开过）。截图照样带上")
+                return
+            if not rows:
+                self.warn(frame, "这段时间 Evo 一页数据页都没读到（可能没点“开始录入”，或者还认不出这种画面）。截图照样带上")
+                return
+            pending = sum(1 for r in rows if r.get("status") == "pending")
+            box = self.card(frame)
+            self.label(box, f"Evo 读到了 {len(rows)} 项：核对保存了 {len(rows) - pending} 项，还有 {pending} 项没核对",
+                       bold=True)
+            if pending:
+                self.label(box, "最好先到 Evo 的“赛季”页核对、保存（改成游戏里显示的数），再点“重新看一下”。不核对也能打包",
+                           muted=True)
+                self.button(box, "重新看一下", fill).pack(anchor="w", pady=(8, 0))
+
+        fill()
 
     def show_done(self, zip_path):
         self.clear(4)
@@ -486,6 +617,8 @@ class TesterApp:
                 break
             if kind == "log":
                 self._append_log(value)
+            elif kind == "notice":
+                self._show_notice(value)
             elif kind == "started" and self.state == "starting":
                 self.state = "recording"
             elif kind == "ended":

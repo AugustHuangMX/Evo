@@ -10,6 +10,10 @@
   没拿武器时每 10 秒一张
 - 测试项目（config/tester.json）、武器名单；测试员档案（exe 旁边写不进去就存到别处）；压缩包的名字
 - 窗口（藏起来不显示，截屏用假的）：没填昵称不让往下走；填档案 → 选项目 → 录 → 结束 → 备注 → 打包 → 完成
+- 打一局对答案（假的 Evo 数据库和日志）：读这段时间 Evo 记下的局；每局的时间段（开局前最后一次在大厅 → 最后一次读数 + 20 秒）；
+  确认对的局截图全删、记错的全留、对局之间的大厅每 10 秒留一张；勾了全部带上不删；过了半夜的截图算第二天
+- 打包前写 answers.json（Session）：打一局删掉确认对的截图；赛季数据页带上 Evo 核对后保存的
+- 录的时候的提醒：Evo 标了待确认的攒到 2 局、游戏开着 1 小时 Evo 一局没记下、Evo 没开着录满 1 小时，每种一次
 - 找 Evo 的数据文件夹：Evo.exe 旁边的 data_location.txt / 程序旁边的 Evo Tracker Data、指路文件；
   旧的默认位置别处都没有才用；没有 logs\\evo.log 的不算；同一个只算一次
 - 诊断信息：这台电脑上真的读显示器（有主显示器、HDR 一栏）；Apex 视频设置只取四项；Evo 的设置只带三项；info.txt 各节都在
@@ -283,6 +287,165 @@ def project_checks(tmp):
     }
 
 
+def fake_evo(tmp):
+    """一个假的 Evo 数据文件夹（数据库 + 日志），2026-11-02 21:00–22:00 打了两局：
+    第 1 局 21:10 开局、21:25:30 总结页、21:26:10 经验值页；第 2 局 21:36 开局、21:50 总结页（Evo 标了待确认）；
+    另有一局 20:00 打的（测试开始以前，不算）；21:28 大厅读到钻石 I 600。"""
+    import storage
+
+    evo = tmp / "evo_data"
+    (evo / "data").mkdir(parents=True)
+    (evo / "logs").mkdir()
+    conn = storage.connect(evo / "data" / "evo.db")
+    day = "2026-11-02"
+    old = storage.insert_match(conn, {"ended_at": f"{day} 20:00:00", "placement": 9})
+    storage.save_readings(conn, old, "总结页", {"placement": 9}, f"{day} 20:00:00")
+    first = storage.insert_match(conn, {"ended_at": f"{day} 21:25:30", "mode": "排位", "map": "世界尽头", "legend": "罗芭",
+                                        "placement": 5, "kills": 3, "assists": 1, "knockdowns": 4, "damage": 1200,
+                                        "rp_delta": 45})
+    storage.save_readings(conn, first, "总结页", {"placement": 5, "kills": 3}, f"{day} 21:25:30")
+    storage.save_readings(conn, first, "经验值页", {"rp_delta": 45}, f"{day} 21:26:10")
+    second = storage.insert_match(conn, {"ended_at": f"{day} 21:50:00", "mode": "排位", "placement": 12, "kills": 0,
+                                         "damage": 350, "rp_delta": -30, "needs_review": 1, "review_note": "名次对不上"})
+    storage.save_readings(conn, second, "总结页", {"placement": 12}, f"{day} 21:50:00")
+    storage.save_lobby(conn, {"read_at": f"{day} 21:28:00", "rank_tier": "钻石", "rank_division": "I",
+                              "rank_progress": 600, "score": 15600})
+    conn.close()
+    lines = ["21:00:05 [21:00:05] 进入大厅", "21:08:00 [21:08:00] 进入大厅", "21:08:01 [21:08:01] 大厅：钻石 I 555（总分 15555）",
+             "21:10:00 [21:10:00] 进入开局画面", "21:11:00 [21:11:00] 对局中：看到自己的界面",
+             "21:25:31 [21:25:30] 第 1 局（编号 2）：第 5 名", "21:27:00 [21:27:00] 进入大厅", "21:35:00 [21:35:00] 进入大厅",
+             "21:36:00 [21:36:00] 进入开局画面"]
+    (evo / "logs" / "evo.log").write_text("".join(f"{day} {line}\n" for line in lines), encoding="utf-8")
+    return evo, first, second
+
+
+def fake_frames(folder, start, minutes, step=5):
+    """frames/ 每 step 秒一张、full/ 每分钟一张（空文件，名字和测试工具存的一样）。"""
+    (folder / "frames").mkdir(parents=True)
+    (folder / "full").mkdir()
+    for i in range(minutes * 60 // step):
+        t = start + timedelta(seconds=i * step)
+        (folder / "frames" / f"{i + 1:04d}_{t:%H%M%S}_1920x1080.jpg").write_bytes(b"")
+        if t.second == 0:
+            (folder / "full" / f"{t:%H%M%S}_2560x1440.jpg").write_bytes(b"")
+
+
+def answers_checks(tmp):
+    """打一局对答案（tester_answers.py）：读 Evo 这段时间记下的局、分每局的时间段、确认对的局删截图、大厅每 10 秒留一张。"""
+    import tester_answers as ta
+
+    evo, first, second = fake_evo(tmp)
+    db = ta.db_path([(evo, "开机自启")])
+    start, end = datetime(2026, 11, 2, 21, 0, 0), datetime(2026, 11, 2, 22, 0, 0)
+    matches = ta.evo_matches(db, start, end)
+    events = ta.log_events(evo / "logs", start, end)
+    windows = ta.match_windows(matches, events, start)
+    shown = [[f"{a:%H:%M:%S}", f"{b:%H:%M:%S}"] for a, b in windows]
+    lobby = ta.lobby_readings(db, start, end)
+
+    def times(folder, sub):
+        return [ta.datetime.strptime(p.name.split("_")[-2], "%H%M%S").time() for p in sorted((folder / sub).glob("*.jpg"))]
+
+    run = tmp / "answers_run"
+    fake_frames(run, start, 60)
+    answers = {"局": {first: {"判断": "对"}, second: {"判断": "不对", "正确的": {"placement": 11}}}, "漏记": "没有",
+               "大厅": {"Evo 读的": "钻石 I 600", "判断": "对"}, "全部带上": False}
+    result = ta.apply_match_answers(run, start, matches, events, answers)
+    left = [ta.datetime.combine(start.date(), t) for t in times(run, "frames")]
+    in_first = [t for t in left if windows[0][0] <= t <= windows[0][1]]
+    in_second = [t for t in left if windows[1][0] <= t <= windows[1][1]]
+    lobby_left = [t for t in left if not any(a <= t <= b for a, b in windows)]
+    gaps = {(b - a).total_seconds() for a, b in zip(lobby_left, lobby_left[1:])
+            if not any(a < w[0] <= b for w in windows)}  # 同一段大厅里相邻两张隔几秒
+    keep_all = tmp / "answers_keep"
+    fake_frames(keep_all, start, 60)
+    ta.apply_match_answers(keep_all, start, matches, events, {**answers, "全部带上": True})
+    unsure = tmp / "answers_unsure"
+    fake_frames(unsure, start, 60)
+    ta.apply_match_answers(unsure, start, matches, events, {**answers, "漏记": "有"})
+    night = tmp / "answers_night"
+    fake_frames(night, datetime(2026, 11, 2, 23, 59, 0), 2, step=30)
+    crossed = [t for t, _ in ta.frame_files(night, datetime(2026, 11, 2, 23, 59, 0))]
+    return {
+        f"读到这段时间 Evo 记下的两局（测试开始以前那局不算；{[m['match_id'] for m in matches]}）":
+            [m["match_id"] for m in matches] == [first, second] and matches[0]["last_read"].strftime("%H:%M:%S") == "21:26:10",
+        f"每局的时间段：开局前最后一次在大厅 → 最后一次读数 + 20 秒（{shown}）":
+            shown == [["21:08:01", "21:26:30"], ["21:35:00", "21:50:20"]],
+        f"大厅读数（{lobby and ta.rank_text(lobby[-1])}）": [ta.rank_text(r) for r in lobby] == ["钻石 I 600"],
+        f"确认对的局：截图全删（剩 {len(in_first)} 张；删了 {result['截图']['确认对的局里删了']} 张，含每分钟的原图）":
+            not in_first and result["截图"]["确认对的局里删了"] == 222 + 18 and not any(
+                windows[0][0].time() <= t <= windows[0][1].time() for t in times(run, "full")),
+        f"记错的局：截图全留（{len(in_second)} 张）": len(in_second) == 185,
+        f"没漏记、大厅也对：对局之间的大厅每 10 秒留一张（隔 {sorted(gaps)} 秒）": gaps == {10.0},
+        "勾了全部带上：一张不删": len(list((keep_all / "frames").glob("*.jpg"))) == 720,
+        "说有漏记的局：对局之间的大厅全留": len(list((unsure / "frames").glob("*.jpg"))) == 720 - 222,
+        f"答案里写着每局的时间段、测试员的判断和改正（{result['局'][1]['测试员']}、{result['局'][1]['正确的']}）":
+            result["局"][1]["测试员"] == "不对" and result["局"][1]["正确的"] == {"placement": 11}
+            and result["局"][0]["时间段"] == ["2026-11-02 21:08:01", "2026-11-02 21:26:30"],
+        f"过了半夜的截图算第二天（{[f'{t:%d %H:%M:%S}' for t in crossed]}）":
+            [f"{t:%d %H:%M}" for t in crossed] == ["02 23:59"] * 3 + ["03 00:00"] * 3,
+    }
+
+
+def session_answers_checks(tmp):
+    """Session 打包前写 answers.json：打一局（删掉确认对的局的截图）、赛季数据页（Evo 读到的、核对后保存的）。"""
+    import storage
+
+    from evo_tester import Session
+
+    evo, first, second = fake_evo(tmp / "session")
+    conn = storage.connect(evo / "data" / "evo.db")
+    stat = storage.save_season_pending(conn, {"player_name": "小明", "season": 25, "kind": "ranked",
+                                              "season_name": "排位", "games": 598, "kills": 593,
+                                              "read_at": "2026-11-02 21:40:00"})
+    storage.save_season(conn, stat, {"kills": 594})  # 测试员在 Evo 的赛季页把击杀改成 594 再保存
+    conn.close()
+    projects = tester_projects.load_projects()
+    start, end = datetime(2026, 11, 2, 21, 0, 0), datetime(2026, 11, 2, 22, 0, 0)
+    out = {}
+    for key in ("match", "seasons"):
+        session = Session(projects[key], {"nickname": "小明"}, tmp / "session" / key, lambda _text: None)
+        session.stamp, session.ended = start, end
+        session.evo_dirs = [(evo, "开机自启")]
+        session.db = evo / "data" / "evo.db"
+        fake_frames(session.folder, start, 60)
+        session._write_answers({"局": {first: {"判断": "对"}}, "漏记": "有", "全部带上": False})
+        session._log_file.close()
+        out[key] = (json.loads((session.folder / "answers.json").read_text(encoding="utf-8")),
+                    len(list((session.folder / "frames").glob("*.jpg"))))
+    (match, match_left), (seasons, _) = out["match"], out["seasons"]
+    row = seasons["赛季"][0] if seasons["赛季"] else {}
+    return {
+        f"打一局：answers.json 有两局、确认对的那局截图删了（剩 {match_left} 张）、带上 Evo 的大厅读数":
+            [m["match_id"] for m in match["局"]] == [first, second] and match["局"][0]["测试员"] == "对"
+            and match_left == 720 - 222 and match["Evo 大厅读数"][0]["rank_progress"] == 600,
+        f"赛季数据页：answers.json 带上核对后保存的（{row.get('status')}，击杀 {row.get('kills')}，改过 {row.get('edited')}）":
+            row.get("status") == "saved" and row.get("kills") == 594 and row.get("edited") == "kills",
+    }
+
+
+def reminder_checks():
+    """打一局录的时候的提醒（evo_tester.Reminder）：每种只提醒一次。"""
+    from evo_tester import Reminder
+
+    flagged = [{"needs_review": 1}, {"needs_review": 0}, {"needs_review": 1}]
+    r = Reminder(review=2, minutes=60)
+    first = r.check(600, 600, True, flagged[:2], 100)
+    second = r.check(900, 900, True, flagged, 200)
+    again = r.check(1200, 1200, True, flagged, 300)
+    nothing = Reminder(review=2, minutes=60)
+    early = nothing.check(3000, 3000, True, [], 500)
+    late = nothing.check(4000, 3700, True, [], 600)
+    unreadable = Reminder().check(4000, 3700, True, None, 600)
+    no_evo = Reminder()
+    no_evo_early, no_evo_late = no_evo.check(3000, 0, False, None, 800), no_evo.check(3700, 0, False, None, 900)
+    return {
+        f"Evo 标了待确认的攒到 2 局提醒一次（{second}）": not first and len(second) == 1 and "2 局" in second[0] and not again,
+        f"游戏开着 1 小时 Evo 一局没记下：提醒（{late}）；读不到数据库不算": not early and len(late) == 1 and not unreadable,
+        f"Evo 没开着录满 1 小时：提醒，带上已经多大（{no_evo_late}）": not no_evo_early and "900 MB" in no_evo_late[0],
+    }
+
+
 def window_checks(tmp):
     """窗口（tester_window.py，藏起来不显示）：填档案 → 选赛季数据页 → 录 → 结束 → 写备注 → 打包 → 完成。截屏用假的。"""
     import tkinter as tk
@@ -297,11 +460,12 @@ def window_checks(tmp):
         saved, mb, game_on, pages = 3, 1.0, True, 2
 
     class FakeSession:
-        def __init__(self, project, profile, log):
+        def __init__(self, project, profile, log, notice):
             self.project, self.profile, self.folder = project, profile, tmp
-            self.recorder = self.info = self.note = None
+            self.recorder = self.info = self.note = self.answers = None
             sessions.append(self)
             log("准备好了")
+            notice("Evo 已经有 2 局标了待确认")
 
         def start(self):
             self.recorder, self.info = Rec(), {}
@@ -310,8 +474,11 @@ def window_checks(tmp):
             stop.wait(10)
             return "点了结束"
 
-        def finish(self, note):
-            self.note = note
+        def evo_record(self):
+            return {"数据库": "evo.db", "局": [], "大厅": [], "赛季": [{"status": "pending"}, {"status": "saved"}]}
+
+        def finish(self, note, answers=None):
+            self.note, self.answers = note, answers
             return zip_file
 
     def widgets(parent, cls):
@@ -345,8 +512,10 @@ def window_checks(tmp):
         find(tk.Radiobutton, "赛季数据页").invoke()
         find(tk.Button, "开始").invoke()
         recording = pump(lambda: app.state == "recording" and "存好了 2 页" in app.v_count.cget("text"))
+        noticed = any("待确认" in w.cget("text") for w in widgets(app.notice, tk.Label))
         find(tk.Button, "结束").invoke()
         finishing = pump(lambda: app.state == "finishing")
+        season_line = any("还有 1 项没核对" in w.cget("text").replace("\u00a0", " ") for w in widgets(root, tk.Label))
         next(widgets(root, tk.Text)).insert("1.0", "21:35 第二页没嘀")
         find(tk.Button, "打包").invoke()
         done = pump(lambda: app.state == "done")
@@ -359,7 +528,9 @@ def window_checks(tmp):
                                                    "launch_options": ""}] and on_projects,
         f"窗口：选的项目和档案交给截屏（{session and session.project['key']}）":
             session is not None and session.project["key"] == "seasons" and session.profile["nickname"] == "小明",
-        f"窗口：录的时候显示存了几页（{recording}）、点结束到收尾（{finishing}）": recording and finishing,
+        f"窗口：录的时候显示存了几页（{recording}）、提醒放在黄色框里（{noticed}）、点结束到收尾（{finishing}）":
+            recording and noticed and finishing,
+        f"窗口：赛季数据页收尾时说 Evo 读到几项、几项没核对（{season_line}）": season_line,
         f"窗口：备注跟着打包（{session and session.note}），打完到完成、打开文件夹（{opened}）":
             done and session.note == "21:35 第二页没嘀" and opened == [zip_file],
     }
@@ -548,6 +719,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="evo-tester-") as name:
         tmp = Path(name)
         checks = {**light_checks(), **recorder_checks(tmp), **stop_checks(tmp), **still_checks(tmp),
+                  **answers_checks(tmp), **session_answers_checks(tmp), **reminder_checks(),
                   **weapon_checks(tmp), **project_checks(tmp), **window_checks(tmp), **finder_checks(tmp),
                   **info_checks(tmp), **zip_checks(tmp), **real_checks(tmp)}
         ok = report(checks)

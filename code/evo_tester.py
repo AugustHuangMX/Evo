@@ -21,11 +21,13 @@ import logging
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
 from game_detect import GAME_PROCESSES, processes
 from process_info import memory_mb, set_low_priority
+from tester_answers import apply_match_answers, db_path, evo_matches, lobby_readings, log_events, season_rows
 from tester_capture import MonitorThumbs, default_out_dir, make_recorder, make_zip, open_camera
 from tester_info import _safe, collect_info, copy_evo_logs, find_evo_data_dirs, game_aspect_guess, write_info
 from tester_projects import (languages, load_config, load_profile, load_projects, package_name, save_profile,
@@ -33,6 +35,7 @@ from tester_projects import (languages, load_config, load_profile, load_projects
 
 VERSION = "2.0"  # 1.x 是原来的诊断工具
 BEEP_HZ, BEEP_MS = 1200, 150  # "嘀"一声（同 tools/legend_capture.py）
+WATCH_SECONDS = 30  # 打一局：录的时候每隔这么久看一眼 Evo 记下了什么
 
 
 # ---------- 一次测试 ----------
@@ -44,11 +47,44 @@ def beep():
     threading.Thread(target=lambda: winsound.Beep(BEEP_HZ, BEEP_MS), daemon=True).start()
 
 
-class Session:
-    """一次测试：start() 建截屏对象、读诊断信息 → run(stop) 截屏到结束 → finish() 带上 Evo 的日志、
-    写 tester.json、打包。log(文字)：写进窗口和 tool_log.txt。games：另外当作游戏的进程名（测试用）。"""
+def evo_running():
+    """Evo（安装版的 Evo.exe）开着没有。用源码运行的 Evo 是 python.exe，看不出来。"""
+    return "evo.exe" in {name for _, name in processes()}
 
-    def __init__(self, project, profile, out_root, log, games=(), minutes=None, sound=True, version=VERSION):
+
+class Reminder:
+    """打一局：录的时候提醒测试员"截图够了，可以结束了"，每种只提醒一次，只提醒、不停（2026-11-02 用户定的）。
+    录的时候不知道哪局记错（测试员打完才确认），所以按看得出的提醒：Evo 标了待确认的局攒到 review 局；
+    游戏开着 minutes 分钟 Evo 一局没记下（多半没认出画面）；Evo 没开着（截图全要带上）录满 minutes 分钟。"""
+
+    def __init__(self, review=2, minutes=60):
+        self.review, self.minutes = review, minutes
+        self.told = set()
+
+    def check(self, elapsed, game_seconds, evo_on, matches, mb):
+        """elapsed：录了几秒；game_seconds：其中游戏开着几秒；matches：这段时间 Evo 记下的局（None = 读不到 Evo 的数据库）。
+        返回这次要提醒的话（可能没有）。"""
+        out = []
+        flagged = sum(1 for m in matches or [] if m.get("needs_review"))
+        if flagged >= self.review and "review" not in self.told:
+            self.told.add("review")
+            out.append(f"Evo 已经有 {flagged} 局标了待确认，截图够开发者查了，可以结束了（想接着打也行）")
+        if (evo_on and matches == [] and game_seconds >= self.minutes * 60 and "nothing" not in self.told):
+            self.told.add("nothing")
+            out.append(f"游戏开了 {self.minutes} 分钟，Evo 一局都没记下（可能没认出画面）。截图够开发者查了，可以结束了")
+        if not evo_on and elapsed >= self.minutes * 60 and "no_evo" not in self.told:
+            self.told.add("no_evo")
+            out.append(f"Evo 没开着，截图会全部带上，已经 {mb:.0f} MB 了，可以结束了")
+        return out
+
+
+class Session:
+    """一次测试：start() 建截屏对象、读诊断信息 → run(stop) 截屏到结束 → evo_record() 读这段时间 Evo 记下的（对答案用）
+    → finish() 删掉确认对了的截图、带上 Evo 的日志、写 tester.json 和 answers.json、打包。
+    log(文字)：写进窗口和 tool_log.txt；notice(文字)：要测试员看见的提醒（默认同 log）。games：另外当作游戏的进程名（测试用）。"""
+
+    def __init__(self, project, profile, out_root, log, games=(), minutes=None, sound=True, version=VERSION,
+                 notice=None):
         self.project, self.profile, self.out_root, self.version = project, profile, Path(out_root), version
         self.minutes, self.sound = minutes, sound
         self.games = GAME_PROCESSES | {g.lower() for g in games}
@@ -57,16 +93,28 @@ class Session:
         self.folder.mkdir(parents=True, exist_ok=True)
         self._log_file = open(self.folder / "tool_log.txt", "a", encoding="utf-8-sig")
         self._show = log
+        self._notice = notice
         self.warnings = []
         self.camera = self.thumbs = self.recorder = None
-        self.evo_dirs, self.info, self.reason = [], None, None
+        self.evo_dirs, self.db, self.info, self.reason, self.ended = [], None, None, None, None
         self._dx_handler = None
+        self._done = threading.Event()  # 截屏结束了（提醒的线程跟着停）
 
     def log(self, text):
         self._show(text)
         if not self._log_file.closed:
             self._log_file.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {text}\n")
             self._log_file.flush()
+
+    def notice(self, text):
+        line = f"[{datetime.now():%H:%M:%S}] {text}"
+        if self._notice is None:
+            self.log(line)
+        else:
+            self._notice(text)
+            if not self._log_file.closed:
+                self._log_file.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} 提醒：{line}\n")
+                self._log_file.flush()
 
     def start(self):
         session = self
@@ -91,6 +139,7 @@ class Session:
         self.evo_dirs = evo_dirs if isinstance(evo_dirs, list) else []
         self.log(f"找到了 Evo：{self.evo_dirs[0][0]}（结束时带上 Evo 的日志）" if self.evo_dirs
                  else "没找到 Evo（没装，或者装了但没开着）：不影响，照样截图")
+        self.db = db_path(self.evo_dirs)
         self.info = collect_info(dxcam_mod, self.camera, camera_error, self.evo_dirs, self.version)
         write_info(self.folder, self.info)  # 先写一份：万一中途被关掉，也有这些信息
         self._write_tester()
@@ -114,11 +163,15 @@ class Session:
 
     def run(self, stop):
         """截到结束（stop 是 threading.Event：玩家点了结束），返回结束的原因。"""
+        if self.project.get("answers") == "matches":
+            threading.Thread(target=self._watch, args=(stop,), daemon=True).start()
         try:
             self.reason = self.recorder.run(stop)
         except KeyboardInterrupt:
             self.reason = "按了 Ctrl+C"
         finally:
+            self.ended = datetime.now()
+            self._done.set()
             self.recorder.close()
             if self.camera is not None:
                 self.camera.release()
@@ -134,14 +187,68 @@ class Session:
                      "一直在游戏里还这样就是截屏卡住了。会写进诊断信息）")
         return self.reason
 
+    def _watch(self, stop):
+        """打一局：录的时候每 WATCH_SECONDS 秒看一眼 Evo 记下了什么，该提醒就提醒（Reminder）。"""
+        reminder = Reminder(self.project.get("remind_review", 2), self.project.get("remind_minutes", 60))
+        began = last = time.monotonic()
+        game_seconds = 0.0
+        while not stop.wait(WATCH_SECONDS) and not self._done.is_set():
+            now = time.monotonic()
+            if self.recorder.game_on:
+                game_seconds += now - last
+            last = now
+            matches = _safe(evo_matches, self.db, self.stamp, datetime.now()) if self.db else None
+            for text in reminder.check(now - began, game_seconds, evo_running(),
+                                       matches if isinstance(matches, list) else None, self.recorder.mb):
+                self.notice(text)
+
+    def evo_record(self):
+        """这段时间 Evo 记下的（对答案用）：{"局": [...], "大厅": [...], "赛季": [...], "数据库": 路径}。读不到的是空的。"""
+        end = self.ended or datetime.now()
+        out = {"数据库": str(self.db) if self.db else None}
+        for key, func in (("局", evo_matches), ("大厅", lobby_readings), ("赛季", season_rows)):
+            value = _safe(func, self.db, self.stamp, end) if self.db else []
+            out[key] = value if isinstance(value, list) else []
+            if isinstance(value, dict):
+                self.log(f"⚠ 读 Evo 的数据库出错：{value['错误']}")
+        return out
+
+    def _write_answers(self, answers):
+        """answers.json：测试员确认的答案（打一局：先删掉确认对的局的截图）、Evo 这段时间记下的。"""
+        kind = self.project.get("answers")
+        record = self.evo_record()
+        data = {"项目": self.project["key"], "Evo 数据库": record["数据库"]}
+        if kind == "matches":
+            logs = Path(self.evo_dirs[0][0]) / "logs" if self.evo_dirs else None
+            events = log_events(logs, self.stamp, self.ended or datetime.now()) if logs else []
+            result = apply_match_answers(self.folder, self.stamp, record["局"], events, answers or {})
+            data.update(result)
+            data["Evo 大厅读数"] = record["大厅"]
+            shot = result["截图"]
+            if not shot.get("全部带上"):
+                self.log(f"确认对了的局删掉 {shot['确认对的局里删了']} 张截图，大厅删掉 {shot['大厅删了']} 张，"
+                         f"留下 {shot['留下']} 张")
+        elif kind == "season_stats":
+            data["赛季"] = record["赛季"]
+        else:
+            return
+        Path(self.folder, "answers.json").write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str),
+                                                     encoding="utf-8")
+
     def _write_tester(self, extra=None):
         """tester.json：哪个项目、测试员档案、工具版本（导入时按它认是哪一项）。"""
         data = {"工具版本": self.version, "项目": self.project["key"], "项目名": self.project["name"],
                 "测试员": self.profile, "开始": f"{self.stamp:%Y-%m-%d %H:%M:%S}", **(extra or {})}
         Path(self.folder, "tester.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def finish(self, note=""):
-        """带上 Evo 的日志、写诊断信息和 tester.json、打包。返回压缩包的位置；打包没成功返回 None（文件夹还在）。"""
+    def finish(self, note="", answers=None):
+        """删掉确认对了的截图、写 answers.json（打一局、赛季数据页）、带上 Evo 的日志、写诊断信息和 tester.json、打包。
+        answers：打一局时测试员确认的（见 tester_answers.apply_match_answers）。
+        返回压缩包的位置；打包没成功返回 None（文件夹还在）。"""
+        try:
+            self._write_answers(answers)
+        except Exception as e:  # 对答案出错也照样打包（截图都还在）
+            self.log(f"⚠ 写答案出错了（截图都留着）：{type(e).__name__}: {e}")
         self.info["工具"]["结束原因"] = self.reason
         self.info["dxcam"]["警告"] = len(self.warnings)
         self.info["截屏结果"] = self.recorder.summary()
@@ -226,8 +333,8 @@ def window_main():
     out_root = default_out_dir()
     set_low_priority()
     run(load_projects(), load_profile(), languages(), weapon_list(), save_profile,
-        lambda project, profile, log: Session(project, profile, out_root, log),
-        lambda: "evo.exe" in {name for _, name in processes()}, VERSION, icon_path())
+        lambda project, profile, log, notice: Session(project, profile, out_root, log, notice=notice),
+        evo_running, VERSION, icon_path())
 
 
 if __name__ == "__main__":
