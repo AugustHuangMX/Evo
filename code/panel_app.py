@@ -93,6 +93,8 @@ except (OSError, ValueError):
     RANK_PLATES = {}
 DAY_START_HOUR = 5  # "今日"从早上 5 点算起：打到凌晨的局仍算前一天
 RANGES = {"30": "近 30 局", "all": "全部"}
+# 总览页数据统计的模式筛选（2026-10-30）。"匹配"= 不是排位的局，包括没认出模式的（和数据页"全体玩家"一样）
+STAT_MODES = {"all": "全部", "ranked": "排位", "pubs": "匹配"}
 CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片宽度拉伸）
 
 # ---- 传奇头像（战绩页、总览页）----
@@ -282,6 +284,18 @@ def url_with(**changes):
     return url_for("matches") + ("?" + urlencode(args) if args else "")
 
 
+@app.template_global()
+def overview_url(**changes):
+    """总览页筛选链接：在当前的范围、模式、传奇上改一项（值为 None / 空字符串表示去掉这一项）。"""
+    args = {key: request.args[key] for key in ("range", "mode", "legend") if request.args.get(key)}
+    for key, value in changes.items():
+        if value in (None, ""):
+            args.pop(key, None)
+        else:
+            args[key] = value
+    return url_for("overview", **args)
+
+
 # ---------- 把数据库里的一行，整理成网页上显示的文字 ----------
 
 def time_text(ended_at):
@@ -453,12 +467,16 @@ def rp_chart(rows, lobby=()):
 
 
 def group_numbers(rows):
-    """一组对局的场均数字（总览页的统计数字、数据页的表格共用）。读不到的项不算进去；一局都没有时写"—"。"""
+    """一组对局的场均数字（总览页的统计数字、数据页的表格共用）。读不到的项不算进去；一局都没有时写"—"。
+    2026-10-30 加了助攻、击倒、生存、单局最高击杀/伤害（总览页"更多维度"）。"""
     placements = [r["placement"] for r in rows if r["placement"] is not None]
     # 击杀来自经验值页的局（没有总结页，也没读到对局中右上角），击杀是"计分次数"（可能比实际少），不算进场均击杀
     kills = [r["kills"] for r in rows if r["kills"] is not None
              and not any(n in (r["review_note"] or "") for n in COUNTED_KILLS_NOTES)]
+    assists = [r["assists"] for r in rows if r["assists"] is not None]
+    knockdowns = [r["knockdowns"] for r in rows if r["knockdowns"] is not None]
     damages = [r["damage"] for r in rows if r["damage"] is not None]
+    survivals = [r["survival_time"] for r in rows if r["survival_time"] is not None]
     rps = [r["rp_delta"] for r in rows if r["rp_delta"] is not None]  # 只有排位局有
 
     def avg(values, fmt):
@@ -473,7 +491,12 @@ def group_numbers(rows):
         "wins": sum(1 for p in placements if p == 1),
         "avg_place": avg(placements, "{:.1f}"),
         "avg_kills": avg(kills, "{:.1f}"),
+        "avg_assists": avg(assists, "{:.1f}"),
+        "avg_knockdowns": avg(knockdowns, "{:.1f}"),
         "avg_damage": avg(damages, "{:,.0f}"),
+        "avg_survival": "—" if not survivals else storage.mmss(round(sum(survivals) / len(survivals))),
+        "best_kills": "—" if not kills else str(max(kills)),
+        "best_damage": "—" if not damages else f"{max(damages):,}",
         "top5": rate(lambda p: p <= 5),
         "win_rate": rate(lambda p: p == 1),
         "avg_rp": "—" if avg_rp is None else signed(avg_rp),
@@ -482,6 +505,7 @@ def group_numbers(rows):
 
 
 def stat_cards(rows):
+    """分享卡片的 6 项统计（概况卡片是固定宽度，保持 6 项）。"""
     n = group_numbers(rows)
     return [
         {"label": "场均名次", "value": n["avg_place"]},
@@ -491,6 +515,38 @@ def stat_cards(rows):
         {"label": "胜率", "value": n["win_rate"], "accent": True},
         {"label": "统计局数", "value": str(n["games"])},
     ]
+
+
+def stat_groups(rows):
+    """总览页"数据统计"（2026-10-30 用户要求加更多维度）：分两组，每组 6 项。"""
+    n = group_numbers(rows)
+    return [
+        {"label": "战斗", "items": [
+            {"label": "场均击杀", "value": n["avg_kills"]},
+            {"label": "场均助攻", "value": n["avg_assists"]},
+            {"label": "场均击倒", "value": n["avg_knockdowns"]},
+            {"label": "场均伤害", "value": n["avg_damage"]},
+            {"label": "单局最高击杀", "value": n["best_kills"]},
+            {"label": "单局最高伤害", "value": n["best_damage"]},
+        ]},
+        {"label": "排名与生存", "items": [
+            {"label": "场均名次", "value": n["avg_place"]},
+            {"label": "胜率", "value": n["win_rate"], "class": "accent"},
+            {"label": "前五率", "value": n["top5"]},
+            {"label": "冠军次数", "value": str(n["wins"])},
+            {"label": "场均生存", "value": n["avg_survival"]},
+            {"label": "场均 RP", "value": n["avg_rp"], "class": f"rp-{n['rp_class']}"},
+        ]},
+    ]
+
+
+def filter_mode(rows, mode):
+    """按模式筛选对局：ranked = 排位；pubs = 不是排位的局（包括没认出模式的，和数据页"全体玩家"一样）。"""
+    if mode == "ranked":
+        return [r for r in rows if r["mode"] == "ranked"]
+    if mode == "pubs":
+        return [r for r in rows if r["mode"] != "ranked"]
+    return rows
 
 
 def rp_sum(rows):
@@ -822,9 +878,21 @@ def share_options(kind, **args):
 @app.route("/")
 def overview():
     range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    stat_mode = request.args.get("mode") if request.args.get("mode") in STAT_MODES else "all"
+    stat_legend = request.args.get("legend") or None
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
     in_range = rows[-30:] if range_key == "30" else rows
+    # 数据统计的筛选（2026-10-30）：先按模式、传奇筛，再取近 30 局（"近 30 局恶灵"= 最近的 30 局恶灵）。
+    # 只影响数据统计和传奇表现；段位卡片、RP 走势、最近对局、今日数据不受影响（求和、走势混合模式没有意义）
+    stat_legends = storage.distinct_values(db(), "legend", names)
+    if stat_legend not in stat_legends:
+        stat_legend = None
+    stat_rows = filter_mode(rows, stat_mode)
+    if stat_legend:
+        stat_rows = [r for r in stat_rows if r["legend"] == stat_legend]
+    if range_key == "30":
+        stat_rows = stat_rows[-30:]
     today = today_matches(rows)
     lobby = storage.lobby_readings(db(), names)  # 每次回大厅读到的段位（总分以它为准）
     # 分享：今日战绩、概况（范围和这一页一样）。"全部账号"时不能分享（几个账号的段位混在一起）
@@ -842,14 +910,19 @@ def overview():
         "overview.html",
         range_key=range_key,
         ranges=RANGES,
+        stat_mode=stat_mode,
+        stat_modes=STAT_MODES,
+        stat_legend=stat_legend,
+        stat_legends=stat_legends,
+        stat_groups=stat_groups(stat_rows),
+        stat_games=len(stat_rows),
         rank=rank_card(rows, lobby),
         chart=rp_chart(in_range, lobby),
         range_rp=rp_sum(in_range),
         today_rp=rp_sum(today),
         today_games=len(today),
-        stats=stat_cards(in_range),
         recent=[view(r) for r in reversed(rows[-5:])],
-        legends=legend_bars(in_range),
+        legends=legend_bars(stat_rows),
         review_count=storage.count_review(db(), names),
         total=len(rows),
         share=share,

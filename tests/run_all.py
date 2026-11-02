@@ -27,6 +27,7 @@ import test_in_match
 import test_legend_icons
 import test_legends
 import test_light
+import test_overview_stats
 import test_player_name
 import test_ranks
 import test_replay
@@ -65,6 +66,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "提示音（声音文件、开关、什么时候响、记录程序、设置页）": test_sounds,
          "分享战绩（三种卡片、不写队友名字、对话框、保存图片）": test_share,
          "数据页（常一起玩的队友、传奇表现）": test_stats_page,
+         "总览页数据统计（更多维度、模式 / 传奇筛选）": test_overview_stats,
          "数据页\"全体玩家\"（开了匿名统计才能看、下载汇总、和自己比、筛选、连不上）": test_global_stats,
          "总览页\"关注我\"（B 站、小黑盒）": test_follow,
          "最常用武器（认武器、计时、记进数据库、数据页）": test_weapons,

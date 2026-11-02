@@ -58,7 +58,7 @@
       <h2>RP 走势</h2>
       <div class="seg" role="group" aria-label="统计范围">
         {% for key, label in ranges.items() %}
-        <a href="{{ url_for('overview', range=key) if key != '30' else url_for('overview') }}" class="{{ 'on' if range_key == key }}">{{ label }}</a>
+        <a href="{{ overview_url(range=None if key == '30' else key) }}" class="{{ 'on' if range_key == key }}">{{ label }}</a>
         {% endfor %}
       </div>
     </div>
@@ -87,14 +87,50 @@
   </section>
 </div>
 
-<div class="stat-row">
-  {% for s in stats %}
-  <div class="card stat">
-    <div class="label">{{ s.label }}</div>
-    <div class="stat-value num {{ 'accent' if s.accent }}" data-count>{{ s.value }}</div>
+<section class="stat-section" aria-labelledby="h-stats">
+  <div class="stat-head">
+    <div class="stat-title">
+      <h2 id="h-stats">数据统计</h2>
+      <span class="stat-count">{{ ranges[range_key] }}{% if stat_mode != 'all' %} · {{ stat_modes[stat_mode] }}{% endif %}{% if stat_legend %} · {{ stat_legend }}{% endif %} · 共 <span class="num">{{ stat_games }}</span> 局</span>
+    </div>
+    <div class="stat-controls">
+      {# 模式、传奇筛选只作用于数据统计和下面的传奇表现；段位、RP 走势、最近对局不受影响 #}
+      <div class="seg" role="group" aria-label="对局模式">
+        {% for key, label in stat_modes.items() %}
+        <a href="{{ overview_url(mode=None if key == 'all' else key) }}" class="{{ 'on' if stat_mode == key }}"{% if stat_mode == key %} aria-current="true"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </div>
+      {% if stat_legends %}
+      <form method="get" action="{{ url_for('overview') }}" class="stat-legend-form">
+        {% if range_key != '30' %}<input type="hidden" name="range" value="{{ range_key }}">{% endif %}
+        {% if stat_mode != 'all' %}<input type="hidden" name="mode" value="{{ stat_mode }}">{% endif %}
+        <label class="sr-only" for="stat-legend">传奇</label>
+        <select id="stat-legend" name="legend" onchange="this.form.submit()">
+          <option value="">全部传奇</option>
+          {% for name in stat_legends %}<option value="{{ name }}"{{ ' selected' if stat_legend == name }}>{{ name }}</option>{% endfor %}
+        </select>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% if stat_games %}
+  {% for group in stat_groups %}
+  <div class="stat-group">
+    <div class="label stat-group-label">{{ group.label }}</div>
+    <div class="stat-row">
+      {% for s in group["items"] %}
+      <div class="card stat">
+        <div class="label">{{ s.label }}</div>
+        <div class="stat-value num{{ ' ' ~ s['class'] if s['class'] }}" data-count>{{ s.value }}</div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
   {% endfor %}
-</div>
+  {% else %}
+  <div class="stat-empty">这个筛选下还没有对局</div>
+  {% endif %}
+</section>
 
 <div class="ov-bottom {{ 'no-legends' if not legends }}">
   <section class="card list-card" aria-label="最近对局">
@@ -122,7 +158,7 @@
 
   {% if legends %}
   <section class="card legend-card" aria-label="传奇表现">
-    <div class="card-head"><h2>传奇表现 · {{ ranges[range_key] }}</h2></div>
+    <div class="card-head"><h2>传奇表现 · {{ ranges[range_key] }}{% if stat_mode != 'all' %} · {{ stat_modes[stat_mode] }}{% endif %}{% if stat_legend %} · {{ stat_legend }}{% endif %}</h2></div>
     <div class="legend-list">
       {% for l in legends %}
       <div class="legend-item">

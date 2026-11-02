@@ -371,6 +371,16 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .chart-empty { flex: 1; min-height: 200px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px;
   border: 1px dashed var(--dashed); border-radius: 6px; }
 
+/* 数据统计（2026-10-30）：标题旁可以按模式、传奇筛；12 个数字分两组，每组 6 张卡 */
+.stat-section { display: flex; flex-direction: column; gap: 16px; }
+.stat-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.stat-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.stat-title h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.stat-count { color: var(--muted); font-size: 13px; }
+.stat-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-left: auto; }
+.stat-legend-form { display: flex; }
+.stat-group-label { margin: 0 0 8px 2px; }
+.stat-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; border: 1px dashed var(--dashed); border-radius: 6px; }
 .stat-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .stat { padding: 18px 20px; }
 .stat-value { font-size: 30px; font-weight: 600; margin-top: 4px; }
