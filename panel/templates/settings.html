@@ -323,7 +323,13 @@
       <div class="setting">
         <div class="setting-text">
           <div class="setting-name">按画面类型整理截图</div>
-          <div class="setting-desc">新截图会自动分类到英文目录。{% if organize_count %}有 {{ organize_count }} 张旧截图尚未整理{% elif recording %}正在记录的这一局会在结束后自动分类{% else %}旧截图已经整理完成{% endif %}</div>
+          {# 以前平铺存的截图移进画面类型文件夹（screenshots.organize）；正在记录的文件夹不动 #}
+          <div class="setting-desc">
+            {%- if shots_locked %}用源码运行时不整理：项目里的 <code>captures/</code> 是测试集
+            {%- elif organize_count %}新存的截图已经按画面类型（总结页、经验值页……）分文件夹放。以前存的还有 <span class="num">{{ organize_count }}</span> 张平铺放着，整理以后战绩页照样能打开
+            {%- else %}新存的截图已经按画面类型（总结页、经验值页……）分文件夹放，以前存的也都整理好了
+            {%- endif %}
+          </div>
         </div>
         <form method="post" action="{{ url_for('organize_shots') }}">
           <input type="hidden" name="token" value="{{ token }}">

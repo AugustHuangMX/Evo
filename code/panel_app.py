@@ -166,6 +166,15 @@ def close_db(_exc):
         conn.close()
 
 
+@app.after_request
+def cache_fonts(response):
+    """字体文件不会变（要换字体就换文件名）：让窗口直接用缓存，不用每打开一页都先问一遍"变了没有"。
+    不然问的这一会儿数字和英文先用系统字体画、回来再换成 Chakra Petch，宽窄不同，文字会跳一下（2026-11-02）。"""
+    if request.path.startswith("/static/fonts/") and response.status_code in (200, 304):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
+
 # ---------- 安全检查 ----------
 
 @app.before_request
@@ -1025,6 +1034,8 @@ def matches():
         if r["id"] == open_id:
             r["mates"] = [mate_view(m) for m in storage.teammates_of(db(), open_id)]
             r["show_detail"] = r["needs_review"] or request.args.get("detail") == "1"
+            if r["show_detail"] and r["has_evidence"]:  # 截图的宽高：事先留好位置，下载完不把修改表单推下去
+                r["shot_size"] = screenshots.image_size(storage.get_match(db(), open_id)["evidence_path"])
             if not r["needs_review"]:
                 share = {"player": None if r["player_name"] == "—" else r["player_name"],
                          "options": [{**share_options("match", match_id=r["id"]), "label": "单局战绩"}]}
@@ -1169,18 +1180,16 @@ def back_to_list(**changes):
 @app.post("/matches/<int:match_id>/update")
 def update(match_id):
     fields, errors = {}, []
-    if "mode" in request.form:
-        mode = request.form.get("mode", "").strip()
-        if mode and mode not in MODES:
-            errors.append("模式选项无效")
+    row = storage.get_match(db(), match_id)
+    # 模式、地图从下拉框选：只收名单里的；原来的值不在名单里（比如以后地图从名单里去掉了）时，没改也照样收
+    for name, label, allowed in (("mode", "模式", MODES), ("map", "地图", MATCH_MAPS)):
+        if name not in request.form:
+            continue
+        value = request.form.get(name, "").strip()
+        if value and value not in allowed and (row is None or value != row[name]):
+            errors.append(f"{label}选项无效")
         else:
-            fields["mode"] = mode or None
-    if "map" in request.form:
-        map_name = request.form.get("map", "").strip()
-        if map_name and map_name not in MATCH_MAPS:
-            errors.append("地图选项无效")
-        else:
-            fields["map"] = map_name or None
+            fields[name] = value or None
     for name, (label, low, high) in EDITABLE.items():
         raw = request.form.get(name, "").strip().replace(",", "").replace("−", "-")
         if raw == "":
@@ -1200,7 +1209,6 @@ def update(match_id):
         flash("没有保存：" + "；".join(errors), "error")
         return back_to_list(open=match_id)
 
-    row = storage.get_match(db(), match_id)
     if row is not None:  # 记下改过哪几项（只记改了哪项，不记原来的值；匿名统计的"识别情况"用，见 telemetry.py）
         edited = {f for f in (row["edited"] or "").split(",") if f} | {
             k for k in EDITABLE if fields[k] != row[k]

@@ -125,7 +125,8 @@
             <div class="evidence-title">识别依据（本局结算截图）</div>
             {% if r.has_evidence %}
             <a href="{{ url_for('evidence', match_id=r.id) }}" target="_blank" title="点击查看大图">
-              <img src="{{ url_for('evidence', match_id=r.id) }}" alt="第 {{ r.id }} 号对局的总结页截图">
+              <img src="{{ url_for('evidence', match_id=r.id) }}" alt="第 {{ r.id }} 号对局的总结页截图"
+                   {%- if r.shot_size %} width="{{ r.shot_size[0] }}" height="{{ r.shot_size[1] }}"{% endif %}>
             </a>
             {% else %}
             <div class="evidence-empty">没有截图：这一局没进总结页（识别完、确认过就不留截图），或者截图在以前的版本里识别完删掉了</div>
@@ -152,6 +153,7 @@
                   {% for key, label in modes.items() %}
                   <option value="{{ key }}" {{ 'selected' if r.form.mode == key }}>{{ label }}</option>
                   {% endfor %}
+                  {% if r.form.mode and r.form.mode not in modes %}<option value="{{ r.form.mode }}" selected>{{ r.form.mode }}</option>{% endif %}
                 </select>
               </label>
               <label class="field">
@@ -161,6 +163,8 @@
                   {% for name in maps %}
                   <option value="{{ name }}" {{ 'selected' if r.form.map == name }}>{{ name }}</option>
                   {% endfor %}
+                  {# 原来的值不在名单里（比如以后地图从名单里去掉了）也列出来，免得改别的项时把它清空 #}
+                  {% if r.form.map and r.form.map not in maps %}<option value="{{ r.form.map }}" selected>{{ r.form.map }}</option>{% endif %}
                 </select>
               </label>
             </form>
@@ -210,17 +214,11 @@
       window.location = tr.dataset.href;
     });
   });
-  // 展开了某一局：截图加载完后，只在展开内容完全看不到时滚动；不用平滑滚动，避免页面抖动。
+  // 展开了某一局：截图加载完后，平滑地滚动到刚好能看到展开的全部内容（队友，和打开了的详情；已经看得到就不动）
   var expanded = document.querySelectorAll(".mate-row, .mate-foot, .detail-row");
   if (expanded.length && !document.querySelector(".flash")) {
     window.addEventListener("load", function () {
-      var target = expanded[expanded.length - 1];
-      var rect = target.getBoundingClientRect();
-      var viewTop = document.documentElement.classList.contains("in-app") ? 34 : 0;
-      var viewBottom = window.innerHeight;
-      if (rect.top < viewTop || rect.bottom > viewBottom) {
-        target.scrollIntoView({ block: "nearest", behavior: "auto" });
-      }
+      expanded[expanded.length - 1].scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
     });
   }
 </script>

@@ -114,26 +114,46 @@ def switch_checks(frames):
 
 
 def organize_checks():
+    """设置页"整理截图"（以前平铺存的移进画面类型文件夹）、画面类型怎么认、记录结束时删掉空文件夹。"""
     live = CAPTURES_DIR / "live"
-    folder = live / "20991230_000000"
-    folder.mkdir(parents=True, exist_ok=True)
-    legacy = folder / "xp_235959_leave.png"
-    image(legacy)
+    folder, recording = live / "20991230_000000", live / "20991231_000000"
+    legacy, summary, enter, odd = (folder / name for name in
+                                   ("xp_235959_leave.png", "01_235900.jpg", "summary_235800_enter.png", "x.png"))
+    busy = recording / "02_235959.png"
+    for path in (legacy, summary, enter, odd, busy):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        image(path)
     conn = storage.connect(storage.DB_PATH.parent / "organize.db")
-    match_id = storage.insert_match(conn, {"ended_at": "2099-12-30 23:59:59", "needs_review": 1,
-                                           "evidence_path": data_relative(legacy)})
-    expected_moved = screenshots.organizable_count(skip=live / "20991231_000000")
-    moved = screenshots.organize(conn, skip=live / "20991231_000000")
-    row = storage.get_match(conn, match_id)
-    organized = data_absolute(row["evidence_path"])
+    ids = [storage.insert_match(conn, {"ended_at": "2099-12-30 23:59:59", "needs_review": 1, "evidence_path": shot})
+           for shot in (data_relative(legacy), str(summary.resolve()), data_relative(busy))]  # 第二局记的是完整路径
+    expected_moved = screenshots.organizable_count(skip=recording)  # 别的检查留下的截图也算
+    moved = screenshots.organize(conn, skip=recording)
+    paths = [data_absolute(storage.get_match(conn, i)["evidence_path"]) for i in ids]
     conn.close()
+
+    pruned = live / "20991229_000000"
+    for path in (pruned / "summary" / "01_000000.jpg", pruned / "xp" / "xp_000000_leave.png"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        image(path)
+    (pruned / "xp" / "xp_000000_leave.png").unlink()  # 识别完删了：xp/ 空了
+    screenshots.prune(pruned)
+    empty = live / "20991228_000000"
+    (empty / "hud").mkdir(parents=True)
+    screenshots.prune(empty)
     return {
-        "整理旧截图：按画面类型移动，并同步更新战绩截图路径": moved == expected_moved
-        and organized == folder / "xp" / legacy.name and organized.is_file() and not legacy.exists(),
-        "整理旧截图：目录结构按英文画面类型归档": screenshots.shot_type("01_235900.jpg") == "summary"
+        "整理旧截图：按画面类型移动，战绩里的截图位置跟着改（相对路径、完整路径都认）": moved == expected_moved
+        and paths[0] == folder / "xp" / legacy.name and paths[1] == folder / "summary" / summary.name
+        and all(p.is_file() for p in paths) and not legacy.exists() and not summary.exists(),
+        "整理旧截图：进总结页那一帧放进 summary/，认不出的放进 other/":
+        (folder / "summary" / enter.name).is_file() and (folder / "other" / odd.name).is_file(),
+        "整理旧截图：正在记录的文件夹不动": busy.is_file() and paths[2] == busy,
+        "画面类型文件夹都是英文名": screenshots.shot_type("01_235900.jpg") == "summary"
+        and screenshots.shot_type("summary_235900_leave.png") == "summary"
         and screenshots.shot_type("eliminated_235900_enter.png") == "eliminated"
         and screenshots.shot_type("hud_235900_last.png") == "hud"
-        and screenshots.shot_type("other.png") == "其他",
+        and screenshots.shot_type("other.png") == "other",
+        "记录结束时：删掉空了的画面类型文件夹，还有截图的留着；整个都空了，这次记录的文件夹也删掉":
+        (pruned / "summary" / "01_000000.jpg").is_file() and not (pruned / "xp").exists() and not empty.exists(),
     }
 
 
@@ -395,6 +415,9 @@ def main():
         "经验值页只存离开前的最后一帧": all(n.endswith("_leave.png") for n in saved if n.startswith("xp_")),
         f"留下的截图正好是每一局的总结页截图（转成 JPG，{len(summaries)} 张）和待确认的局要用的":
         left == summaries | needed and len(summaries) >= 5 and len(review) == 1,
+        "截图按画面类型分文件夹存；记录结束后没有空着的文件夹（经验值页的都删了，xp/ 也删掉）":
+        (run_dir / "summary").is_dir() and not (run_dir / "xp").exists()
+        and all(any(d.iterdir()) for d in run_dir.rglob("*") if d.is_dir()),
         "待确认的局在战绩页还能打开截图": all(data_absolute(r["evidence_path"]).is_file() for r in review),
         "有总结页的局：截图位置改成 JPG、打得开；别的不用确认的局，截图位置已清空": all(
             (r["evidence_path"].endswith(".jpg") and data_absolute(r["evidence_path"]).is_file())

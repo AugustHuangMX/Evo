@@ -25,7 +25,7 @@
 - 读结算画面、大厅时不让 Windows 降频（见 FullSpeed）：笔记本上识别可能慢 10 倍以上，玩家等不到提示音就离开了
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
-截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
+截图存在 captures/live/<开始时间>/<画面类型>/（summary、xp、hud……，见 screenshots.SHOT_TYPES）。截图留不留见 screenshots.py：
 - 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留总结页截图（转成 JPG）和"待确认"的局要用的
 - 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅、淘汰画面、冠军横幅也存，
   进入时一张、离开前最后一帧一张；每局结束时还存最后一张自己的界面（hud_时间_last.png，校准对局中的区域用）
@@ -698,24 +698,23 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         speed.stop()
         camera.release()
         conn.close()
-    left = sum(1 for p in run_dir.rglob("*") if p.is_file() and p.suffix.lower() in (".png", ".jpg"))
-    if not any(run_dir.iterdir()):
-        run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
-    saved = total()
-    per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
-    log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike + detector.unchanged} 次"
-        f"（{detector.unchanged} 次画面没变，没再读关键字）；识别 {engine.calls} 次{per_call}，"
-        f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
-        f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
-        f"玩家名 {post.player_name or '没认出'}；总结页读了 {summary.fields_read} 项（没变沿用 {summary.fields_reused} 项）；"
-        f"大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
-        f"{usage.total()}，内存峰值 {memory_mb()[1]:.0f} MB")
-    kinds = "保留全部" if keep else "总结页截图、待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
-    log(f"截图：留下 {left} 张（{kinds}）"
-        + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
-           f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
-    del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed, seasons  # 释放识别模型和截屏，交还内存
-    gc.collect()
+        left = sum(1 for p in run_dir.rglob("*") if p.is_file() and p.suffix.lower() in (".png", ".jpg"))
+        screenshots.prune(run_dir)  # 删掉空的分类文件夹；一张截图都没留下时，这次记录的文件夹也删掉
+        saved = total()
+        per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
+        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike + detector.unchanged} 次"
+            f"（{detector.unchanged} 次画面没变，没再读关键字）；识别 {engine.calls} 次{per_call}，"
+            f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
+            f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
+            f"玩家名 {post.player_name or '没认出'}；总结页读了 {summary.fields_read} 项（没变沿用 {summary.fields_reused} 项）；"
+            f"大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
+            f"{usage.total()}，内存峰值 {memory_mb()[1]:.0f} MB")
+        kinds = "保留全部" if keep else "总结页截图、待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
+        log(f"截图：留下 {left} 张（{kinds}）"
+            + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
+               f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
+        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed, seasons  # 释放识别模型和截屏，交还内存
+        gc.collect()
     if status is not None:
         status["saved"] = saved
     return saved
