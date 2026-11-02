@@ -6,7 +6,8 @@
 - 队友表（不用截图）：版本 3 的旧数据库升级后有队友表、原来的局不变；存、覆盖、删一局、清空都会带上队友
 - 战绩页（不用截图，Flask 测试客户端）：点开一局只展开两名队友（名字、击杀/助攻/击倒、伤害、生存、急救、重生，悬停显示 ID），
   截图和修改表单要再点"详情与修改"；换一局时详情收起；待确认的局直接全部展开；
-  只有经验值页的局、没有队友数据的局各有说明；名字没读到时写"名字没读到"
+  只有经验值页的局、没有队友数据的局各有说明；名字没读到时写"名字没读到"；
+  修改表单能改模式、地图（下拉框；原来的值不在名单里也列出来，改别的项时不清空）；截图事先按宽高留好位置；字体让窗口用缓存
 
 运行：python tests/test_teammates.py
 """
@@ -18,6 +19,8 @@ from pathlib import Path
 
 from fake_game import SHOTS, report  # 要在项目代码之前导入（设置临时数据文件夹）
 
+from PIL import Image  # noqa: E402
+
 import panel_app
 import storage
 from post_match import XP_ONLY_NOTE
@@ -27,7 +30,9 @@ FOLDER = Path(tempfile.mkdtemp(prefix="evo-mates-", dir=storage.DB_PATH.parent.p
 
 def screenshot_checks():
     """返回检查结果；没有截图返回 None。"""
-    files = sorted(SHOTS.glob("live/*/[0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].png"))
+    # 总结页截图：以前平铺在每次记录的文件夹里，现在在它的 summary/ 里（screenshots.path_for），两种都找
+    files = sorted(p for p in [*SHOTS.glob("live/*/*.png"), *SHOTS.glob("live/*/*/*.png")]
+                   if re.fullmatch(r"\d{2,}_\d{6}\.png", p.name))
     if not files:
         return None
     from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image  # 用到截图才加载识别引擎
@@ -115,6 +120,10 @@ def panel_checks():
     storage.save_teammates(conn, review, [{"slot": "left", "name": "Mate"}])
     xp_only = add(review_note=XP_ONLY_NOTE)
     bare = add()
+    old_map = add(mode="ranked", map="旧地图")  # 地图名单里没有的（比如以后从名单里去掉了的地图）
+    shot = FOLDER / "01_120000.png"
+    Image.new("RGB", (160, 90)).save(shot)
+    with_shot = add(needs_review=1, evidence_path=str(shot))
     panel_app.app.config.update(DB=path, TESTING=True)
     client, token = panel_app.app.test_client(), panel_app.app.config["TOKEN"]
 
@@ -128,6 +137,25 @@ def panel_checks():
     review_page = get(f"/matches?open={review}")
     xp_page = get(f"/matches?open={xp_only}")
     bare_page = get(f"/matches?open={bare}")
+    old_page = get(f"/matches?open={old_map}&detail=1")
+    old_form = {k: "" if storage.get_match(conn, old_map)[k] is None else str(storage.get_match(conn, old_map)[k])
+                for k in panel_app.EDITABLE}
+    client.post(f"/matches/{old_map}/update", data={"token": token, **old_form, "kills": "4", "mode": "ranked",
+                                                     "map": "旧地图", "next": "/matches"})
+    kept_old = storage.get_match(conn, old_map)
+    shot_page = get(f"/matches?open={with_shot}")
+    font = client.get("/static/fonts/ChakraPetch-500.woff2")
+    font_cache = font.headers.get("Cache-Control", "")
+    font.close()
+    form = {k: "" if storage.get_match(conn, normal)[k] is None else str(storage.get_match(conn, normal)[k])
+            for k in panel_app.EDITABLE}
+    saved = client.post(f"/matches/{normal}/update", data={"token": token, **form, "mode": "ranked",
+                                                             "map": "奥林匹斯", "next": "/matches"})
+    updated = storage.get_match(conn, normal)
+    invalid = client.post(f"/matches/{normal}/update", data={"token": token, "mode": "unknown",
+                                                               "map": "不存在的地图", "next": "/matches"},
+                          follow_redirects=True)
+    after_invalid = storage.get_match(conn, normal)
     client.post(f"/matches/{normal}/delete", data={"token": token, "next": "/matches"})
     conn2 = storage.connect(path)
     gone = storage.teammates_of(conn2, normal)
@@ -143,6 +171,18 @@ def panel_checks():
         "点开时截图和修改表单先不出来，有\"详情与修改\"按钮": f'id="upd-{normal}"' not in opened and "详情与修改" in opened
         and f"open={normal}&amp;detail=1" in opened,
         "点\"详情与修改\"后：修改表单出来，按钮变成\"收起详情\"": f'id="upd-{normal}"' in detail and "收起详情" in detail,
+        "修改表单有模式和地图下拉框，保存后写入数据库并记下手动修改项":
+            'name="mode"' in detail and 'name="map"' in detail
+            and detail.index('name="rp_delta"') < detail.index('name="mode"') < detail.index('name="map"')
+            and (updated["mode"], updated["map"], updated["edited"]) == ("ranked", "奥林匹斯", "map,mode"),
+        "无效的模式和地图不会覆盖已保存的值，表单显示错误":
+            (after_invalid["mode"], after_invalid["map"]) == ("ranked", "奥林匹斯")
+            and "选项无效" in invalid.get_data(as_text=True),
+        "原来的地图不在名单里：下拉框照样选中它，改别的项保存时不清空、不算改过地图":
+            '<option value="旧地图" selected>' in old_page and (kept_old["map"], kept_old["kills"]) == ("旧地图", 4)
+            and kept_old["edited"] == "kills",
+        "截图事先留好位置：<img> 上写着截图的宽高": 'width="160" height="90"' in shot_page,
+        "字体让窗口直接用缓存，不用每打开一页都问一遍（不然文字会跳一下）": "max-age=31536000" in font_cache,
         "详情打开时，点别的局（展开别的局）详情收起": bool(other_links)
         and all("detail=" not in href for href, mid in other_links if int(mid) != normal),
         "待确认的局点开就全部展开（队友 + 修改表单），没有\"详情与修改\"按钮": "Mate" in review_page

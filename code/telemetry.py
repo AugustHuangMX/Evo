@@ -66,6 +66,7 @@ BATCH = 100  # 一次请求最多带几局（服务器也只收这么多）
 TIMEOUT = 15  # 秒：和检查新版本一样，国内有的网络到 Cloudflare 绕得远
 MAX_REPLY = 64 * 1024
 MATCH_FIELDS = ("placement", "kills", "assists", "knockdowns", "damage", "rp_delta")
+EDITED_FIELDS = frozenset((*MATCH_FIELDS, "participation"))  # 旧版统计服务接受的修正字段；新字段等服务更新后再发
 MATE_FIELDS = ("kills", "assists", "knockdowns", "damage")  # 队友每局发的数字（没有名字和 ID）
 COUNT_AFTER = game_lang.load("weapons.json")["count_after_seconds"]  # 武器只算第一次拿到武器多少秒以后的（同数据页）
 _lock = threading.Lock()  # 托盘的定时发送和设置页的按钮可能同时来，一次只让一个发
@@ -154,7 +155,7 @@ def weapon_payload(conn, match_id):
 def match_payload(conn, row, install):
     """一局要发的内容（只有这些项）。"""
     mates = storage.teammates_of(conn, row["match_id"])[:2]
-    edited = sorted({f for f in (row["edited"] or "").split(",") if f})
+    edited = sorted({f for f in (row["edited"] or "").split(",") if f in EDITED_FIELDS})
     return {"k": match_key(install, row), "day": (row["ended_at"] or "")[:10] or None, "version": row["app_version"],
             "mode": row["mode"], "map": row["map"], "legend": row["legend"], "mates": [m["legend"] for m in mates],
             # 队友的数据单独放一项：老的统计服务器不认识它，照样收下这一局（mates 的格式不变）

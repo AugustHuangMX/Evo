@@ -125,7 +125,8 @@
             <div class="evidence-title">识别依据（本局结算截图）</div>
             {% if r.has_evidence %}
             <a href="{{ url_for('evidence', match_id=r.id) }}" target="_blank" title="点击查看大图">
-              <img src="{{ url_for('evidence', match_id=r.id) }}" alt="第 {{ r.id }} 号对局的总结页截图">
+              <img src="{{ url_for('evidence', match_id=r.id) }}" alt="第 {{ r.id }} 号对局的总结页截图"
+                   {%- if r.shot_size %} width="{{ r.shot_size[0] }}" height="{{ r.shot_size[1] }}"{% endif %}>
             </a>
             {% else %}
             <div class="evidence-empty">没有截图：这一局没进总结页（识别完、确认过就不留截图），或者截图在以前的版本里识别完删掉了</div>
@@ -145,6 +146,27 @@
                        placeholder="{{ '如 -7' if name == 'rp_delta' else low ~ '–' ~ high }}" class="{{ 'warn' if name in r.warn_fields }}">
               </label>
               {% endfor %}
+              <label class="field">
+                <span class="label">模式</span>
+                <select name="mode">
+                  <option value="" {{ 'selected' if not r.form.mode }}>未识别</option>
+                  {% for key, label in modes.items() %}
+                  <option value="{{ key }}" {{ 'selected' if r.form.mode == key }}>{{ label }}</option>
+                  {% endfor %}
+                  {% if r.form.mode and r.form.mode not in modes %}<option value="{{ r.form.mode }}" selected>{{ r.form.mode }}</option>{% endif %}
+                </select>
+              </label>
+              <label class="field">
+                <span class="label">地图</span>
+                <select name="map">
+                  <option value="" {{ 'selected' if not r.form.map }}>未识别</option>
+                  {% for name in maps %}
+                  <option value="{{ name }}" {{ 'selected' if r.form.map == name }}>{{ name }}</option>
+                  {% endfor %}
+                  {# 原来的值不在名单里（比如以后地图从名单里去掉了）也列出来，免得改别的项时把它清空 #}
+                  {% if r.form.map and r.form.map not in maps %}<option value="{{ r.form.map }}" selected>{{ r.form.map }}</option>{% endif %}
+                </select>
+              </label>
             </form>
             <div class="actions">
               <form method="post" action="{{ url_for('delete', match_id=r.id) }}"

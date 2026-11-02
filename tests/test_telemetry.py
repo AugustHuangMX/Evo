@@ -156,6 +156,11 @@ def send_checks(conn):
     client.post(f"/matches/{first}/update", data={"token": token, **form, "damage": "1300", "kills": "5",
                                                   "next": "/matches"})
     out["再改击杀：两项都记着"] = storage.get_match(conn, first)["edited"] == "damage,kills"
+    client.post(f"/matches/{first}/update", data={"token": token, **form, "damage": "1300", "kills": "5",
+                                                  "mode": "pubs", "map": "奥林匹斯", "next": "/matches"})
+    manual = telemetry.match_payload(conn, storage.get_match(conn, first), telemetry.install_id())
+    out["手动改的模式和地图正常随战绩上传，修改项名称兼容现有统计服务"] = (
+        manual["mode"] == "pubs" and manual["map"] == "奥林匹斯" and manual["edited"] == ["damage", "kills"])
     Handler.requests.clear()
     telemetry.send(now=later)
     again = sent_matches()

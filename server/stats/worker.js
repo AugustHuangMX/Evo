@@ -40,7 +40,8 @@ const MATE_NUMBERS = ["kills", "assists", "knockdowns", "damage"];  // 队友每
 const WEAPON = /^[a-z0-9_]{1,32}$/;
 const MAX_WEAPONS = 40;
 const WEAPON_SECONDS = [1, 7200];
-const EDITABLE = new Set(["placement", "kills", "assists", "knockdowns", "participation", "damage", "rp_delta"]);
+const EDITABLE = new Set(["placement", "kills", "assists", "knockdowns", "participation", "damage", "rp_delta",
+                         "mode", "map"]);
 
 const MATE_COLUMNS = [1, 2].flatMap((i) => MATE_NUMBERS.map((f) => `mate${i}_${f}`));
 

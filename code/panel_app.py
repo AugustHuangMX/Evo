@@ -112,6 +112,11 @@ def load_legend_icons():
 
 LEGEND_ICONS = load_legend_icons()
 
+try:
+    MATCH_MAPS = tuple(json.loads((CONFIG_DIR / "match_start.json").read_text(encoding="utf-8"))["maps"])
+except (OSError, ValueError, KeyError):
+    MATCH_MAPS = ()
+
 # ---- 设置页 ----
 SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
 FEEDBACK_URL = "https://qm.qq.com/q/6L2kTbmCWc"  # "意见反馈"：加 QQ 群（和 README、隐私政策里的是同一个群）
@@ -159,6 +164,15 @@ def close_db(_exc):
     conn = g.pop("db", None)
     if conn is not None:
         conn.close()
+
+
+@app.after_request
+def cache_fonts(response):
+    """字体文件不会变（要换字体就换文件名）：让窗口直接用缓存，不用每打开一页都先问一遍"变了没有"。
+    不然问的这一会儿数字和英文先用系统字体画、回来再换成 Chakra Petch，宽窄不同，文字会跳一下（2026-11-02）。"""
+    if request.path.startswith("/static/fonts/") and response.status_code in (200, 304):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
 
 # ---------- 安全检查 ----------
@@ -376,7 +390,8 @@ def view(row):
         "has_evidence": bool(row["evidence_path"]),
         "evidence_recorded": screenshots.recorded(row["evidence_path"]),  # 记录程序存的截图：确认、删除这一局时会删掉
         "evidence_summary": screenshots.is_summary(row["evidence_path"]),  # 总结页截图：确认时留着，删除这一局时才删
-        "form": {name: "" if row[name] is None else row[name] for name in EDITABLE},
+        "form": {name: "" if row[name] is None else row[name] for name in EDITABLE} | {
+            name: "" if row[name] is None else row[name] for name in ("mode", "map")},
         "warn_fields": warn_fields(row["review_note"]) if row["needs_review"] else set(),
     }
 
@@ -1019,6 +1034,8 @@ def matches():
         if r["id"] == open_id:
             r["mates"] = [mate_view(m) for m in storage.teammates_of(db(), open_id)]
             r["show_detail"] = r["needs_review"] or request.args.get("detail") == "1"
+            if r["show_detail"] and r["has_evidence"]:  # 截图的宽高：事先留好位置，下载完不把修改表单推下去
+                r["shot_size"] = screenshots.image_size(storage.get_match(db(), open_id)["evidence_path"])
             if not r["needs_review"]:
                 share = {"player": None if r["player_name"] == "—" else r["player_name"],
                          "options": [{**share_options("match", match_id=r["id"]), "label": "单局战绩"}]}
@@ -1040,6 +1057,7 @@ def matches():
         open_id=open_id,
         review_count=storage.count_review(db(), names),
         editable=EDITABLE,
+        maps=MATCH_MAPS,
         share=share,
     )
 
@@ -1162,6 +1180,16 @@ def back_to_list(**changes):
 @app.post("/matches/<int:match_id>/update")
 def update(match_id):
     fields, errors = {}, []
+    row = storage.get_match(db(), match_id)
+    # 模式、地图从下拉框选：只收名单里的；原来的值不在名单里（比如以后地图从名单里去掉了）时，没改也照样收
+    for name, label, allowed in (("mode", "模式", MODES), ("map", "地图", MATCH_MAPS)):
+        if name not in request.form:
+            continue
+        value = request.form.get(name, "").strip()
+        if value and value not in allowed and (row is None or value != row[name]):
+            errors.append(f"{label}选项无效")
+        else:
+            fields[name] = value or None
     for name, (label, low, high) in EDITABLE.items():
         raw = request.form.get(name, "").strip().replace(",", "").replace("−", "-")
         if raw == "":
@@ -1181,9 +1209,10 @@ def update(match_id):
         flash("没有保存：" + "；".join(errors), "error")
         return back_to_list(open=match_id)
 
-    row = storage.get_match(db(), match_id)
     if row is not None:  # 记下改过哪几项（只记改了哪项，不记原来的值；匿名统计的"识别情况"用，见 telemetry.py）
-        edited = {f for f in (row["edited"] or "").split(",") if f} | {k for k in EDITABLE if fields[k] != row[k]}
+        edited = {f for f in (row["edited"] or "").split(",") if f} | {
+            k for k in EDITABLE if fields[k] != row[k]
+        } | {k for k in ("mode", "map") if k in fields and fields[k] != row[k]}
         if edited:
             fields["edited"] = ",".join(sorted(edited))
     fields["needs_review"] = 0  # 人工确认过了，不再标记待确认（review_note 保留，记录当初为什么待确认）
@@ -1284,6 +1313,7 @@ def db_path():
 @app.route("/settings")
 def settings():
     shot_count, shot_bytes = folder_usage(CAPTURES_DIR / "live")
+    recording = screenshots.recording_folder()
     clean = screenshots.cleanable(db())
     size = screen_size()
     return render_template(
@@ -1302,12 +1332,13 @@ def settings():
         db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
         total=storage.query_matches(db(), limit=1)[1],
         review_count=storage.count_review(db()),
-        captures_dir=CAPTURES_DIR,
+        captures_dir=CAPTURES_DIR / "live",
         shot_count=shot_count,
         shot_size=size_text(shot_bytes),
         keep_shots=app_settings.get(screenshots.KEEP_ALL_KEY, False) is True,
         shots_locked=screenshots.in_project(),  # 用源码运行：永远保留全部，开关和删除按钮都不能用
-        recording=screenshots.recording_folder() is not None,
+        recording=recording is not None,
+        organize_count=screenshots.organizable_count(skip=recording),
         clean_count=clean.deleted,
         clean_convert=clean.converted,
         clean_size=size_text(clean.freed),
@@ -1534,7 +1565,7 @@ def sound_preview():
 @app.post("/settings/open-folder")
 def open_folder():
     """在资源管理器里打开数据或截图文件夹。只能打开这两个固定的文件夹。"""
-    target = {"data": db_path().parent, "captures": CAPTURES_DIR}.get(request.form.get("which"))
+    target = {"data": db_path().parent, "captures": CAPTURES_DIR / "live"}.get(request.form.get("which"))
     if target is None:
         abort(400)
     target.mkdir(parents=True, exist_ok=True)
@@ -1575,6 +1606,17 @@ def clean_shots():
         flash(f"{stuck} 张截图没处理（可能正被别的程序打开），关掉后再试一次", "error")
     else:
         flash("没有可以删的截图", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/settings/organize-shots")
+def organize_shots():
+    """把以前平铺存放的截图按画面类型整理；正在记录的文件夹不动。"""
+    if screenshots.in_project():
+        abort(400)
+    moved = screenshots.organize(db(), skip=screenshots.recording_folder())
+    flash(f"已按画面类型整理 {moved} 张截图，战绩里的截图链接已同步更新。" if moved
+          else "没有需要整理的旧截图。", "ok")
     return redirect(url_for("settings"))
 
 

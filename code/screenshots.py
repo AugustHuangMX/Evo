@@ -14,6 +14,8 @@
 - 只删这次记录的文件夹里的截图，以前存下的不动
 - 战绩页确认（保存）或删除一局时，删掉这一局的截图（discard）
 - 设置页"删除已识别完的截图"按钮（clean_up）：以前存下的也按同样的规则删（总结页截图转成 JPG），正在记录的文件夹不动
+- 一次记录的截图按画面类型分文件夹存（path_for，2026-11-02 合并 PR #3）：captures/live/<开始时间>/summary/、xp/、hud/……；
+  以前平铺存的用设置页"整理截图"按钮（organize）移进去，战绩里的截图位置跟着改
 """
 
 import multiprocessing
@@ -31,6 +33,18 @@ from paths import APP_DIR, CAPTURES_DIR, FROZEN, data_absolute, data_relative
 KEEP_ALL_KEY = "keep_all_screenshots"
 PROJECT_CAPTURES = APP_DIR / "captures"  # 用源码运行时项目里的截图文件夹（测试集）
 SUMMARY_NAME = re.compile(r"\d{2,}_\d{6}\.(png|jpg)", re.IGNORECASE)  # 总结页截图：第几局_存下的时间，如 01_213331.png
+SHOT_TYPES = (  # 文件名开头 → 放进哪个文件夹（按顺序找第一个对上的；都对不上放进 OTHER_TYPE）
+    (SUMMARY_NAME, "summary"),
+    (re.compile(r"summary_", re.IGNORECASE), "summary"),  # 保留全部截图时进入、离开总结页的那一帧
+    (re.compile(r"xp_", re.IGNORECASE), "xp"),
+    (re.compile(r"eliminated_", re.IGNORECASE), "eliminated"),
+    (re.compile(r"champion_", re.IGNORECASE), "champion"),
+    (re.compile(r"squad_out_", re.IGNORECASE), "squad_out"),
+    (re.compile(r"lobby_", re.IGNORECASE), "lobby"),
+    (re.compile(r"match_start_", re.IGNORECASE), "match_start"),
+    (re.compile(r"hud_", re.IGNORECASE), "hud"),
+)
+OTHER_TYPE = "other"
 JPG_QUALITY = 85  # 名字、数字和原图看不出差别（2026-10-24 对比过）
 JPG_RATIO = 0.18  # 设置页估算能腾出多少用：JPG 大约是 PNG 的这么多
 Cleaned = namedtuple("Cleaned", "deleted converted freed")  # 删了几张、几张总结页截图转成了 JPG、腾出多少字节
@@ -39,6 +53,73 @@ Cleaned = namedtuple("Cleaned", "deleted converted freed")  # 删了几张、几
 def is_summary(path):
     """是不是总结页截图（按文件名）。"""
     return bool(path) and SUMMARY_NAME.fullmatch(Path(path).name) is not None
+
+
+def shot_type(path):
+    """按记录程序的文件名认出截图是哪个画面（放进哪个文件夹）；没认出的放进 other。"""
+    name = Path(path).name
+    return next((folder for pattern, folder in SHOT_TYPES if pattern.match(name)), OTHER_TYPE)
+
+
+def path_for(folder, name):
+    """一局里按截图类型分目录，文件名保持原样，方便按时间排序和重放。"""
+    return Path(folder) / shot_type(name) / Path(name).name
+
+
+def organizable_count(skip=None):
+    """旧的平铺截图中，尚未归入类型目录的文件数；跳过正在记录的目录。"""
+    return sum(1 for folder in finished_folders(skip=skip) for path in folder.iterdir()
+               if path.is_file() and path.suffix.lower() in (".png", ".jpg"))
+
+
+def organize(conn, skip=None):
+    """设置页"整理截图"：以前平铺存的截图移进画面类型文件夹，战绩里的截图位置跟着改；正在记录的文件夹（skip）不动。
+    按截图实际是哪个文件找对应的局（数据库里可能是相对路径，也可能是完整路径）。返回移了几张。"""
+    used = {}  # 截图（绝对路径）→ 用它的局
+    for row in conn.execute("SELECT match_id, evidence_path FROM matches WHERE evidence_path IS NOT NULL"):
+        used.setdefault(data_absolute(row["evidence_path"]).resolve(), []).append(row["match_id"])
+    moved = 0
+    for folder in finished_folders(skip=skip):
+        for path in sorted(folder.iterdir()):
+            if not path.is_file() or path.suffix.lower() not in (".png", ".jpg"):
+                continue
+            target = path_for(folder, path.name)
+            if target.exists():
+                continue
+            target.parent.mkdir(exist_ok=True)
+            old = path.resolve()
+            path.replace(target)
+            for match_id in used.get(old, []):
+                storage.update_match(conn, match_id, {"evidence_path": data_relative(target)})
+            moved += 1
+    return moved
+
+
+def prune(folder):
+    """删掉 folder 里空的画面类型文件夹；整个都空了，folder 也删掉。里面还有文件的删不掉，不管。"""
+    folder = Path(folder)
+    if not folder.is_dir():
+        return
+    for child in sorted((p for p in folder.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+        try:
+            child.rmdir()
+        except OSError:
+            pass
+    try:
+        folder.rmdir()
+    except OSError:
+        pass
+
+
+def image_size(evidence_path):
+    """截图的宽、高（只读文件头），战绩页事先给截图留好位置用，免得下载完把下面的内容推下去。读不到返回 None。"""
+    if not evidence_path:
+        return None
+    try:
+        with Image.open(data_absolute(evidence_path)) as img:
+            return img.size
+    except (OSError, ValueError):
+        return None
 
 
 def in_project():
@@ -57,13 +138,13 @@ def removable(conn, folders, protect=frozenset()):
     """这些文件夹里可以删的截图：除了总结页截图、"待确认"的局要用的、protect 里的（绝对路径），全部。"""
     needed = {data_absolute(row[0]).resolve() for row in conn.execute(
         "SELECT evidence_path FROM matches WHERE needs_review AND evidence_path IS NOT NULL")} | set(protect)
-    return [path for folder in folders for path in sorted(folder.glob("*.png"))
+    return [path for folder in folders for path in sorted(folder.rglob("*.png"))
             if path.resolve() not in needed and not is_summary(path)]
 
 
 def convertible(folders, protect=frozenset()):
     """这些文件夹里还没转成 JPG 的总结页截图（protect 里的不转）。"""
-    return [path for folder in folders for path in sorted(folder.glob("*.png"))
+    return [path for folder in folders for path in sorted(folder.rglob("*.png"))
             if is_summary(path) and path.resolve() not in protect]
 
 
@@ -98,7 +179,8 @@ def _delete(conn, folders, protect=frozenset()):
                             "WHERE evidence_path IS NOT NULL").fetchall():
         path = data_absolute(row["evidence_path"]).resolve()
         used.setdefault(path, []).append(row["match_id"])
-        if not row["needs_review"] and path.parent in folders and path not in protect and not is_summary(path):
+        if not row["needs_review"] and any(path.is_relative_to(folder) for folder in folders) \
+                and path not in protect and not is_summary(path):
             storage.update_match(conn, row["match_id"], {"evidence_path": None})
     deleted = converted = freed = 0
     for path in removable(conn, folders, protect):
@@ -153,10 +235,7 @@ def clean_up(conn):
     folders = finished_folders(skip=recording_folder())
     result = _delete(conn, folders)
     for folder in folders:
-        try:
-            folder.rmdir()  # 只有空文件夹才删得掉
-        except OSError:
-            pass
+        prune(folder)  # 删空的文件夹也删掉
     return result
 
 

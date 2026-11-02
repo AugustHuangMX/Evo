@@ -25,7 +25,7 @@
 - 读结算画面、大厅时不让 Windows 降频（见 FullSpeed）：笔记本上识别可能慢 10 倍以上，玩家等不到提示音就离开了
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
-截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
+截图存在 captures/live/<开始时间>/<画面类型>/（summary、xp、hud……，见 screenshots.SHOT_TYPES）。截图留不留见 screenshots.py：
 - 默认识别完就删：只存总结页、经验值页（离开前最后一帧），一局结束时只留总结页截图（转成 JPG）和"待确认"的局要用的
 - 保留全部截图（攒测试集用；用源码运行时永远保留全部）：经验值页、开局画面、大厅、淘汰画面、冠军横幅也存，
   进入时一张、离开前最后一帧一张；每局结束时还存最后一张自己的界面（hud_时间_last.png，校准对局中的区域用）
@@ -187,7 +187,9 @@ class SummaryWatcher:
             return
         if note:
             problems = problems + [note]
-        image_path = self.run_dir / f"{self.saved + 1:02d}_{when:%H%M%S}.png"
+        name = f"{self.saved + 1:02d}_{when:%H%M%S}.png"
+        image_path = screenshots.path_for(self.run_dir, name)
+        image_path.parent.mkdir(parents=True, exist_ok=True)
         save_png(image_path, frame)
         match = summary_to_match(results, problems, f"{when:%Y-%m-%d %H:%M:%S}", image_path)
         match_id = storage.insert_match(self.conn, match)
@@ -328,7 +330,9 @@ class ScreenWatcher:
                 self.post.on_champion(now, SOURCE_CHAMPION)
             self.enter_path = None
             if screen is not None and self.keep_all:
-                self.enter_path = self.run_dir / f"{screen}_{now:%H%M%S}_enter.png"
+                name = f"{screen}_{now:%H%M%S}_enter.png"
+                self.enter_path = screenshots.path_for(self.run_dir, name)
+                self.enter_path.parent.mkdir(parents=True, exist_ok=True)
                 save_png(self.enter_path, frame)
                 self.log(f"[{now:%H:%M:%S}] 进入{self._label(screen)}，已存截图")
             elif screen is not None:
@@ -349,7 +353,9 @@ class ScreenWatcher:
             last_frame, last_time = self.last
             path = self.enter_path
             if (self.frames > 1) if self.keep_all else (self.current == "xp"):
-                path = self.run_dir / f"{self.current}_{last_time:%H%M%S}_leave.png"
+                name = f"{self.current}_{last_time:%H%M%S}_leave.png"
+                path = screenshots.path_for(self.run_dir, name)
+                path.parent.mkdir(parents=True, exist_ok=True)
                 save_png(path, last_frame)
                 self.log(f"[{last_time:%H:%M:%S}] 离开{self._label(self.current)}，已存最后一帧")
             if self.current == "xp":
@@ -552,7 +558,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
             if keep:
                 log("           设置页打开了\"保留全部截图\"：从下一局开始全部保留，刚结束的这一局也不删")
             else:
-                protect.update(p.resolve() for p in run_dir.glob("*.png"))
+                protect.update(p.resolve() for p in run_dir.rglob("*.png"))
                 log(f"           设置页关掉了\"保留全部截图\"：从下一局开始识别完就删，之前存下的 {len(protect)} 张不删")
         if keep:
             return
@@ -581,7 +587,12 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     other = ScreenWatcher(engine, detector.cfg, load_config("xp.json", lang), load_config("match_start.json", lang),
                           load_config("eliminated.json", lang), post, run_dir, log, keep_all=keep,
                           busy=lambda: summary.waiting)
-    in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
+    def save_hud(frame, name):
+        path = screenshots.path_for(run_dir, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_png(path, frame)
+
+    in_match = InMatchWatcher(hud, post, log, name_cfg, save=save_hud,
                               keep_all=lambda: other.keep_all, before_hand_over=summary.catch_up)
     lobby = LobbyWatcher(LobbyReader(engine, load_config("lobby.json", lang)), post, conn, log)
     seasons = SeasonWatcher(engine, conn, post, log)  # 录入历史赛季数据（设置页的按钮）
@@ -687,9 +698,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         speed.stop()
         camera.release()
         conn.close()
-        left = sum(1 for p in run_dir.iterdir() if p.suffix.lower() in (".png", ".jpg"))
-        if not any(run_dir.iterdir()):
-            run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
+        left = sum(1 for p in run_dir.rglob("*") if p.is_file() and p.suffix.lower() in (".png", ".jpg"))
+        screenshots.prune(run_dir)  # 删掉空的分类文件夹；一张截图都没留下时，这次记录的文件夹也删掉
         saved = total()
         per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
         log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike + detector.unchanged} 次"
