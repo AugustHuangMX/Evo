@@ -1,0 +1,70 @@
+{
+  "_说明": "测试工具（code/evo_tester.py）的测试项目，窗口里按这个顺序列出来，测试员选一个。name、summary、steps 是给测试员看的。capture 是截法（做法在 code/tester_capture.py）：every = 游戏开着时每隔 interval 秒一张（画面没变不存），每 full_seconds 秒另存一张原尺寸；still = 画面停稳了、和上一张存的不一样才存一张原尺寸，嘀一声；weapons = 右下角手上的武器换了就存几张（整张缩小的 + 右下角无损的一块），嘀一声。evo：required = 要 Evo 开着（打完对答案），recommended = 最好开着，none = 不用。answers：打完要确认什么（matches = Evo 记下的每局，season_stats = Evo 读到的赛季数据）。checklist：给测试员看的名单（weapons = config/weapons.json 里的武器）。max_minutes、max_mb：最多录多久、多大",
+  "languages": ["简体中文", "繁體中文", "English", "其他"],
+  "projects": {
+    "match": {
+      "name": "打一局",
+      "summary": "正常打排位或匹配，看 Evo 记得对不对。新的分辨率、新的游戏语言也用这一项",
+      "steps": [
+        "先打开 Evo（要它开着：打完要对一下它记下的战绩）",
+        "正常打。大厅、开局、总结页、经验值页（要手动切过去）多停几秒",
+        "打完回到这个窗口点“结束”，一局一局确认 Evo 记得对不对：记对了的局不带截图，压缩包会小很多"
+      ],
+      "capture": "every",
+      "interval": 1.0,
+      "full_seconds": 60,
+      "evo": "required",
+      "answers": "matches",
+      "max_minutes": 180,
+      "max_mb": 6000
+    },
+    "weapons": {
+      "name": "靶场：武器",
+      "summary": "在靶场把每把武器拿一遍，用来认右下角手上的武器",
+      "steps": [
+        "进靶场",
+        "照下面的名单一把一把拿：拿到手里以后慢慢转视角，听到“嘀”一声再换下一把",
+        "莫桑比克、P2020 单拿、双持各拿一次",
+        "拿完回到这个窗口点“结束”"
+      ],
+      "capture": "weapons",
+      "interval": 0.5,
+      "evo": "none",
+      "checklist": "weapons",
+      "max_minutes": 30,
+      "max_mb": 1500
+    },
+    "seasons": {
+      "name": "赛季数据页",
+      "summary": "在游戏的数据页上一个一个点以前的赛季，看 Evo 读历史赛季数据读得对不对",
+      "steps": [
+        "打开 Evo 的“赛季”页，点“开始录入”",
+        "在游戏大厅打开数据页，右边的下拉菜单一个一个点赛季（每个赛季的全部和排位都点），每页停 2–3 秒，鼠标别停在数字上",
+        "听到“嘀”一声就是这一页存好了",
+        "点完在 Evo 的“赛季”页核对、保存，再回到这个窗口点“结束”"
+      ],
+      "capture": "still",
+      "interval": 0.5,
+      "evo": "recommended",
+      "answers": "season_stats",
+      "max_minutes": 30,
+      "max_mb": 1500
+    },
+    "diag": {
+      "name": "排查问题",
+      "summary": "Evo 使用出现问题时，截一段游戏画面，发给 Evo 开发者帮你排查原因",
+      "steps": [
+        "打开 Apex（已经开着也行）",
+        "正常打一局：大厅、开局、打完后的总结页、经验值页（要手动切过去）多停几秒",
+        "打完回到这个窗口点“结束”（关掉游戏也会自动结束）。不要直接关掉窗口",
+        "另外还会记下：显示器和显卡的信息、HDR 开没开、Apex 的分辨率设置，以及电脑上 Evo 的日志"
+      ],
+      "capture": "every",
+      "interval": 2.0,
+      "full_seconds": 60,
+      "evo": "recommended",
+      "max_minutes": 60,
+      "max_mb": 1500
+    }
+  }
+}

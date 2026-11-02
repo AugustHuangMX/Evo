@@ -15,7 +15,7 @@ import winreg
 from ctypes import wintypes
 from pathlib import Path
 
-from game_aspect import read_video_config
+from game_aspect import ASPECTS, AUTO, SETTING_KEY, from_video_config, read_video_config
 from game_detect import GAME_PROCESSES, processes
 
 # 可能盖住游戏画面、或者也在截屏的软件（只比对这几个进程名，不记别的进程）
@@ -305,6 +305,15 @@ def evo_settings(folder):
     except (OSError, ValueError):
         return {}
     return {key: data[key] for key in EVO_SETTINGS if key in data}
+
+
+def game_aspect_guess(evo_dirs, video_path=None):
+    """游戏画面的宽高比：(宽高比或 None, 说明)，None = 和截图一样。和 Evo 的 game_aspect.current() 一样的顺序：
+    Evo 设置页手动选的 → Apex 视频设置（全屏时）→ 和截图一样。Evo 的设置直接读 settings.json（不 import app_settings）。"""
+    picked = evo_settings(evo_dirs[0][0]).get(SETTING_KEY, AUTO) if evo_dirs else AUTO
+    if picked in ASPECTS:
+        return ASPECTS[picked], f"Evo 设置页手动选的 {picked}"
+    return from_video_config(video_path)
 
 
 def copy_evo_logs(dirs, out_dir):

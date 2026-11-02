@@ -1,9 +1,15 @@
 """测试工具（code/evo_tester.py、tester_capture.py、tester_info.py，打包成 Evo测试工具.exe 给玩家用）和看压缩包的脚本（tools/diag_report.py）。
 
 - 轻：另开一个 Python 只导入 evo_tester，检查没加载 paths.py（它一 import 就会在程序旁边建数据文件夹）、识别引擎、OpenCV
-- 截屏（假摄像头、假时钟，不真的等）：游戏没开时每 10 秒看一眼、每分钟最多存一张；看到游戏后每 2 秒一张；画面没变不存；
+- 截屏（假摄像头、假时钟，不真的等）：
+  打一局、排查问题：游戏没开时每 10 秒看一眼、每分钟最多存一张；看到游戏后每 2 秒一张；画面没变不存；
   比 1920 宽的缩到 1920 宽，每分钟另存一张原尺寸；没有新画面、出错都记下，连续 30 次没有新画面提示一次；
-  游戏关掉（连续 3 次看不到进程）就停；到时间、截满、硬盘快满、按回车也停；每次截屏 captures.csv 一行；每分钟一次缩略图
+  游戏关掉（连续 3 次看不到进程）就停；到时间、截满、硬盘快满、点了结束也停；每次截屏 captures.csv 一行；每分钟一次缩略图
+  赛季数据页：每 0.5 秒一张，停稳 1 秒、和上一张存的不一样才存原尺寸，嘀一声；几乎没变（0.01% 的像素）不存
+  靶场：武器：右下角图标换了，停稳后隔 1 秒存 3 张（整张缩小的 + 右下角原尺寸的 PNG），嘀一声；换回存过的不存；
+  没拿武器时每 10 秒一张
+- 测试项目（config/tester.json）、武器名单；测试员档案（exe 旁边写不进去就存到别处）；压缩包的名字
+- 窗口（藏起来不显示，截屏用假的）：没填昵称不让往下走；填档案 → 选项目 → 录 → 结束 → 备注 → 打包 → 完成
 - 找 Evo 的数据文件夹：Evo.exe 旁边的 data_location.txt / 程序旁边的 Evo Tracker Data、指路文件；
   旧的默认位置别处都没有才用；没有 logs\\evo.log 的不算；同一个只算一次
 - 诊断信息：这台电脑上真的读显示器（有主显示器、HDR 一栏）；Apex 视频设置只取四项；Evo 的设置只带三项；info.txt 各节都在
@@ -21,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,6 +40,7 @@ from PIL import Image
 import game_aspect
 import tester_capture
 import tester_info
+import tester_projects
 
 GAME = "r5apex.exe"
 
@@ -140,7 +148,7 @@ def recorder_checks(tmp):
 def stop_checks(tmp):
     """另外几种停下的原因。"""
     out = {}
-    cases = {"按了回车": dict(stop=True), "截满了 1 分钟": dict(minutes=1),
+    cases = {"点了结束": dict(stop=True), "截满了 1 分钟": dict(minutes=1),
              "截图满了": dict(max_mb=0.0001, game=True), "硬盘空间快不够了": dict(free_mb=lambda: 100)}
     for i, (want, case) in enumerate(cases.items()):
         clock = Clock()
@@ -156,6 +164,205 @@ def stop_checks(tmp):
         rec.close()
         out[f"{want}就停（{reason}）"] = reason.startswith(want)
     return out
+
+
+class ListCamera:
+    """按顺序交出给定的画面（numpy 数组），用完以后一直交最后一张。"""
+
+    def __init__(self, frames):
+        self.frames = list(frames)
+
+    def grab(self, new_frame_only=True):
+        return self.frames.pop(0) if len(self.frames) > 1 else self.frames[0]
+
+
+def run_mode(tmp, name, project, frames, seconds, **options):
+    """用假时钟跑一种截法 seconds 秒（游戏一直开着），返回 (截屏对象, 窗口里的提示, 嘀了几声)。"""
+    clock = Clock()
+    folder = tmp / name
+    folder.mkdir()
+    beeps = []
+    logs = []
+    rec = tester_capture.make_recorder(project, folder, ListCamera(frames), lambda: {GAME}, logs.append,
+                                       clock=clock.monotonic, wait=clock.wait, now=clock.now,
+                                       free_mb=lambda: 10 ** 6, beep=lambda: beeps.append(clock.t),
+                                       minutes=seconds / 60, **options)
+    rec.run(threading.Event())
+    rec.close()
+    return rec, logs, beeps
+
+
+def still_checks(tmp):
+    """赛季数据页（停稳了、和上一张存的不一样才存原尺寸）：每 0.5 秒一张。"""
+    h, w = 1350, 2400
+    base = np.tile(np.linspace(20, 120, w, dtype=np.float32), (h, 1)).astype(np.uint8)[:, :, None].repeat(3, axis=2)
+    rng = np.random.default_rng(1)
+
+    def moving():
+        return rng.integers(0, 255, (h, w, 3), dtype=np.uint8)
+
+    page_a = base.copy()
+    page_b = base.copy()
+    page_b[400:500, 1700:1800] += 100  # 换了一个赛季：右边几个数字变了（约 0.3% 的像素）
+    page_b2 = page_b.copy()
+    page_b2[600:620, 1700:1720] += 100  # 几乎没变（0.01%）：当作同一页
+    frames = [moving(), moving(), moving()] + [page_a] * 4 + [moving(), moving()] + [page_b] * 4 + [page_b2] * 4
+    project = {"capture": "still", "interval": 0.5}
+    rec, logs, beeps = run_mode(tmp, "still", project, frames, 10)
+    pages = sorted((tmp / "still" / "pages").glob("*.jpg"))
+    sizes = {Image.open(p).size for p in pages}
+    with open(tmp / "still" / "captures.csv", encoding="utf-8-sig") as f:
+        results = [r["结果"] for r in csv.DictReader(f)]
+    return {
+        f"数据页：停稳 1 秒才存，换了一页再存，几乎没变不存（存了 {len(pages)} 页，{results[:12]}）":
+            len(pages) == 2 and rec.pages == 2 and results[3:7] == ["在动", "还没停稳", "存了", "和上一张存的一样"],
+        f"数据页：存原尺寸（{sizes}），不另存 full/": sizes == {(w, h)} and not (tmp / "still" / "full").exists(),
+        f"数据页：每存一页嘀一声（t = {beeps}）": beeps == [2.5, 5.5],
+        f"数据页：每 0.5 秒一张（截屏 {rec.grabs} 次）": rec.grabs == 20,
+    }
+
+
+def weapon_checks(tmp):
+    """靶场：武器（右下角的图标换了，停稳后隔 1 秒存 3 张，嘀一声；存过的样子不再存；没拿武器时每 10 秒存一张）。"""
+    cfg = json.loads((ROOT / "config" / "weapons.json").read_text(encoding="utf-8"))
+    h, w = 1440, 2560
+    sx = w / 1920
+    empty = np.full((h, w, 3), 40, np.uint8)
+    empty[:, :, 1] = np.tile(np.arange(w) % 200, (h, 1))  # 不是纯色：存下的那块看得出是不是原样
+
+    def holding(x0, y0, x1, y1):
+        frame = empty.copy()
+        frame[round(y0 * sx):round(y1 * sx), round(x0 * sx):round(x1 * sx)] = 250  # 基准坐标里的一块白色图标
+        return frame
+
+    gun_a = holding(1540, 965, 1600, 995)
+    gun_b = holding(1620, 970, 1700, 990)
+    frames = [empty] + [gun_a] * 8 + [gun_b] * 7 + [gun_a] * 3 + [empty] * 42
+    rec, logs, beeps = run_mode(tmp, "weapons", {"capture": "weapons", "interval": 0.5}, frames, 30,
+                                weapons_cfg=cfg, aspect=None)
+    folder = tmp / "weapons"
+    crops = sorted((folder / "crops").glob("*.png"))
+    small = sorted((folder / "frames").glob("*.jpg"))
+    first = crops[1]  # 第一把的第一张
+    x0, y0 = (int(part[1:]) for part in first.stem.split("_")[-2:])
+    crop = np.asarray(Image.open(first))[:, :, ::-1]
+    same = np.array_equal(crop, gun_a[y0:y0 + crop.shape[0], x0:x0 + crop.shape[1]])
+    times = [p.stem.split("_")[1] for p in crops]
+    return {
+        f"武器：两把各存 3 张、换回存过的不再存、没拿武器时每 10 秒一张（共 {len(crops)} 张，{times}）":
+            len(crops) == len(small) == 9 and rec.summary()["存好了几把"] == 2
+            and times == ["150000", "150001", "150002", "150003", "150005", "150006", "150007", "150017", "150027"],
+        f"武器：每把存够了嘀一声（t = {beeps}）": beeps == [3.0, 7.0],
+        f"武器：右下角那块是原尺寸无损的 PNG，文件名带位置（x{x0} y{y0}，{crop.shape[1]}×{crop.shape[0]}）":
+            same and (x0, y0) == (1867, 1173) and crop.shape[:2] == (267, 693),
+        "武器：整张缩到 1920 宽": {Image.open(p).size for p in small} == {(1920, 1080)},
+    }
+
+
+def project_checks(tmp):
+    """测试项目（config/tester.json）、武器名单、测试员档案、压缩包的名字。"""
+    projects = tester_projects.load_projects()
+    weapons = tester_projects.weapon_list()
+    first, second = tmp / "profile" / "exe", tmp / "profile" / "local"
+    (first.parent).mkdir()
+    first.write_text("这是一个文件，档案写不进这里", encoding="utf-8")  # 当作 exe 旁边写不进去
+    saved = tester_projects.save_profile({"nickname": " 小明 ", "game_language": "English", "x": 1}, [first, second])
+    loaded = tester_projects.load_profile([first, second])
+    name = tester_projects.package_name(projects["weapons"], "a/b c", datetime(2026, 11, 2, 21, 30, 5))
+    captures = {key: spec["capture"] for key, spec in projects.items()}
+    return {
+        f"测试项目按顺序：打一局、靶场：武器、赛季数据页、排查问题（{[p['name'] for p in projects.values()]}）":
+            list(projects) == ["match", "weapons", "seasons", "diag"]
+            and all(p["steps"] and p["summary"] for p in projects.values()),
+        f"每项的截法都认得（{captures}）": set(captures.values()) <= set(tester_capture.RECORDERS),
+        f"武器名单来自 config/weapons.json（{len(weapons)} 把，如 {weapons[0]}）": len(weapons) >= 30,
+        f"档案：exe 旁边写不进去就存到下一个地方（{saved}），读回来只有三项（{loaded}）":
+            saved == second / "tester_profile.json"
+            and loaded == {"nickname": "小明", "game_language": "English", "launch_options": ""},
+        f"压缩包的名字去掉文件名里不能用的字符（{name}）": name == "Evo测试_靶场-武器_abc_20261102_213005",
+    }
+
+
+def window_checks(tmp):
+    """窗口（tester_window.py，藏起来不显示）：填档案 → 选赛季数据页 → 录 → 结束 → 写备注 → 打包 → 完成。截屏用假的。"""
+    import tkinter as tk
+
+    import tester_window
+
+    zip_file = tmp / "window.zip"
+    zip_file.write_bytes(b"zip")
+    opened, saved, sessions = [], [], []
+
+    class Rec:
+        saved, mb, game_on, pages = 3, 1.0, True, 2
+
+    class FakeSession:
+        def __init__(self, project, profile, log):
+            self.project, self.profile, self.folder = project, profile, tmp
+            self.recorder = self.info = self.note = None
+            sessions.append(self)
+            log("准备好了")
+
+        def start(self):
+            self.recorder, self.info = Rec(), {}
+
+        def run(self, stop):
+            stop.wait(10)
+            return "点了结束"
+
+        def finish(self, note):
+            self.note = note
+            return zip_file
+
+    def widgets(parent, cls):
+        for child in parent.winfo_children():
+            if isinstance(child, cls):
+                yield child
+            yield from widgets(child, cls)
+
+    def find(cls, text):
+        return next(w for w in widgets(root, cls) if w.cget("text") == text)
+
+    def pump(until, seconds=5):
+        end = time.time() + seconds
+        while not until() and time.time() < end:
+            root.update()
+            time.sleep(0.02)
+        return until()
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = tester_window.TesterApp(root, tester_projects.load_projects(), {}, tester_projects.languages(),
+                                      tester_projects.weapon_list(), saved.append, FakeSession, lambda: True, "测试",
+                                      open_folder=opened.append)
+        find(tk.Button, "下一步").invoke()
+        asked = any(w.cget("text") == "请填一下昵称" for w in widgets(root, tk.Label))
+        next(widgets(root, tk.Entry)).insert(0, "小明")
+        find(tk.Radiobutton, "English").invoke()
+        find(tk.Button, "下一步").invoke()
+        on_projects = any(w.cget("text") == "开始" for w in widgets(root, tk.Button))
+        find(tk.Radiobutton, "赛季数据页").invoke()
+        find(tk.Button, "开始").invoke()
+        recording = pump(lambda: app.state == "recording" and "存好了 2 页" in app.v_count.cget("text"))
+        find(tk.Button, "结束").invoke()
+        finishing = pump(lambda: app.state == "finishing")
+        next(widgets(root, tk.Text)).insert("1.0", "21:35 第二页没嘀")
+        find(tk.Button, "打包").invoke()
+        done = pump(lambda: app.state == "done")
+    finally:
+        root.destroy()
+    session = sessions[0] if sessions else None
+    return {
+        f"窗口：没填昵称不让往下走（提示了：{asked}）": asked,
+        f"窗口：档案存下来（{saved}）、到选项目": saved == [{"nickname": "小明", "game_language": "English",
+                                                   "launch_options": ""}] and on_projects,
+        f"窗口：选的项目和档案交给截屏（{session and session.project['key']}）":
+            session is not None and session.project["key"] == "seasons" and session.profile["nickname"] == "小明",
+        f"窗口：录的时候显示存了几页（{recording}）、点结束到收尾（{finishing}）": recording and finishing,
+        f"窗口：备注跟着打包（{session and session.note}），打完到完成、打开文件夹（{opened}）":
+            done and session.note == "21:35 第二页没嘀" and opened == [zip_file],
+    }
 
 
 def finder_checks(tmp):
@@ -259,12 +466,28 @@ def real_checks(tmp):
         names = zf.namelist()
         info = json.loads(zf.read("info.json"))
     frames = [n for n in names if n.startswith("frames/")]
-    return {
-        f"真的截几秒：压缩包里有截图（{len(frames)} 张）、诊断信息、截屏记录、工具日志":
-            frames and all(n in names for n in ("info.json", "info.txt", "captures.csv", "tool_log.txt")),
+    out_checks = {
+        f"真的截几秒：压缩包里有截图（{len(frames)} 张）、诊断信息、截屏记录、工具日志、tester.json":
+            frames and all(n in names for n in ("info.json", "info.txt", "captures.csv", "tool_log.txt", "tester.json")),
         f"截屏对象和 Evo 一样建好了（{info['dxcam']['截屏对象']}）": info["dxcam"]["截屏对象"] == "建好了",
         "没留下文件夹": [p for p in out.iterdir() if p.is_dir()] == [],
     }
+    # 另外两种截法也真跑几秒：桌面常常在动（终端在刷新），数据页那种不一定存得下，只看截了、记了、打包了；
+    # 武器那种第一张一定存（手上没武器时每 10 秒存一张）
+    for project, folder in (("seasons", None), ("weapons", "crops/")):
+        where = tmp / f"real_{project}"
+        subprocess.run([sys.executable, str(CODE / "evo_tester.py"), "--project", project, "--minutes", "0.05",
+                        "--game", "explorer.exe", "--out", str(where), "--no-wait"], stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True, encoding="utf-8", timeout=120)
+        zips = list(where.glob("*.zip"))
+        zf = zipfile.ZipFile(zips[0]) if len(zips) == 1 else None
+        names = zf.namelist() if zf else []
+        tester = json.loads(zf.read("tester.json")) if zf else {}
+        rows = len(zf.read("captures.csv").decode("utf-8-sig").splitlines()) - 1 if zf else 0
+        saved = folder is None or any(n.startswith(folder) for n in names)
+        out_checks[f"真的截几秒（{project}）：截了 {rows} 次{f'、{folder} 里有截图' if folder else ''}、"
+                   f"tester.json 写着项目（{tester.get('项目')}）"] = rows >= 4 and saved and tester.get("项目") == project
+    return out_checks
 
 
 def fake_zip(tmp, name, images, video=None):
@@ -324,7 +547,8 @@ def main():
     print("测试工具（截屏、找 Evo、诊断信息、打包、看压缩包）")
     with tempfile.TemporaryDirectory(prefix="evo-tester-") as name:
         tmp = Path(name)
-        checks = {**light_checks(), **recorder_checks(tmp), **stop_checks(tmp), **finder_checks(tmp),
+        checks = {**light_checks(), **recorder_checks(tmp), **stop_checks(tmp), **still_checks(tmp),
+                  **weapon_checks(tmp), **project_checks(tmp), **window_checks(tmp), **finder_checks(tmp),
                   **info_checks(tmp), **zip_checks(tmp), **real_checks(tmp)}
         ok = report(checks)
         shots = report_checks(tmp)
