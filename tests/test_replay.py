@@ -34,7 +34,7 @@ def shot_time(path):
 
 def night_frames(folder):
     """按时间顺序排好的画面。总结页喂两帧（数字连续两次一致才保存）；离开一个画面后插一帧"别的画面"。"""
-    files = sorted(folder.glob("*.png"), key=lambda p: (shot_time(p), "leave" in p.stem))  # 同一秒里先 enter 后 leave
+    files = sorted(folder.rglob("*.png"), key=lambda p: (shot_time(p), "leave" in p.stem))  # 同一秒里先 enter 后 leave
     frames = []
     for path in files:
         is_summary = path.stem[0].isdigit()  # 总结页的文件名是 "编号_时间"

@@ -31,6 +31,16 @@ from paths import APP_DIR, CAPTURES_DIR, FROZEN, data_absolute, data_relative
 KEEP_ALL_KEY = "keep_all_screenshots"
 PROJECT_CAPTURES = APP_DIR / "captures"  # 用源码运行时项目里的截图文件夹（测试集）
 SUMMARY_NAME = re.compile(r"\d{2,}_\d{6}\.(png|jpg)", re.IGNORECASE)  # 总结页截图：第几局_存下的时间，如 01_213331.png
+SHOT_TYPES = (
+    (SUMMARY_NAME, "summary"),
+    (re.compile(r"xp_", re.IGNORECASE), "xp"),
+    (re.compile(r"eliminated_", re.IGNORECASE), "eliminated"),
+    (re.compile(r"champion_", re.IGNORECASE), "champion"),
+    (re.compile(r"squad_out_", re.IGNORECASE), "squad_out"),
+    (re.compile(r"lobby_", re.IGNORECASE), "lobby"),
+    (re.compile(r"match_start_", re.IGNORECASE), "match_start"),
+    (re.compile(r"hud_", re.IGNORECASE), "hud"),
+)
 JPG_QUALITY = 85  # 名字、数字和原图看不出差别（2026-10-24 对比过）
 JPG_RATIO = 0.18  # 设置页估算能腾出多少用：JPG 大约是 PNG 的这么多
 Cleaned = namedtuple("Cleaned", "deleted converted freed")  # 删了几张、几张总结页截图转成了 JPG、腾出多少字节
@@ -39,6 +49,43 @@ Cleaned = namedtuple("Cleaned", "deleted converted freed")  # 删了几张、几
 def is_summary(path):
     """是不是总结页截图（按文件名）。"""
     return bool(path) and SUMMARY_NAME.fullmatch(Path(path).name) is not None
+
+
+def shot_type(path):
+    """按记录程序的文件名识别截图画面类型；没认出的归到"其他"。"""
+    name = Path(path).name
+    return next((folder for pattern, folder in SHOT_TYPES if pattern.match(name)), "其他")
+
+
+def path_for(folder, name):
+    """一局里按截图类型分目录，文件名保持原样，方便按时间排序和重放。"""
+    return Path(folder) / shot_type(name) / Path(name).name
+
+
+def organizable_count(skip=None):
+    """旧的平铺截图中，尚未归入类型目录的文件数；跳过正在记录的目录。"""
+    return sum(1 for folder in finished_folders(skip=skip) for path in folder.iterdir()
+               if path.is_file() and path.suffix.lower() in (".png", ".jpg"))
+
+
+def organize(conn, skip=None):
+    """把旧的平铺截图移到类型目录，并同步更新战绩里引用的截图路径。"""
+    moved = 0
+    for folder in finished_folders(skip=skip):
+        for path in sorted(folder.iterdir()):
+            if not path.is_file() or path.suffix.lower() not in (".png", ".jpg"):
+                continue
+            target = path_for(folder, path.name)
+            if path.parent.name == target.parent.name or target.exists():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            old_key = data_relative(path)
+            path.replace(target)
+            conn.execute("UPDATE matches SET evidence_path = ? WHERE evidence_path = ?",
+                         (data_relative(target), old_key))
+            moved += 1
+    conn.commit()
+    return moved
 
 
 def in_project():
@@ -57,13 +104,13 @@ def removable(conn, folders, protect=frozenset()):
     """这些文件夹里可以删的截图：除了总结页截图、"待确认"的局要用的、protect 里的（绝对路径），全部。"""
     needed = {data_absolute(row[0]).resolve() for row in conn.execute(
         "SELECT evidence_path FROM matches WHERE needs_review AND evidence_path IS NOT NULL")} | set(protect)
-    return [path for folder in folders for path in sorted(folder.glob("*.png"))
+    return [path for folder in folders for path in sorted(folder.rglob("*.png"))
             if path.resolve() not in needed and not is_summary(path)]
 
 
 def convertible(folders, protect=frozenset()):
     """这些文件夹里还没转成 JPG 的总结页截图（protect 里的不转）。"""
-    return [path for folder in folders for path in sorted(folder.glob("*.png"))
+    return [path for folder in folders for path in sorted(folder.rglob("*.png"))
             if is_summary(path) and path.resolve() not in protect]
 
 
@@ -98,7 +145,8 @@ def _delete(conn, folders, protect=frozenset()):
                             "WHERE evidence_path IS NOT NULL").fetchall():
         path = data_absolute(row["evidence_path"]).resolve()
         used.setdefault(path, []).append(row["match_id"])
-        if not row["needs_review"] and path.parent in folders and path not in protect and not is_summary(path):
+        if not row["needs_review"] and any(path.is_relative_to(folder) for folder in folders) \
+                and path not in protect and not is_summary(path):
             storage.update_match(conn, row["match_id"], {"evidence_path": None})
     deleted = converted = freed = 0
     for path in removable(conn, folders, protect):
@@ -153,8 +201,13 @@ def clean_up(conn):
     folders = finished_folders(skip=recording_folder())
     result = _delete(conn, folders)
     for folder in folders:
+        for child in sorted((p for p in folder.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            try:
+                child.rmdir()
+            except OSError:
+                pass
         try:
-            folder.rmdir()  # 只有空文件夹才删得掉
+            folder.rmdir()
         except OSError:
             pass
     return result

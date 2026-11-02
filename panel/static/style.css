@@ -2,9 +2,10 @@
    黑夜/白天两套主题共用同一套布局，只换下面的颜色变量。 */
 
 /* 数字和英文用 Chakra Petch（OFL 许可，见 fonts/OFL.txt）；中文用系统自带的微软雅黑 */
-@font-face { font-family: "Chakra Petch"; font-weight: 500; font-display: swap; src: url("fonts/ChakraPetch-500.woff2") format("woff2"); }
-@font-face { font-family: "Chakra Petch"; font-weight: 600; font-display: swap; src: url("fonts/ChakraPetch-600.woff2") format("woff2"); }
-@font-face { font-family: "Chakra Petch"; font-weight: 700; font-display: swap; src: url("fonts/ChakraPetch-700.woff2") format("woff2"); }
+/* 窗口内不使用 swap：字体晚到时不会把整页文字重新排版。 */
+@font-face { font-family: "Chakra Petch"; font-weight: 500; font-display: optional; src: url("fonts/ChakraPetch-500.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-weight: 600; font-display: optional; src: url("fonts/ChakraPetch-600.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-weight: 700; font-display: optional; src: url("fonts/ChakraPetch-700.woff2") format("woff2"); }
 
 :root, [data-theme="dark"] {
   --bg: #0D0F13;
@@ -101,9 +102,21 @@ a { color: inherit; text-decoration: none; }
 .page { display: flex; flex-direction: column; gap: 20px; min-width: 0; }  /* 顶部导航以下的内容 */
 
 /* ---------- Evo 窗口：自定义标题栏和改大小的细条（只在 Evo 窗口里显示，见 app_window.py）---------- */
-.in-app { overflow: hidden; }
+.in-app {
+  overflow: hidden;
+  /* 页面内容会在加载时变高，始终预留滚动条宽度，避免整个页面左右跳一下。 */
+  scrollbar-gutter: stable;
+}
 /* 只让标题栏下面的内容滚动（滚动条不会压到标题栏上） */
-.in-app body { position: fixed; top: 34px; left: 0; right: 0; bottom: 0; overflow-y: auto; user-select: none; }
+.in-app body {
+  position: fixed; top: 34px; left: 0; right: 0; bottom: 0;
+  /* 始终保留同一条垂直滚动轨道，页面高度变化时内容不会左右跳。 */
+  overflow-y: scroll; overflow-x: hidden;
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
+  scroll-behavior: auto;
+  user-select: none;
+}
 .in-app input, .in-app select, .in-app .setting-path { user-select: text; }
 .titlebar { position: fixed; top: 0; left: 0; right: 0; height: 34px; display: flex; align-items: stretch;
   background: var(--titlebar-bg); border-bottom: 1px solid var(--border); z-index: 1000; }
@@ -128,7 +141,7 @@ a { color: inherit; text-decoration: none; }
 .window-frame { position: fixed; inset: 0; border: 1px solid var(--border); pointer-events: none; z-index: 1002; }
 
 /* ---------- 顶部 ---------- */
-.top { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); min-width: 0; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--accent); }
 .brand-name { color: var(--text); font-weight: 700; font-size: 22px; letter-spacing: 3px; }
 .nav { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -332,13 +345,30 @@ table.matches { width: 100%; min-width: 900px; border-collapse: collapse; }
 .evidence { flex: 1 1 360px; display: flex; flex-direction: column; gap: 8px; }
 .evidence-title { color: var(--muted); font-size: 13px; }
 .detail-review .evidence-title { color: var(--warn-text); }
-.evidence img { display: block; width: 100%; border-radius: 4px; border: 1px solid var(--border); }
+.evidence img {
+  display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain;
+  border-radius: 4px; border: 1px solid var(--border); background: var(--inset);
+}
 .evidence-empty { height: 150px; border-radius: 4px; border: 1px dashed var(--dashed); background: var(--inset); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 .note { color: var(--muted); font-size: 12px; }
 .edit { flex: 1 1 320px; display: flex; flex-direction: column; gap: 12px; }
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field input { background: var(--inset); padding: 8px 10px; width: 100%; }
+.field input, .field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  background: var(--inset);
+  color: var(--text);
+  border: 1px solid var(--input-border);
+}
+.field select {
+  appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a5adba' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
 .field input.warn { border: 2px solid var(--warn-btn); }
 .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: auto; }
 .actions form { margin: 0; }
@@ -355,7 +385,8 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .card-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
 
-.ov-top { display: grid; grid-template-columns: minmax(300px, 410px) 1fr; gap: 20px; }
+.ov-top { display: grid; grid-template-columns: minmax(300px, 410px) minmax(0, 1fr); gap: 20px; min-width: 0; }
+.ov-top > *, .ov-bottom > * { min-width: 0; }
 .rank-card, .chart-card, .list-card, .legend-card { padding: 24px; }
 
 /* 段位颜色：徽章边框、光晕 */
@@ -398,12 +429,12 @@ code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; bord
 .chart-empty { flex: 1; min-height: 200px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px;
   border: 1px dashed var(--dashed); border-radius: 6px; }
 
-.stat-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.stat-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; min-width: 0; }
 .stat { padding: 18px 20px; }
 .stat-value { font-size: 30px; font-weight: 600; margin-top: 4px; }
 .stat-value.accent { color: var(--accent); }
 
-.ov-bottom { display: grid; grid-template-columns: 1fr minmax(280px, 360px); gap: 20px; align-items: start; }
+.ov-bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 20px; align-items: start; min-width: 0; }
 .ov-side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }  /* 右边一列：六维图、传奇表现 */
 .recent { list-style: none; margin: 0; padding: 0; }
 .recent li + li { border-top: 1px solid var(--row-border); }
@@ -773,6 +804,41 @@ table.stats-table { width: 100%; border-collapse: collapse; }
   .progress-busy .progress-bar { left: 32%; }  /* 解压的横条不来回走，停在中间 */
 }
 
+/* WebView 窗口里优先保证内容稳定：页面切换、展开行和图表动画会在数据重排时
+   放大位移感；按钮的颜色反馈仍保留。普通浏览器打开面板时继续使用上面的动效。 */
+.in-app .page-enter,
+.in-app .nav-pill.slide,
+.in-app .detail,
+.in-app .mate-row,
+.in-app .mate-foot,
+.in-app .chart svg,
+.in-app .chart-mark,
+.in-app .chart-dot,
+.in-app .bar.stacked,
+.in-app .share .bar,
+.in-app .pick-bar > span,
+.in-app .beat-track > span,
+.in-app .more-card[open] .tier-list {
+  animation: none !important;
+}
+
+/* WebView 内所有关键帧动画都会改变像素位置，尤其是在页面数据刚加载时；
+   统一停用后仍保留颜色、边框等 transition 反馈。 */
+.in-app *, .in-app *::before, .in-app *::after, .in-app::backdrop {
+  animation: none !important;
+}
+
+/* 动态数字、倒计时使用固定字符宽度，更新文本时不再挤动相邻内容。 */
+.in-app [data-count], .in-app .maps-left .num {
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+}
+
+/* 只淡入整页，不移动任何元素；视觉上连续，布局不会跟着动画抖。 */
+.in-app .page-enter {
+  animation: evo-fade-in 140ms ease-out both !important;
+}
+
 @media (max-width: 1099px) {
   .stats-grid { grid-template-columns: 1fr; }  /* 数据页的卡片：两列放不下"你"那一列时变回一列 */
 }
@@ -853,14 +919,17 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 /* ---------- 总览页：地图轮换（_maps.html，2026-10-28 用户决定）----------
    在"最近对局"上面（左边一列），不占六维图那一列。三格：模式、现在的地图（大）、还剩多久（每秒走）、下一张 */
 .ov-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-.maps-card { padding: 24px; }
+.maps-card { padding: 24px; min-height: 188px; }
 .maps-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .maps-slot { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; min-width: 0;
-  border: 1px solid var(--row-border); border-radius: 6px; background: var(--inset); }
+  min-height: 124px; border: 1px solid var(--row-border); border-radius: 6px; background: var(--inset); }
 .maps-title { margin-top: 4px; font-size: 18px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
 .maps-sub { color: var(--muted); font-size: 13px; }
 .maps-left { margin-top: 8px; color: var(--muted); font-size: 13px; }
-.maps-left .num { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }  /* 每秒变，宽度不乱跳 */
+.maps-left .num {
+  display: inline-block; width: 8ch; text-align: right;
+  color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums;
+}  /* 每秒变，宽度不乱跳 */
 .maps-next { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .maps-error { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
 /* 还没问过：卡片上只问一句，点了"显示"才联网 */

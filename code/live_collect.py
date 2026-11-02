@@ -187,7 +187,9 @@ class SummaryWatcher:
             return
         if note:
             problems = problems + [note]
-        image_path = self.run_dir / f"{self.saved + 1:02d}_{when:%H%M%S}.png"
+        name = f"{self.saved + 1:02d}_{when:%H%M%S}.png"
+        image_path = screenshots.path_for(self.run_dir, name)
+        image_path.parent.mkdir(parents=True, exist_ok=True)
         save_png(image_path, frame)
         match = summary_to_match(results, problems, f"{when:%Y-%m-%d %H:%M:%S}", image_path)
         match_id = storage.insert_match(self.conn, match)
@@ -328,7 +330,9 @@ class ScreenWatcher:
                 self.post.on_champion(now, SOURCE_CHAMPION)
             self.enter_path = None
             if screen is not None and self.keep_all:
-                self.enter_path = self.run_dir / f"{screen}_{now:%H%M%S}_enter.png"
+                name = f"{screen}_{now:%H%M%S}_enter.png"
+                self.enter_path = screenshots.path_for(self.run_dir, name)
+                self.enter_path.parent.mkdir(parents=True, exist_ok=True)
                 save_png(self.enter_path, frame)
                 self.log(f"[{now:%H:%M:%S}] 进入{self._label(screen)}，已存截图")
             elif screen is not None:
@@ -349,7 +353,9 @@ class ScreenWatcher:
             last_frame, last_time = self.last
             path = self.enter_path
             if (self.frames > 1) if self.keep_all else (self.current == "xp"):
-                path = self.run_dir / f"{self.current}_{last_time:%H%M%S}_leave.png"
+                name = f"{self.current}_{last_time:%H%M%S}_leave.png"
+                path = screenshots.path_for(self.run_dir, name)
+                path.parent.mkdir(parents=True, exist_ok=True)
                 save_png(path, last_frame)
                 self.log(f"[{last_time:%H:%M:%S}] 离开{self._label(self.current)}，已存最后一帧")
             if self.current == "xp":
@@ -552,7 +558,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
             if keep:
                 log("           设置页打开了\"保留全部截图\"：从下一局开始全部保留，刚结束的这一局也不删")
             else:
-                protect.update(p.resolve() for p in run_dir.glob("*.png"))
+                protect.update(p.resolve() for p in run_dir.rglob("*.png"))
                 log(f"           设置页关掉了\"保留全部截图\"：从下一局开始识别完就删，之前存下的 {len(protect)} 张不删")
         if keep:
             return
@@ -581,7 +587,12 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     other = ScreenWatcher(engine, detector.cfg, load_config("xp.json", lang), load_config("match_start.json", lang),
                           load_config("eliminated.json", lang), post, run_dir, log, keep_all=keep,
                           busy=lambda: summary.waiting)
-    in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
+    def save_hud(frame, name):
+        path = screenshots.path_for(run_dir, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_png(path, frame)
+
+    in_match = InMatchWatcher(hud, post, log, name_cfg, save=save_hud,
                               keep_all=lambda: other.keep_all, before_hand_over=summary.catch_up)
     lobby = LobbyWatcher(LobbyReader(engine, load_config("lobby.json", lang)), post, conn, log)
     seasons = SeasonWatcher(engine, conn, post, log)  # 录入历史赛季数据（设置页的按钮）
@@ -687,24 +698,24 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         speed.stop()
         camera.release()
         conn.close()
-        left = sum(1 for p in run_dir.iterdir() if p.suffix.lower() in (".png", ".jpg"))
-        if not any(run_dir.iterdir()):
-            run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
-        saved = total()
-        per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
-        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike + detector.unchanged} 次"
-            f"（{detector.unchanged} 次画面没变，没再读关键字）；识别 {engine.calls} 次{per_call}，"
-            f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
-            f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
-            f"玩家名 {post.player_name or '没认出'}；总结页读了 {summary.fields_read} 项（没变沿用 {summary.fields_reused} 项）；"
-            f"大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
-            f"{usage.total()}，内存峰值 {memory_mb()[1]:.0f} MB")
-        kinds = "保留全部" if keep else "总结页截图、待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
-        log(f"截图：留下 {left} 张（{kinds}）"
-            + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
-               f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
-        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed, seasons  # 释放识别模型和截屏，交还内存
-        gc.collect()
+    left = sum(1 for p in run_dir.rglob("*") if p.is_file() and p.suffix.lower() in (".png", ".jpg"))
+    if not any(run_dir.iterdir()):
+        run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
+    saved = total()
+    per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
+    log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike + detector.unchanged} 次"
+        f"（{detector.unchanged} 次画面没变，没再读关键字）；识别 {engine.calls} 次{per_call}，"
+        f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
+        f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
+        f"玩家名 {post.player_name or '没认出'}；总结页读了 {summary.fields_read} 项（没变沿用 {summary.fields_reused} 项）；"
+        f"大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
+        f"{usage.total()}，内存峰值 {memory_mb()[1]:.0f} MB")
+    kinds = "保留全部" if keep else "总结页截图、待确认的局要用的" + ("、关掉开关之前存下的" if protect else "")
+    log(f"截图：留下 {left} 张（{kinds}）"
+        + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
+           f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
+    del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed, seasons  # 释放识别模型和截屏，交还内存
+    gc.collect()
     if status is not None:
         status["saved"] = saved
     return saved

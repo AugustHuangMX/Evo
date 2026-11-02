@@ -112,6 +112,11 @@ def load_legend_icons():
 
 LEGEND_ICONS = load_legend_icons()
 
+try:
+    MATCH_MAPS = tuple(json.loads((CONFIG_DIR / "match_start.json").read_text(encoding="utf-8"))["maps"])
+except (OSError, ValueError, KeyError):
+    MATCH_MAPS = ()
+
 # ---- 设置页 ----
 SOURCE_URL = "https://github.com/AugustHuangMX/Evo"
 FEEDBACK_URL = "https://qm.qq.com/q/6L2kTbmCWc"  # "意见反馈"：加 QQ 群（和 README、隐私政策里的是同一个群）
@@ -376,7 +381,8 @@ def view(row):
         "has_evidence": bool(row["evidence_path"]),
         "evidence_recorded": screenshots.recorded(row["evidence_path"]),  # 记录程序存的截图：确认、删除这一局时会删掉
         "evidence_summary": screenshots.is_summary(row["evidence_path"]),  # 总结页截图：确认时留着，删除这一局时才删
-        "form": {name: "" if row[name] is None else row[name] for name in EDITABLE},
+        "form": {name: "" if row[name] is None else row[name] for name in EDITABLE} | {
+            name: "" if row[name] is None else row[name] for name in ("mode", "map")},
         "warn_fields": warn_fields(row["review_note"]) if row["needs_review"] else set(),
     }
 
@@ -1040,6 +1046,7 @@ def matches():
         open_id=open_id,
         review_count=storage.count_review(db(), names),
         editable=EDITABLE,
+        maps=MATCH_MAPS,
         share=share,
     )
 
@@ -1162,6 +1169,18 @@ def back_to_list(**changes):
 @app.post("/matches/<int:match_id>/update")
 def update(match_id):
     fields, errors = {}, []
+    if "mode" in request.form:
+        mode = request.form.get("mode", "").strip()
+        if mode and mode not in MODES:
+            errors.append("模式选项无效")
+        else:
+            fields["mode"] = mode or None
+    if "map" in request.form:
+        map_name = request.form.get("map", "").strip()
+        if map_name and map_name not in MATCH_MAPS:
+            errors.append("地图选项无效")
+        else:
+            fields["map"] = map_name or None
     for name, (label, low, high) in EDITABLE.items():
         raw = request.form.get(name, "").strip().replace(",", "").replace("−", "-")
         if raw == "":
@@ -1183,7 +1202,9 @@ def update(match_id):
 
     row = storage.get_match(db(), match_id)
     if row is not None:  # 记下改过哪几项（只记改了哪项，不记原来的值；匿名统计的"识别情况"用，见 telemetry.py）
-        edited = {f for f in (row["edited"] or "").split(",") if f} | {k for k in EDITABLE if fields[k] != row[k]}
+        edited = {f for f in (row["edited"] or "").split(",") if f} | {
+            k for k in EDITABLE if fields[k] != row[k]
+        } | {k for k in ("mode", "map") if k in fields and fields[k] != row[k]}
         if edited:
             fields["edited"] = ",".join(sorted(edited))
     fields["needs_review"] = 0  # 人工确认过了，不再标记待确认（review_note 保留，记录当初为什么待确认）
@@ -1284,6 +1305,7 @@ def db_path():
 @app.route("/settings")
 def settings():
     shot_count, shot_bytes = folder_usage(CAPTURES_DIR / "live")
+    recording = screenshots.recording_folder()
     clean = screenshots.cleanable(db())
     size = screen_size()
     return render_template(
@@ -1302,12 +1324,13 @@ def settings():
         db_size=size_text(db_path().stat().st_size) if db_path().exists() else "0 KB",
         total=storage.query_matches(db(), limit=1)[1],
         review_count=storage.count_review(db()),
-        captures_dir=CAPTURES_DIR,
+        captures_dir=CAPTURES_DIR / "live",
         shot_count=shot_count,
         shot_size=size_text(shot_bytes),
         keep_shots=app_settings.get(screenshots.KEEP_ALL_KEY, False) is True,
         shots_locked=screenshots.in_project(),  # 用源码运行：永远保留全部，开关和删除按钮都不能用
-        recording=screenshots.recording_folder() is not None,
+        recording=recording is not None,
+        organize_count=screenshots.organizable_count(skip=recording),
         clean_count=clean.deleted,
         clean_convert=clean.converted,
         clean_size=size_text(clean.freed),
@@ -1534,7 +1557,7 @@ def sound_preview():
 @app.post("/settings/open-folder")
 def open_folder():
     """在资源管理器里打开数据或截图文件夹。只能打开这两个固定的文件夹。"""
-    target = {"data": db_path().parent, "captures": CAPTURES_DIR}.get(request.form.get("which"))
+    target = {"data": db_path().parent, "captures": CAPTURES_DIR / "live"}.get(request.form.get("which"))
     if target is None:
         abort(400)
     target.mkdir(parents=True, exist_ok=True)
@@ -1575,6 +1598,17 @@ def clean_shots():
         flash(f"{stuck} 张截图没处理（可能正被别的程序打开），关掉后再试一次", "error")
     else:
         flash("没有可以删的截图", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.post("/settings/organize-shots")
+def organize_shots():
+    """把以前平铺存放的截图按画面类型整理；正在记录的文件夹不动。"""
+    if screenshots.in_project():
+        abort(400)
+    moved = screenshots.organize(db(), skip=screenshots.recording_folder())
+    flash(f"已按画面类型整理 {moved} 张截图，战绩里的截图链接已同步更新。" if moved
+          else "没有需要整理的旧截图。", "ok")
     return redirect(url_for("settings"))
 
 

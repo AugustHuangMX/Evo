@@ -235,7 +235,8 @@
   // 打开总览页时，标了 data-count 的数字从 0 滚动到实际值。只是显示效果：格式（逗号、小数、+/−、%）
   // 和服务器给的一样，最后一帧换回原文。"—" 这种没有数字的不动
   (function () {
-    if (reduceMotion.matches) return;
+    // Evo 的 WebView 里不滚动数字：逐帧改文字会让卡片宽度和邻近内容产生细小跳动。
+    if (reduceMotion.matches || document.documentElement.classList.contains("in-app")) return;
     var DURATION = 800;
     var items = [];
     document.querySelectorAll("[data-count]").forEach(function (el) {

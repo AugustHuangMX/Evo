@@ -145,6 +145,24 @@
                        placeholder="{{ '如 -7' if name == 'rp_delta' else low ~ '–' ~ high }}" class="{{ 'warn' if name in r.warn_fields }}">
               </label>
               {% endfor %}
+              <label class="field">
+                <span class="label">模式</span>
+                <select name="mode">
+                  <option value="" {{ 'selected' if not r.form.mode }}>未识别</option>
+                  {% for key, label in modes.items() %}
+                  <option value="{{ key }}" {{ 'selected' if r.form.mode == key }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="field">
+                <span class="label">地图</span>
+                <select name="map">
+                  <option value="" {{ 'selected' if not r.form.map }}>未识别</option>
+                  {% for name in maps %}
+                  <option value="{{ name }}" {{ 'selected' if r.form.map == name }}>{{ name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
             </form>
             <div class="actions">
               <form method="post" action="{{ url_for('delete', match_id=r.id) }}"
@@ -192,11 +210,17 @@
       window.location = tr.dataset.href;
     });
   });
-  // 展开了某一局：截图加载完后，平滑地滚动到刚好能看到展开的全部内容（队友，和打开了的详情；已经看得到就不动）
+  // 展开了某一局：截图加载完后，只在展开内容完全看不到时滚动；不用平滑滚动，避免页面抖动。
   var expanded = document.querySelectorAll(".mate-row, .mate-foot, .detail-row");
   if (expanded.length && !document.querySelector(".flash")) {
     window.addEventListener("load", function () {
-      expanded[expanded.length - 1].scrollIntoView({ block: "nearest", behavior: reduceMotion.matches ? "auto" : "smooth" });
+      var target = expanded[expanded.length - 1];
+      var rect = target.getBoundingClientRect();
+      var viewTop = document.documentElement.classList.contains("in-app") ? 34 : 0;
+      var viewBottom = window.innerHeight;
+      if (rect.top < viewTop || rect.bottom > viewBottom) {
+        target.scrollIntoView({ block: "nearest", behavior: "auto" });
+      }
     });
   }
 </script>

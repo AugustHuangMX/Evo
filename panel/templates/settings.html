@@ -320,6 +320,16 @@
           </form>
         </div>
       </div>
+      <div class="setting">
+        <div class="setting-text">
+          <div class="setting-name">按画面类型整理截图</div>
+          <div class="setting-desc">新截图会自动分类到英文目录。{% if organize_count %}有 {{ organize_count }} 张旧截图尚未整理{% elif recording %}正在记录的这一局会在结束后自动分类{% else %}旧截图已经整理完成{% endif %}</div>
+        </div>
+        <form method="post" action="{{ url_for('organize_shots') }}">
+          <input type="hidden" name="token" value="{{ token }}">
+          <button type="submit" class="btn" {{ 'disabled' if shots_locked or not organize_count }}>整理截图</button>
+        </form>
+      </div>
       {# 截图留不留（screenshots.py）：记录程序每局结束时看一眼开关，所以"从下一局开始生效" #}
       <div class="setting">
         <div class="setting-text">

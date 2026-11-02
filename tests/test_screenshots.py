@@ -113,8 +113,33 @@ def switch_checks(frames):
     return checks
 
 
+def organize_checks():
+    live = CAPTURES_DIR / "live"
+    folder = live / "20991230_000000"
+    folder.mkdir(parents=True, exist_ok=True)
+    legacy = folder / "xp_235959_leave.png"
+    image(legacy)
+    conn = storage.connect(storage.DB_PATH.parent / "organize.db")
+    match_id = storage.insert_match(conn, {"ended_at": "2099-12-30 23:59:59", "needs_review": 1,
+                                           "evidence_path": data_relative(legacy)})
+    expected_moved = screenshots.organizable_count(skip=live / "20991231_000000")
+    moved = screenshots.organize(conn, skip=live / "20991231_000000")
+    row = storage.get_match(conn, match_id)
+    organized = data_absolute(row["evidence_path"])
+    conn.close()
+    return {
+        "整理旧截图：按画面类型移动，并同步更新战绩截图路径": moved == expected_moved
+        and organized == folder / "xp" / legacy.name and organized.is_file() and not legacy.exists(),
+        "整理旧截图：目录结构按英文画面类型归档": screenshots.shot_type("01_235900.jpg") == "summary"
+        and screenshots.shot_type("eliminated_235900_enter.png") == "eliminated"
+        and screenshots.shot_type("hud_235900_last.png") == "hud"
+        and screenshots.shot_type("other.png") == "其他",
+    }
+
+
 def files_in(folder):
-    return {p.name for p in folder.iterdir() if p.suffix in (".png", ".jpg")} if folder.is_dir() else set()
+    return {p.name for p in folder.rglob("*") if p.is_file() and p.suffix in (".png", ".jpg")} \
+        if folder.is_dir() else set()
 
 
 def jpg_name(name):
@@ -303,7 +328,8 @@ def settings_checks():
             locked_page = page()
             locked = (post("/settings/clean-shots").status_code, post("/settings/keep-shots", keep="0").status_code)
             locked_files = all(p.exists() for p in [done, lobby, *whole])
-        finished = [p for p in live.glob("*/*.png") if p.parent != now]  # 别的检查留下的截图也算
+        finished = [p for p in live.glob("*/*.png") if p.parent != now]
+        finished += [p for p in live.glob("*/*/*.png") if p.parent.parent != now]
         expected = [p for p in finished if p != review and not screenshots.is_summary(p)]
         converting = [p for p in finished if screenshots.is_summary(p)]
         size = panel_app.size_text(sum(p.stat().st_size for p in expected)
@@ -344,6 +370,7 @@ def main():
     checks = jpg_checks()
     checks.update(panel_checks())
     checks.update(settings_checks())
+    checks.update(organize_checks())
     checks.update(rule_checks())
     try:
         folder = shot(NIGHT + "/01_213331.png").parent

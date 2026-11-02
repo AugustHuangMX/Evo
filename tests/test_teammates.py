@@ -27,7 +27,8 @@ FOLDER = Path(tempfile.mkdtemp(prefix="evo-mates-", dir=storage.DB_PATH.parent.p
 
 def screenshot_checks():
     """返回检查结果；没有截图返回 None。"""
-    files = sorted(SHOTS.glob("live/*/[0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].png"))
+    files = sorted(p for p in SHOTS.glob("live/*/*/*.png")
+                   if re.fullmatch(r"\d{2,}_\d{6}\.png", p.name))
     if not files:
         return None
     from ocr import SMALL_CROP_PARAMS, create_engine, load_config, load_image  # 用到截图才加载识别引擎
@@ -128,6 +129,15 @@ def panel_checks():
     review_page = get(f"/matches?open={review}")
     xp_page = get(f"/matches?open={xp_only}")
     bare_page = get(f"/matches?open={bare}")
+    form = {k: "" if storage.get_match(conn, normal)[k] is None else str(storage.get_match(conn, normal)[k])
+            for k in panel_app.EDITABLE}
+    saved = client.post(f"/matches/{normal}/update", data={"token": token, **form, "mode": "ranked",
+                                                             "map": "奥林匹斯", "next": "/matches"})
+    updated = storage.get_match(conn, normal)
+    invalid = client.post(f"/matches/{normal}/update", data={"token": token, "mode": "unknown",
+                                                               "map": "不存在的地图", "next": "/matches"},
+                          follow_redirects=True)
+    after_invalid = storage.get_match(conn, normal)
     client.post(f"/matches/{normal}/delete", data={"token": token, "next": "/matches"})
     conn2 = storage.connect(path)
     gone = storage.teammates_of(conn2, normal)
@@ -143,6 +153,13 @@ def panel_checks():
         "点开时截图和修改表单先不出来，有\"详情与修改\"按钮": f'id="upd-{normal}"' not in opened and "详情与修改" in opened
         and f"open={normal}&amp;detail=1" in opened,
         "点\"详情与修改\"后：修改表单出来，按钮变成\"收起详情\"": f'id="upd-{normal}"' in detail and "收起详情" in detail,
+        "修改表单有模式和地图下拉框，保存后写入数据库并记下手动修改项":
+            'name="mode"' in detail and 'name="map"' in detail
+            and detail.index('name="rp_delta"') < detail.index('name="mode"') < detail.index('name="map"')
+            and (updated["mode"], updated["map"], updated["edited"]) == ("ranked", "奥林匹斯", "map,mode"),
+        "无效的模式和地图不会覆盖已保存的值，表单显示错误":
+            (after_invalid["mode"], after_invalid["map"]) == ("ranked", "奥林匹斯")
+            and "选项无效" in invalid.get_data(as_text=True),
         "详情打开时，点别的局（展开别的局）详情收起": bool(other_links)
         and all("detail=" not in href for href, mid in other_links if int(mid) != normal),
         "待确认的局点开就全部展开（队友 + 修改表单），没有\"详情与修改\"按钮": "Mate" in review_page
