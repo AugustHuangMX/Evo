@@ -100,6 +100,10 @@ class DavHandler(BaseHTTPRequestHandler):
     def _auth(self):
         expected = "Basic " + base64.b64encode(f"{USER}:{PASSWORD}".encode("utf-8")).decode("ascii")
         if self.headers.get("Authorization") != expected:
+            # Consume the HTTP/1.1 body before returning an early error. Otherwise
+            # the handler parses the remaining XML as another request and Windows
+            # may reset the socket before the client receives the intended status.
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
             self._send(401, headers={"WWW-Authenticate": 'Basic realm="evo"'})
             return False
         return True
@@ -108,6 +112,7 @@ class DavHandler(BaseHTTPRequestHandler):
         path = self._path()
         code = self.state.fail.get((self.command, path)) or self.state.fail.get((self.command, None))
         if code:
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
             self._send(code)
             return True
         return False
@@ -515,7 +520,7 @@ def webdav_checks():
             wrong = None
         except webdav_sync.SyncError as e:
             wrong = str(e)
-        out["密码不对：写清楚是用户名/密码的问题"] = bool(wrong and "401" in wrong and "密码" in wrong)
+        out[f"密码不对：写清楚是用户名/密码的问题（{wrong}）"] = bool(wrong and "401" in wrong and "密码" in wrong)
         try:
             webdav_sync.ensure_folder(dict(cfg, url=server.base + "/missing"))
             missing = None

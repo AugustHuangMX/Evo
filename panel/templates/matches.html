@@ -145,6 +145,18 @@
                        placeholder="{{ '如 -7' if name == 'rp_delta' else low ~ '–' ~ high }}" class="{{ 'warn' if name in r.warn_fields }}">
               </label>
               {% endfor %}
+              <label class="field"><span class="label">模式</span>
+                <select name="mode"><option value="">未识别</option>
+                  {% for key, label in modes.items() %}<option value="{{ key }}"{{ ' selected' if r.form.mode == key }}>{{ label }}</option>{% endfor %}
+                  {% if r.form.mode and r.form.mode not in modes %}<option value="{{ r.form.mode }}" selected>{{ r.form.mode }}</option>{% endif %}
+                </select>
+              </label>
+              <label class="field"><span class="label">地图</span>
+                <select name="map"><option value="">未识别</option>
+                  {% for name in maps %}<option value="{{ name }}"{{ ' selected' if r.form.map == name }}>{{ name }}</option>{% endfor %}
+                  {% if r.form.map and r.form.map not in maps %}<option value="{{ r.form.map }}" selected>{{ r.form.map }}</option>{% endif %}
+                </select>
+              </label>
             </form>
             <div class="actions">
               <form method="post" action="{{ url_for('delete', match_id=r.id) }}"

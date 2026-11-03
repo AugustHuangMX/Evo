@@ -3,7 +3,9 @@
 - 没开匿名统计：锁住的样子（锁、开启按钮，后面的示意读屏软件跳过），一个请求都不发；在那里开启后回到"全体玩家"
 - 开了：还没下载过就在页面打开时自动下载；下载的只有汇总（GET /v1/summary，不带匿名编号）；24 小时内不重复下载，
   刷新按钮马上下载；连不上、服务器出错、格式不对时不覆盖已存的
-- 页面：传奇热度先列 8 个、其余点"展开全部"；热门组合先列 5 个；"你"和全体比（不算待确认的局）；
+- 页面：两列卡片（2026-10-28），传奇热度、热门组合、大家常用的武器各先列 5 行，点卡片打开完整的表格
+  （/stats/<part>?view=all，筛选跟着带过去，"← 全体玩家"回来；锁着、还没下载过时回到卡片那页）；
+  "你"和全体比（不算待确认的局）；武器的"你"是自己的占比（只是对照，不分好坏）；
   你在 Evo 玩家中（超过多少玩家，一样的算一半）；段位分布标出你的段位；范围、模式、段位筛选（匹配包括没认出模式的局）
 - 数据页"我的"上面有切换
 
@@ -44,13 +46,25 @@ def part(players, matches, legends, combos=()):
                        "kills": [0.5, 1.0, 1.5, 2.0, 2.5], "damage": [400, 600, 800, 1000, 1200]}}
 
 
+def weapons(*rows):
+    return [{"key": key, "n": 10, "share": share, "rate": rate} for key, share, rate in rows]
+
+
+# 大家常用的武器：卡片上列前 5 把，完整的表格 10 把；new_gun_s31 是 Evo 还不认识的新枪（显示编号）
+WEAPON_ROWS = [("r301", 0.2, 0.5), ("nemesis", 0.15, 0.4), ("car", 0.12, 0.3), ("flatline", 0.1, 0.25),
+               ("r99", 0.09, 0.2), ("havoc", 0.08, 0.2), ("spitfire", 0.07, 0.15), ("prowler", 0.06, 0.1),
+               ("eva8", 0.05, 0.1), ("new_gun_s31", 0.02, 0.05)]
+WEAPON_NAMES = ["R-301", "复仇女神", "C.A.R.", "平行步枪", "R-99冲锋枪", "哈沃克步枪", "喷火轻机枪", "猎兽冲锋枪", "EVA-8",
+                "new_gun_s31"]
 COMBOS = [sorted(["恶灵", "罗芭", "命脉"]), ["万蒂奇", "探路者", "罗芭"], ["导线管", "探路者", "班加罗尔"],
           ["希尔", "恶灵", "疯玛吉"], ["命脉", "恶灵", "艾克赛尔"], ["万蒂奇", "命脉", "罗芭"], ["探路者", "疯玛吉", "罗芭"]]
 SUMMARY = {
     "v": 1, "made_at": f"{TODAY.isoformat()}T05:07:00Z", "recent_from": RECENT_FROM,
     "slices": {
-        "all.ranked.all": part(12, 340, [legend(n, 100 - i * 9, 9.5 + i / 10) for i, n in enumerate(LEGENDS)], COMBOS),
-        "7d.ranked.all": part(5, 80, [legend("罗芭", 30, 9.0), legend("恶灵", 20, 10.0)]),
+        "all.ranked.all": {**part(12, 340, [legend(n, 100 - i * 9, 9.5 + i / 10) for i, n in enumerate(LEGENDS)], COMBOS),
+                           "weapon_games": 120, "weapons": weapons(*WEAPON_ROWS)},
+        "7d.ranked.all": {**part(5, 80, [legend("罗芭", 30, 9.0), legend("恶灵", 20, 10.0)]),
+                          "weapon_games": 30, "weapons": weapons(("r301", 0.6, 0.7))},
         "all.ranked.diamond": part(4, 90, [legend("探路者", 40, 9.0)]),
         "all.ranked.low": part(0, 0, []), "all.ranked.master": part(0, 0, []),
         "all.pubs.all": part(6, 70, [legend("动力小子", 25, 8.0)]),
@@ -99,22 +113,29 @@ def summary_gets():
 
 def new_db():
     """自己的局：恶灵排位 4 局（名次 5/7/9/11，伤害 500/700/900/1100，钻石，最近几天）+ 1 局待确认（名次 20，不算）；
-    罗芭排位 1 局（10 天前，名次 3）；动力小子 1 局没认出模式（算匹配）。恶灵那几局的队友是罗芭、命脉。最后在大厅看到钻石。"""
+    罗芭排位 1 局（10 天前，名次 3）；动力小子 1 局没认出模式（算匹配）。恶灵那几局的队友是罗芭、命脉。最后在大厅看到钻石。
+    武器（只算第一次拿到武器 60 秒以后的）：恶灵前两局 R-301 40 + 90 秒、C.A.R. 120 秒（P2020 只在 60 秒以内拿过）；
+    罗芭那局复仇女神 140 秒"""
     path = storage.DB_PATH.parent / "global-stats-test.db"
     path.unlink(missing_ok=True)
     conn = storage.connect(path)
     now = datetime.now()
+    wraith = []
     for i, (place, damage) in enumerate(((5, 500), (7, 700), (9, 900), (11, 1100))):
         match_id = storage.insert_match(conn, {
             "ended_at": f"{now - timedelta(days=2, hours=i):%Y-%m-%d %H:%M:%S}", "player_name": "ImperialHzd",
             "mode": "ranked", "legend": "恶灵", "placement": place, "kills": 2, "damage": damage, "rank_tier": "钻石"})
         storage.save_teammates(conn, match_id, [{"slot": "left", "legend": "罗芭"}, {"slot": "right", "legend": "命脉"}])
+        wraith.append(match_id)
+    storage.save_weapon_holds(conn, wraith[0], [("r301", 0.0, 100.0), ("car", 100.0, 220.0)])
+    storage.save_weapon_holds(conn, wraith[1], [("p2020", 0.0, 10.0), ("r301", 10.0, 150.0)])
     storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=1):%Y-%m-%d %H:%M:%S}", "player_name": "ImperialHzd",
                                 "mode": "ranked", "legend": "恶灵", "placement": 20, "kills": 0, "damage": 0,
                                 "rank_tier": "钻石", "needs_review": 1, "review_note": "名次对不上"})
-    storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=10):%Y-%m-%d %H:%M:%S}", "player_name": "ImperialHzd",
-                                "mode": "ranked", "legend": "罗芭", "placement": 3, "kills": 1, "damage": 300,
-                                "rank_tier": "白金"})
+    old = storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=10):%Y-%m-%d %H:%M:%S}",
+                                      "player_name": "ImperialHzd", "mode": "ranked", "legend": "罗芭", "placement": 3,
+                                      "kills": 1, "damage": 300, "rank_tier": "白金"})
+    storage.save_weapon_holds(conn, old, [("nemesis", 0.0, 200.0)])
     storage.insert_match(conn, {"ended_at": f"{now - timedelta(days=1, hours=5):%Y-%m-%d %H:%M:%S}",
                                 "player_name": "ImperialHzd", "mode": None, "legend": "动力小子", "placement": 4,
                                 "kills": 6, "damage": 1600})
@@ -124,11 +145,8 @@ def new_db():
     return path
 
 
-def rows_of(page, tbody_id=None):
-    """表格里每一行的第一格（传奇名或组合）。tbody_id：只看"展开全部"里的那几行。"""
-    if tbody_id:
-        found = re.search(rf'<tbody id="{tbody_id}" hidden>(.*?)</tbody>', page, re.S)
-        page = found.group(1) if found else ""
+def rows_of(page):
+    """表格里每一行的第一格（传奇名或组合；卡片上的组合是读屏文字"恶灵、罗芭、命脉"）。"""
     return [re.sub(r"<[^>]+>|\s", "", r) for r in re.findall(r'<th scope="row">(.*?)</th>', page, re.S)]
 
 
@@ -140,6 +158,22 @@ def you_cell(page, name):
     cell = re.search(r'<td class="right you-col">(.*?)</td>', row.group(1), re.S).group(1)
     vs = re.search(r"you-(better|worse|same)", cell)
     return re.sub(r"<[^>]+>|\s", "", cell), vs.group(1) if vs else None
+
+
+def weapon_section(page):
+    """大家常用的武器那张卡片。"""
+    return page.split('id="h-weapons"')[1].split('id="h-you"')[0] if 'id="h-weapons"' in page else ""
+
+
+def weapon_cell(page, name):
+    """大家常用的武器里某把武器那一行：(占比, 拿过的局, "你"那一格的文字, 颜色)，没有返回 None。"""
+    row = re.search(rf'<th scope="row">{re.escape(name)}</th>(.*?)</tr>', weapon_section(page), re.S)
+    if not row:
+        return None
+    nums = re.findall(r'<span class="num">([^<]*)</span>|<td class="right num">([^<]*)</td>', row.group(1))
+    cell = re.search(r'<td class="right you-col">(.*?)</td>', row.group(1), re.S).group(1)
+    vs = re.search(r"you-(better|worse|same)", cell)
+    return nums[0][0], nums[1][1], re.sub(r"<[^>]+>|\s", "", cell), vs.group(1) if vs else None
 
 
 def tile(page, label):
@@ -169,6 +203,10 @@ def checks():
             "开启匿名统计后可以查看全体玩家的数据" in locked and 'class="locked-icon"' in locked
             and re.search(r'class="card stats-card locked-preview" aria-hidden="true" inert', locked) is not None
             and 'id="everyone-refresh"' not in locked and refresh["ok"] is False and not Handler.requests)
+    locked_part = client.get("/stats/legends?view=all")
+    out["锁住时打开完整的表格：回到卡片那页（锁在那里），不下载"] = (
+        locked_part.status_code == 302
+        and locked_part.headers["Location"].endswith("/stats?view=all&range=all&mode=ranked&tier=all") and not Handler.requests)
     out["锁住时：开启按钮发 on=1，开好回到全体玩家；能去设置页关闭"] = (
         re.search(r'name="on" value="1">\s*<input type="hidden" name="next" value="/stats\?view=all">', locked) is not None
         and "/settings#stats" in locked)
@@ -200,16 +238,26 @@ def checks():
     out["下载好：人数、局数、更新时间（本机时间），有刷新按钮，不再自动下载"] = (
         "12</span> 名玩家" in full and "340</span> 局" in full and "更新于 今天" in full
         and 'id="everyone-refresh"' in full and "refresh();" not in full)
-    shown, more = rows_of(full.split('id="h-combos"')[0]), rows_of(full, "legends-more")
-    out["传奇热度：先列 8 个（按出场次数），其余 2 个在\"展开全部 10 个传奇\"里"] = (
-        shown == LEGENDS and more == LEGENDS[8:] and "展开全部 10 个传奇" in full)
-    out["热门组合：先列 5 个，其余在\"展开全部 7 个组合\"里"] = (
-        len(rows_of(full, "combos-more")) == 2 and "展开全部 7 个组合" in full)
+    hot, combos = page("/stats/legends?view=all"), page("/stats/combos?view=all")
+    out["两列卡片：传奇热度、热门组合、大家常用的武器、你在 Evo 玩家中；段位分布在下面"] = (
+        re.search(r'<div class="stats-grid">.*id="h-hot".*id="h-combos".*id="h-weapons".*id="h-you".*</div>\s*<details', full, re.S)
+        is not None)
+    out["传奇热度：卡片上列前 5 个（按出场次数，有\"你\"），\"查看全部 10 个传奇\"打开完整的表格（10 个）"] = (
+        rows_of(full.split('id="h-combos"')[0]) == LEGENDS[:5] and you_cell(full, "恶灵") is not None
+        and '<a class="peek-more" href="/stats/legends?view=all&amp;range=all&amp;mode=ranked&amp;tier=all">' in full
+        and "查看全部 <span class=\"num\">10</span> 个传奇" in full and rows_of(hot) == LEGENDS)
+    out["热门组合：卡片上列前 5 个（只放头像，名字在悬停和读屏里），完整的表格 7 个"] = (
+        len(rows_of(full.split('id="h-combos"')[1].split('id="h-weapons"')[0])) == 5
+        and f'title="{"、".join(COMBOS[0])}"' in full and "查看全部 <span class=\"num\">7</span> 个组合" in full
+        and len(rows_of(combos)) == 7)
+    out["完整的表格：\"← 全体玩家\"回到卡片那页，没有\"我的 / 全体玩家\"切换"] = (
+        '<a class="back-link" href="/stats?view=all&amp;range=all&amp;mode=ranked&amp;tier=all">' in hot
+        and "stats-tabs" not in hot and 'class="peek-more"' not in hot)
     out["\"你\"：恶灵 5 局（待确认那局算局数、不算名次）场均 8.0，比全体 9.5 好，有箭头和读屏文字"] = (
-        you_cell(full, "恶灵") == ("8.0（比全体好）5局", "better"))
+        you_cell(hot, "恶灵") == ("8.0（比全体好）5局", "better"))
     out["\"你\"：罗芭 1 局（名次 3）；没用过的传奇写\"—\""] = (
-        you_cell(full, "罗芭") == ("3.0（比全体好）1局", "better") and you_cell(full, "探路者") == ("—", None))
-    combo_you = re.search(r"命脉.*?恶灵.*?罗芭.*?<td class=\"right you-col\">(.*?)</td>", full.split('id="h-combos"')[1],
+        you_cell(hot, "罗芭") == ("3.0（比全体好）1局", "better") and you_cell(hot, "探路者") == ("—", None))
+    combo_you = re.search(r"命脉.*?恶灵.*?罗芭.*?<td class=\"right you-col\">(.*?)</td>", combos.split('id="h-combos"')[1],
                           re.S)
     out["热门组合的\"你\"：恶灵 + 罗芭 + 命脉打了 4 局"] = (
         combo_you is not None and "4 局" in combo_you.group(1))
@@ -222,7 +270,23 @@ def checks():
         and re.findall(r'<span class="tier-name">([^<]+)', tiers.group(1)) == ["黄金", "白金", "钻石"]
         and re.search(r'<li class="you">\s*<span class="tier-name">钻石<span class="you-tag">你</span>', tiers.group(1)))
 
+    guns_page = page("/stats/weapons?view=all")
+    guns_card, guns = weapon_section(full), weapon_section(guns_page)
+    out["大家常用的武器：卡片上列前 5 把（按占比，显示中文名），完整的表格 10 把；两边都写记下了几局"] = (
+        rows_of(guns_card) == WEAPON_NAMES[:5] and "查看全部 <span class=\"num\">10</span> 把武器" in guns_card
+        and rows_of(guns) == WEAPON_NAMES
+        and all("记下了武器的 <span class=\"num\">120</span> 局" in g for g in (guns_card, guns)))
+    out["大家常用的武器：占比、拿过的局；横条读屏跳过（数字在旁边）"] = (
+        weapon_cell(guns_page, "R-301")[:2] == ("20.0%", "50%") and weapon_cell(guns_page, "new_gun_s31")[:2] == ("2.0%", "5%")
+        and guns.count('class="bar pick-bar" aria-hidden="true"') == 10)
+    out["武器的\"你\"：R-301 占你拿武器时间的 33.3%（130 ÷ 390 秒，60 秒以内的不算）、2 局；不分好坏；没拿过写\"—\""] = (
+        weapon_cell(guns_page, "R-301")[2:] == ("33.3%2局", "same") and weapon_cell(guns_page, "C.A.R.")[2] == "30.8%1局"
+        and weapon_cell(guns_page, "复仇女神")[2] == "35.9%1局" and weapon_cell(guns_page, "平行步枪")[2:] == ("—", None))
+
     week = page("/stats?view=all&range=7d")
+    out["武器近 7 天：你的局只算 7 天以内（罗芭那局的复仇女神不算），R-301 占 52.0%"] = (
+        rows_of(weapon_section(week)) == ["R-301"]
+        and weapon_cell(page("/stats/weapons?view=all&range=7d"), "R-301")[2] == "52.0%2局")
     out["近 7 天：用近 7 天的汇总，你的局只算 7 天以内（罗芭那局 10 天前，不算）"] = (
         rows_of(week.split('id="h-combos"')[0]) == ["罗芭", "恶灵"] and you_cell(week, "罗芭") == ("—", None)
         and "5</span> 名玩家" in week)
@@ -233,6 +297,14 @@ def checks():
     out["匹配：没有段位按钮；没认出模式的局算匹配（动力小子 1 局，名次 4）"] = (
         "段位</span>" not in pubs and rows_of(pubs.split('id="h-combos"')[0]) == ["动力小子"]
         and you_cell(pubs, "动力小子") == ("4.0（比全体好）1局", "better"))
+    out["汇总里没有武器（老的统计服务器、还没人发过）：写\"还没有记下武器的对局\"，不写局数"] = (
+        "这个范围里还没有记下武器的对局" in weapon_section(pubs) and "记下了武器的" not in weapon_section(pubs))
+    deep = page("/stats/legends?view=all&tier=diamond")
+    out["完整的表格带着筛选：按钮留在这一页，\"← 全体玩家\"回到同样筛选的卡片"] = (
+        rows_of(deep) == ["探路者"] and 'href="/stats/legends?view=all&amp;range=7d&amp;mode=ranked&amp;tier=diamond"' in deep
+        and '<a class="back-link" href="/stats?view=all&amp;range=all&amp;mode=ranked&amp;tier=diamond">' in deep)
+    out["不认识的完整表格（全体玩家没有队友表）：404"] = (
+        client.get("/stats/mates?view=all").status_code == 404 and client.get("/stats/x?view=all").status_code == 404)
     out["网址里不认识的筛选：用默认（全部、排位、全部段位）"] = (
         global_stats.choose({"range": "x", "mode": "y", "tier": "z"}) == ("all", "ranked", "all"))
 

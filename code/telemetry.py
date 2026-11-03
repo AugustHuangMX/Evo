@@ -141,7 +141,10 @@ def match_key(install, row):
 def match_payload(conn, row, install):
     """一局要发的内容（只有这些项）。"""
     mates = storage.teammates_of(conn, row["match_id"])[:2]
-    edited = sorted({f for f in (row["edited"] or "").split(",") if f})
+    # Keep reports compatible with the deployed server's existing field allowlist.
+    # Mode/map corrections remain recorded locally and sync through WebDAV.
+    edited = sorted({f for f in (row["edited"] or "").split(",")
+                     if f in {"placement", "kills", "assists", "knockdowns", "participation", "damage", "rp_delta"}})
     return {"k": match_key(install, row), "match_id": row["sync_uid"],
             "day": (row["ended_at"] or "")[:10] or None, "version": row["app_version"],
             "mode": row["mode"], "map": row["map"], "legend": row["legend"], "mates": [m["legend"] for m in mates],

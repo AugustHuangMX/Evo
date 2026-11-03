@@ -11,10 +11,17 @@ grid 布局、woff2 字体），窗口里只剩一堆没排好的文字（2026-1
 判断"有没有"和 pywebview 一样（webview/platforms/winforms.py 的 _is_chromium）：注册表里 WebView2 的版本号
 不低于 86.0.622.0，并且 .NET Framework 不低于 4.6.2。两边说法一致，才不会出现"这里说有、pywebview 却用了 IE"。
 
+下载标记（unblock，0.4.1 起）：用 Windows 自带的"全部解压缩"解开压缩包时，每个文件都带上"从网上下载的"标记
+（文件的附加数据流 Zone.Identifier）。.NET Framework 不加载带这个标记的程序集，pythonnet 就报
+"Failed to resolve Python.Runtime.Loader.Initialize"，窗口打不开、只能用浏览器（2026-10-25 玩家反馈）。
+所以打包版每次启动时，先去掉窗口要用的那几个 DLL 上的标记。玩家已经在 SmartScreen 里点过"仍要运行"，
+这个标记对 Evo 自己的文件没有别的用处。
+
 单独试：python code/webview2.py   （只显示检查结果，不弹窗、不安装）
 """
 
 import ctypes
+import os
 import subprocess
 import winreg
 
@@ -25,6 +32,9 @@ SETUP_NAME = "MicrosoftEdgeWebview2Setup.exe"
 SETUP = (APP_DIR / "webview2" if FROZEN else APP_DIR / "build" / "webview2") / SETUP_NAME
 DOWNLOAD_PAGE = "https://developer.microsoft.com/microsoft-edge/webview2/"  # 自动安装失败时，告诉用户去哪里手动下载
 INSTALL_TIMEOUT = 30 * 60  # 网慢时下载要好几分钟；超过半小时就当作没装上
+
+NET_FOLDERS = ("pythonnet", "clr_loader", "webview")  # 窗口要用的 .NET 程序集都在 _internal 下的这几个文件夹里
+MARK = ":Zone.Identifier"  # Windows 记"这个文件是从网上下载的"的地方
 
 MIN_VERSION = (86, 0, 622, 0)  # pywebview 要求的最低版本
 NET_462 = 394802  # .NET Framework 4.6.2 的 Release 编号
@@ -115,6 +125,26 @@ def install():
     if version:
         return True, f"WebView2 装好了（版本 {version}，安装程序返回 {result.returncode}）"
     return False, f"WebView2 安装程序结束了（返回 {result.returncode}），但还是找不到 WebView2"
+
+
+def unblock(log, root=APP_DIR):
+    """去掉窗口要用的 DLL 上"从网上下载的"标记（见本文件开头），去掉了、去不掉都写进日志。返回去掉了几个。"""
+    removed, failed = 0, []
+    for folder in NET_FOLDERS:
+        for path in sorted((root / folder).rglob("*.dll")):
+            mark = f"{path}{MARK}"
+            if not os.path.exists(mark):  # 没有标记；不是 NTFS 的盘（FAT32、exFAT）也没有
+                continue
+            try:
+                os.remove(mark)
+                removed += 1
+            except OSError:  # 程序文件夹不能写入（如 C:\Program Files）、被杀毒软件拦住
+                failed.append(path)
+    if removed:
+        log(f"去掉了 {removed} 个文件上\"从网上下载的\"标记（Windows 自带的解压缩会加上，带着它 Evo 窗口打不开）")
+    if failed:
+        log(f"{len(failed)} 个文件去不掉\"从网上下载的\"标记，Evo 窗口可能打不开、改用浏览器：{failed[0]} 等")
+    return removed
 
 
 if __name__ == "__main__":

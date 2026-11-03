@@ -10,15 +10,18 @@
 - 选角色等别的画面、对局中：都不是上面这些画面。左下角认得出自己的传奇 = 自己的界面：认自己和队友的传奇、
   记下存活 / 倒地 / 成盒，右上角那一块存在内存里（见 in_match.py、hud.py）。对局中截图加快到每 0.3 秒一张
 - 淘汰画面（"排名第 X"）、冠军横幅（"捍卫者"）、总结页、经验值页、右下角的"返回大厅"按钮（小队已淘汰，比如全队被淘汰后观战对手；
-  自己先成盒、队友还活着时没有这个按钮）：这一局结束了，先读对局中存下的右上角
-  （击杀、助攻、老板分、伤害、RP、剩余小队数）和队友名字，交给 PostMatch
+  自己先成盒、队友还活着时没有这个按钮）：这一局结束了。对局中存下的右上角（击杀、助攻、老板分、伤害、RP、剩余小队数）
+  和队友名字等回到大厅、下一局开局时再读，交给 PostMatch（见 in_match.py）
   - 淘汰画面：读名次，读到就不再读（见 eliminated.py）；冠军横幅：记第 1 名
   - 总结页：改成每 0.3 秒检查一次，读全了就存一局（见 SummaryWatcher），同一帧再读左右两张卡片上的队友
     （见 teammates.py）、中间卡片上自己的名字、顶部是不是"捍卫者"
   - 经验值页：离开时识别最后一帧（数字有动画，最后一帧才是最终结果），补上 RP、段位
+  - 停在总结页、还没存下时只读总结页（2026-10-27 用户决定：笔记本上读一次要好几秒，玩家常常没等读完就离开了）：
+    对局中存下的右上角见上；从经验值页切到总结页时，经验值页的最后一帧先留着，总结页存下了（或者离开了）再读
 - 各来源读到的数都记进 readings 表，每一项最后用哪个来源的数见 post_match.py（总结页、经验值页读得清楚时以它们为准，
   没有时用对局中的）
 - 提示音（见 SoundCues、sounds.py；设置页能关）：小队打完了响一声提醒去总结页，总结页读完了响一声，进经验值页响一声
+- 读结算画面、大厅时不让 Windows 降频（见 FullSpeed）：笔记本上识别可能慢 10 倍以上，玩家等不到提示音就离开了
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
 截图存在 captures/live/<开始时间>/。截图留不留见 screenshots.py：
@@ -56,7 +59,7 @@ from ocr import SMALL_CROP_PARAMS, LazyEngine, load_config
 from paths import CAPTURES_DIR
 from player_name import PlayerNameReader
 from post_match import SOURCE_CHAMPION, SOURCE_SUMMARY, PostMatch
-from process_info import memory_mb, set_low_priority
+from process_info import memory_mb, set_full_speed, set_low_priority
 from screens import GameScreens
 from summary_page import KEY_FIELDS, is_champion, read_summary, show, summary_readings, summary_to_match
 from teammates import describe, read_teammates
@@ -144,6 +147,7 @@ class SummaryWatcher:
         """停止记录时：如果正停在还没存下的总结页，先存下。"""
         if self.waiting:
             self._record_best("总结页停留太短，名次等数据可能没读全，请核对")
+            self.done = True
 
     def _record(self, results, problems, frame, when, note=None):
         """把一次总结页的读数存进数据库。如果和上一局是同一局（来回切页），就不重复存。"""
@@ -229,6 +233,44 @@ class SoundCues:
             self.log(f"[{now:%H:%M:%S}] 提示音：{sounds.SOUNDS[name]}")
 
 
+class FullSpeed:
+    """读结算画面、大厅时不让 Windows 降频（2026-10-27 用户决定，见 process_info.set_full_speed）。
+    两位笔记本玩家的识别比台式机慢 10–15 倍（总结页读完要十几秒，提示音很晚），怀疑是 Windows 给没有窗口的记录程序
+    降了频。优先级、线程数不变，同样的活干得快；这时游戏在菜单里，不影响帧数。
+    进入下面这些画面时打开；离开后 HOLD_SECONDS 秒（离开经验值页时还要读最后一帧）、或者对局中认出自己的传奇时交还。"""
+
+    SCREENS = ("eliminated", "champion", "squad_out", "summary", "xp", "lobby")
+    HOLD_SECONDS = 10
+
+    def __init__(self, log, apply=None):
+        self.log = log
+        self.apply = apply or set_full_speed
+        self.on = False
+        self.until = None  # 离开这些画面后，到这个时刻交还
+        self.announced = False
+
+    def update(self, screen, in_match):
+        """每截一帧调用一次（在读这一帧之前）。screen：这一帧是哪个画面；in_match：对局中认出过自己的传奇。"""
+        if screen in self.SCREENS:
+            self.until = time.monotonic() + self.HOLD_SECONDS
+            if not self.on:
+                self._set(True)
+        elif self.on and (in_match or time.monotonic() >= self.until):
+            self._set(False)
+
+    def stop(self):
+        if self.on:
+            self._set(False)
+
+    def _set(self, on):
+        ok = self.apply(on)
+        self.on = on
+        if not self.announced:
+            self.announced = True
+            self.log("读结算画面、大厅时不让 Windows 降频（对局中照旧由 Windows 决定）" if ok
+                     else "这台电脑的 Windows 不能设置省电限速，照常运行")
+
+
 class ScreenWatcher:
     """经验值页、开局画面、大厅、淘汰画面、冠军横幅（见 config/screens.json）。
     离开经验值页时识别最后一帧（数字有动画，最后一帧才是最终结果）；进入开局画面或大厅表示上一局彻底结束；
@@ -237,18 +279,23 @@ class ScreenWatcher:
     截图：保留全部时，进入时存一张、离开前最后一帧再存一张；否则只存经验值页离开前的最后一帧
     （没有总结页的局要拿它当识别依据），大厅、开局画面、淘汰画面、冠军横幅不存。"""
 
-    def __init__(self, engine, screens, xp_cfg, start_cfg, elim_cfg, post, run_dir, log, keep_all=True):
+    def __init__(self, engine, screens, xp_cfg, start_cfg, elim_cfg, post, run_dir, log, keep_all=True,
+                 busy=lambda: False):
+        """busy()：总结页正在读、还没存下。这时离开经验值页，最后一帧先留着，等 busy() 不再为真再读。"""
         self.engine, self.screens, self.xp_cfg, self.start_cfg = engine, screens, xp_cfg, start_cfg
         self.elim_cfg = elim_cfg
         self.post, self.run_dir, self.log, self.keep_all = post, run_dir, log, keep_all  # 每局结束时可能改（round_end）
+        self.busy = busy
         self.current = None  # 现在停在哪个画面（None = 都不是）
         self.last = None  # 这个画面最近的一帧和时间，离开时存下来
         self.frames = 0  # 在这个画面已经看到了几帧
         self.enter_path = None  # 进入这个画面时存的截图（没存为 None）
         self.placement = None  # 这一次停在淘汰画面读到的名次
+        self.held = None  # 先留着、还没读的经验值页最后一帧：(截图, 截图路径, 时间)
 
     def update(self, screen, frame, now):
         """每截一帧调用一次。screen：这一帧是哪个画面（如 "xp"），都不是则为 None。"""
+        self._read_held()
         if screen != self.current:
             self.leave()
             if screen in ("match_start", "lobby"):
@@ -273,18 +320,26 @@ class ScreenWatcher:
 
     def leave(self):
         """离开当前画面：存下最后一帧（保留全部时，只看到一帧的话进入时已经存过了；否则只存经验值页）；
-        如果是经验值页，识别最后一帧。"""
-        if self.current is None:
+        如果是经验值页，识别最后一帧（总结页正在读时先留着）。"""
+        if self.current is not None:
+            last_frame, last_time = self.last
+            path = self.enter_path
+            if (self.frames > 1) if self.keep_all else (self.current == "xp"):
+                path = self.run_dir / f"{self.current}_{last_time:%H%M%S}_leave.png"
+                save_png(path, last_frame)
+                self.log(f"[{last_time:%H:%M:%S}] 离开{self._label(self.current)}，已存最后一帧")
+            if self.current == "xp":
+                self.held = (last_frame, path, last_time)
+        self._read_held()
+
+    def _read_held(self):
+        """识别先留着的经验值页最后一帧（总结页正在读时不读）。"""
+        if self.held is None or self.busy():
             return
-        last_frame, last_time = self.last
-        path = self.enter_path
-        if (self.frames > 1) if self.keep_all else (self.current == "xp"):
-            path = self.run_dir / f"{self.current}_{last_time:%H%M%S}_leave.png"
-            save_png(path, last_frame)
-            self.log(f"[{last_time:%H:%M:%S}] 离开{self._label(self.current)}，已存最后一帧")
-        if self.current == "xp":
-            reading, problems = read_xp(self.engine, last_frame, self.xp_cfg)
-            self.post.on_xp(reading, problems, path, last_time)
+        frame, path, when = self.held
+        self.held = None
+        reading, problems = read_xp(self.engine, frame, self.xp_cfg)
+        self.post.on_xp(reading, problems, path, when)
 
     def _read_placement(self, frame, now):
         """读淘汰画面上的名次。没读出来时只在第一帧提示一次，之后每帧再试。"""
@@ -379,10 +434,12 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     hud = Hud(engine, lang=lang)
     match_interval = hud.cfg["match_interval"] if match_interval is None else match_interval
     cues = SoundCues(log)
+    speed = FullSpeed(log)
     summary = SummaryWatcher(engine, load_config("summary.json", lang), conn, post, run_dir, log, summary_timeout,
                              PlayerNameReader(engine, name_cfg), on_read=cues.summary_read)
     other = ScreenWatcher(engine, detector.cfg, load_config("xp.json", lang), load_config("match_start.json", lang),
-                          load_config("eliminated.json", lang), post, run_dir, log, keep_all=keep)
+                          load_config("eliminated.json", lang), post, run_dir, log, keep_all=keep,
+                          busy=lambda: summary.waiting)
     in_match = InMatchWatcher(hud, post, log, name_cfg, save=lambda frame, name: save_png(run_dir / name, frame),
                               keep_all=lambda: other.keep_all)
     lobby = LobbyWatcher(LobbyReader(engine, load_config("lobby.json", lang)), post, conn, log)
@@ -445,10 +502,11 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                     lang = detector.lang
                     use_language(lang)
                 on_summary = screen == "summary"
+                speed.update(screen, in_match.active)  # 读结算画面、大厅时不让 Windows 降频
                 cues.update(screen, now)  # 提示音：小队打完了、进经验值页（总结页读完了由 summary 告诉它）
-                in_match.update(screen, frame, now)  # 先交对局中的数据：结算画面上要用
+                in_match.update(screen, frame, now)  # 一局结束时先记下；回到大厅、下一局开局时交对局中的数据（先交才收尾）
                 summary.update(on_summary, frame, now)
-                other.update(None if on_summary else screen, frame, now)
+                other.update(None if on_summary else screen, frame, now)  # 总结页还没存下时，经验值页先不读
                 lobby.update(screen, frame, now)
                 if screen is not None:
                     last_seen, warned = tick, False
@@ -478,13 +536,15 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         other.leave()
         post.finish()
         aspect.reset()
+        speed.stop()
         camera.release()
         conn.close()
         left = sum(1 for p in run_dir.iterdir() if p.suffix.lower() in (".png", ".jpg"))
         if not any(run_dir.iterdir()):
             run_dir.rmdir()  # 一张截图都没留下：文件夹也删掉
         saved = total()
-        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次，"
+        per_call = f"（平均每次 {engine.busy / engine.calls:.2f} 秒）" if engine.calls else ""
+        log(f"本次记录：截屏 {frames} 次，其中外观像的 {detector.looked_alike} 次；识别 {engine.calls} 次{per_call}，"
             f"加载识别模型 {engine.loads} 次；认传奇 {in_match.checks} 次，读右上角 {in_match.top_reads} 块；"
             f"读玩家名 {summary.name_reads + in_match.name_reads} 次（对局中 {in_match.name_reads} 次），"
             f"玩家名 {post.player_name or '没认出'}；大厅读数 {lobby.saved} 次（读了 {lobby.reads} 次）；"
@@ -493,7 +553,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         log(f"截图：留下 {left} 张（{kinds}）"
             + (f"，识别完删掉 {tidied['deleted']} 张、总结页截图 {tidied['converted']} 张转成 JPG"
                f"（腾出 {tidied['freed'] / 2 ** 20:.0f} MB）" if tidied["deleted"] or tidied["converted"] or not keep else ""))
-        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues  # 释放识别模型和截屏，交还内存
+        del engine, detector, camera, summary, other, in_match, hud, lobby, aspect, cues, speed  # 释放识别模型和截屏，交还内存
         gc.collect()
     if status is not None:
         status["saved"] = saved

@@ -17,6 +17,7 @@
   })();
 </script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% if request.endpoint == 'stats' %}<link rel="stylesheet" href="{{ url_for('static', filename='analytics.css') }}">{% endif %}
 </head>
 <body>
 {% if in_app %}
@@ -324,6 +325,13 @@
       btn.disabled = true;
       btn.setAttribute("aria-busy", "true");
       btn.textContent = form.dataset.busy;
+    });
+  });
+
+  // 数据页的卡片：点卡片上任何地方都打开完整的表格，和点右下角的"查看全部"一样（键盘、读屏软件用那个链接）
+  document.querySelectorAll(".peek-more").forEach(function (link) {
+    link.closest(".peek-card").addEventListener("click", function (e) {
+      if (!e.target.closest("a")) link.click();
     });
   });
 

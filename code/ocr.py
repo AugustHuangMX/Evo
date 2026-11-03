@@ -58,6 +58,7 @@ class LazyEngine:
         self.log = log or (lambda message: None)
         self._engine, self._last_used = None, 0.0
         self.loads = self.calls = 0  # 加载过几次模型、识别过几次（统计用）
+        self.busy = 0.0  # 识别一共用了几秒（真实时间，统计用：笔记本上可能比台式机慢 10 倍以上）
 
     def __call__(self, img, **kwargs):
         if self._engine is None:
@@ -67,7 +68,11 @@ class LazyEngine:
             self.log(f"加载识别模型（用时 {(time.perf_counter() - start) * 1000:.0f} 毫秒）")
         self.calls += 1
         self._last_used = self.clock()
-        return self._engine(img, **kwargs)
+        start = time.perf_counter()
+        try:
+            return self._engine(img, **kwargs)
+        finally:
+            self.busy += time.perf_counter() - start
 
     def release_if_idle(self):
         """闲置超过 idle_seconds 秒就释放模型。"""

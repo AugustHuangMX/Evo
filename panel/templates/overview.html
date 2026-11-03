@@ -94,6 +94,7 @@
       <span class="stat-count">{{ ranges[range_key] }}{% if stat_mode != 'all' %} · {{ stat_modes[stat_mode] }}{% endif %}{% if stat_legend %} · {{ stat_legend }}{% endif %} · 共 <span class="num">{{ stat_games }}</span> 局</span>
     </div>
     <div class="stat-controls">
+      <a class="btn" href="{{ url_for('stats', range=range_key, mode=stat_mode, legend=stat_legend) }}#h-analysis">深入分析</a>
       {# 模式、传奇筛选只作用于数据统计和下面的传奇表现；段位、RP 走势、最近对局不受影响 #}
       <div class="seg" role="group" aria-label="对局模式">
         {% for key, label in stat_modes.items() %}

@@ -28,6 +28,7 @@ from flask import (Flask, Response, abort, flash, g, jsonify, redirect, render_t
                    url_for)
 
 import app_settings
+import analytics
 import autostart
 import data_move
 import game_aspect
@@ -59,6 +60,10 @@ PER_PAGE = 20
 # 顶部导航：(页面, 显示名)。顺序也决定切换页面时，选中标签的底色从哪边滑过来
 NAV = (("overview", "总览"), ("matches", "战绩"), ("stats", "数据"), ("settings", "设置"))
 MODES ={"ranked": "排位", "pubs": "匹配", "other": "其他"}
+try:
+    MATCH_MAPS = tuple(json.loads((CONFIG_DIR / "match_start.json").read_text(encoding="utf-8"))["maps"])
+except (OSError, ValueError, KeyError):
+    MATCH_MAPS = ()
 # 修正表单里可以改的字段：(显示名, 最小值, 最大值)
 EDITABLE = {
     "placement": ("名次", 1, 20),
@@ -296,6 +301,19 @@ def overview_url(**changes):
     return url_for("overview", **args)
 
 
+@app.template_global()
+def stats_url(**changes):
+    """Keep every local filter while moving between the cards and full tables."""
+    args = {key: request.args[key] for key in ("range", "mode", "legend", "map", "since", "until") if request.args.get(key)}
+    args["part"] = (request.view_args or {}).get("part")
+    for key, value in changes.items():
+        if value in (None, ""):
+            args.pop(key, None)
+        else:
+            args[key] = value
+    return url_for("stats", **args)
+
+
 # ---------- 把数据库里的一行，整理成网页上显示的文字 ----------
 
 def time_text(ended_at):
@@ -369,7 +387,7 @@ def view(row):
         "has_evidence": bool(row["evidence_path"]),
         "evidence_recorded": screenshots.recorded(row["evidence_path"]),  # 记录程序存的截图：确认、删除这一局时会删掉
         "evidence_summary": screenshots.is_summary(row["evidence_path"]),  # 总结页截图：确认时留着，删除这一局时才删
-        "form": {name: "" if row[name] is None else row[name] for name in EDITABLE},
+        "form": {name: "" if row[name] is None else row[name] for name in (*EDITABLE, "mode", "map")},
         "warn_fields": warn_fields(row["review_note"]) if row["needs_review"] else set(),
     }
 
@@ -477,7 +495,7 @@ def group_numbers(rows):
     knockdowns = [r["knockdowns"] for r in rows if r["knockdowns"] is not None]
     damages = [r["damage"] for r in rows if r["damage"] is not None]
     survivals = [r["survival_time"] for r in rows if r["survival_time"] is not None]
-    rps = [r["rp_delta"] for r in rows if r["rp_delta"] is not None]  # 只有排位局有
+    rps = [r["rp_delta"] for r in rows if r["mode"] == "ranked" and r["rp_delta"] is not None]
 
     def avg(values, fmt):
         return fmt.format(sum(values) / len(values)) if values else "—"
@@ -550,7 +568,7 @@ def filter_mode(rows, mode):
 
 
 def rp_sum(rows):
-    values = [r["rp_delta"] for r in rows if r["rp_delta"] is not None]
+    values = [r["rp_delta"] for r in rows if r["mode"] == "ranked" and r["rp_delta"] is not None]
     return {"text": signed(sum(values)), "good": sum(values) >= 0} if values else {"text": "—", "good": None}
 
 
@@ -635,22 +653,129 @@ def teammate_table(rows, mates):
         person["player_id"] = m["player_id"] or person["player_id"]
 
     listed = []
-    for person in people.values():
+    for key, person in people.items():
         if len(person["games"]) < MIN_MATE_GAMES:
             continue
         together = sorted(person["games"].values(), key=lambda r: (r["ended_at"] or "", r["match_id"]))
         names = {}  # 名字 → (次数, 最后一次的先后)
         for order, name in enumerate(person["names"][-MATE_NAME_GAMES:]):
             names[name] = (names.get(name, (0, 0))[0] + 1, order)
+        steps, total = [], 0  # RP 走势：一局局加起来。只算读到了 RP 的排位局，读不到的跳过（不当 0）
+        for r in together:
+            if r["mode"] == "ranked" and r["rp_delta"] is not None:
+                total += r["rp_delta"]
+                steps.append({"total": total, "delta": r["rp_delta"], "when": time_text(r["ended_at"])})
         listed.append({
+            "key": key,
             "name": max(names, key=names.get) if names else "（没读到名字）",
             "player_id": person["player_id"],
             "last": time_text(together[-1]["ended_at"]),
             "order": together[-1]["ended_at"] or "",
+            "rp_steps": steps,
+            "rp_total": signed(total) if steps else "—",
+            "rp_total_class": "none" if not steps else ("good" if total >= 0 else "bad"),
             **group_numbers(together),
         })
     listed.sort(key=lambda p: (p["games"], p["order"]), reverse=True)
+    add_sparks(listed)
     return listed
+
+
+MIN_CURVE_GAMES = 5  # 和队友的 RP 走势：一起打满这么多局排位（读到了 RP 的）才画线（2026-11-01 用户定的）
+CURVE_LINES = 5  # 完整表格页的大图最多画几个人（一人一种颜色，只有 5 种：style.css 的 --series-0…4）
+SPARK_W, SPARK_H = 88, 28  # 每行后面的小曲线（像素，不拉伸）
+CURVE_W, CURVE_H = 600, 240  # 大图的坐标范围（网页上按卡片宽度拉伸）
+
+
+def add_sparks(listed):
+    """常一起玩的队友每行后面的小曲线（2026-11-01 用户要的"和每个队友的上分趋势"）：累计 RP，从 0 开始，
+    一起打满 MIN_CURVE_GAMES 局排位才画（不够的只写累计，没有线）。每条线上下左右都各自占满，只看起伏
+    （所有行用同一个比例时差不多都是平的）；画出 0 那条线，涨了多少写在旁边，几个人之间比高低看大图。
+    slot：大图里的颜色（curve_chart 填上；不在大图里的是 None）。"""
+    pad = 4  # 上下、左右留出线和终点圆点的位置
+    for m in listed:
+        m["spark"], m["slot"] = None, None
+        if len(m["rp_steps"]) < MIN_CURVE_GAMES:
+            continue
+        totals = [0] + [s["total"] for s in m["rp_steps"]]
+        high, span = max(totals), (max(totals) - min(totals)) or 1
+
+        def y(v):
+            return round(pad + (high - v) / span * (SPARK_H - 2 * pad), 1)
+
+        xs = [round(pad + i / (len(totals) - 1) * (SPARK_W - 2 * pad), 1) for i in range(len(totals))]
+        m["spark"] = {"w": SPARK_W, "h": SPARK_H, "zero": y(0), "end": (xs[-1], y(totals[-1])),
+                      "line": " ".join(f"{x},{y(v)}" for x, v in zip(xs, totals))}
+
+
+def nice_step(span, most):
+    """坐标轴刻度的间隔：1、2、5、10、20、50、100……里刻度不超过 most 个的最小的那个。"""
+    step = 1
+    while span / step > most:
+        step = step * 5 // 2 if str(step)[0] == "2" else step * 2  # 1 → 2 → 5 → 10 → 20 → 50…
+    return step
+
+
+def curve_slots(keys, stable):
+    """大图里每个人的颜色（第几种）：跟着人走，不跟着排第几——换了范围，同一个人还是同一种颜色。
+    stable：所有对局里有走势的队友（按一起打的局数排）；排在前 CURVE_LINES 的人固定用自己那一种，其余的人用剩下的。"""
+    fixed = {k: i for i, k in enumerate(stable[:CURVE_LINES])}
+    slots = {k: fixed[k] for k in keys if k in fixed}
+    free = [i for i in range(CURVE_LINES) if i not in slots.values()]
+    return [slots[k] if k in slots else free.pop(0) for k in keys]
+
+
+def curve_chart(listed, rows, stable):
+    """完整表格页上的大图：前 CURVE_LINES 个有走势的队友，横轴是一起打的第几局，纵轴是累计 RP（都从 0 开始）。
+    灰色虚线是参照：这个范围里所有排位局的场均 RP 一直打下去的样子（线在它上面 = 和这个人一起比平时上分快）。
+    rows：这个范围里的所有对局；stable：见 curve_slots。没有可画的队友返回 None。
+    表里这几个人那一行的小曲线也换成同一种颜色（m["slot"]）。"""
+    shown = [m for m in listed if m["spark"]][:CURVE_LINES]
+    if not shown:
+        return None
+    n = max(len(m["rp_steps"]) for m in shown)
+    values = [0] + [s["total"] for m in shown for s in m["rp_steps"]]
+    rps = [r["rp_delta"] for r in rows if r["mode"] == "ranked" and r["rp_delta"] is not None]
+    avg = sum(rps) / len(rps) if rps else None
+    if avg is not None:
+        values.append(avg * n)  # Keep the reference line inside the plot as well.
+    low, high = min(values), max(values)
+    pad = max(20, (high - low) * 0.08)
+    low, high = low - pad, high + pad
+
+    def x(i):
+        return i / n * CURVE_W
+
+    def y(v):
+        return CURVE_H - (v - low) / (high - low) * CURVE_H
+
+    def top(v):  # 网页上的位置（百分比）：刻度、圆点是 HTML，不跟着图拉伸变形
+        return round(y(v) / CURVE_H * 100, 2)
+
+    step = nice_step(high - low, 4)
+    ticks = range(math.ceil(low / step) * step, math.floor(high / step) * step + 1, step)
+    x_step = nice_step(n, 6)
+    series = []
+    for m, slot in zip(shown, curve_slots([m["key"] for m in shown], stable)):
+        m["slot"] = slot
+        totals = [0] + [s["total"] for s in m["rp_steps"]]
+        series.append({
+            "name": m["name"], "slot": slot, "games": len(m["rp_steps"]), "total": m["rp_total"],
+            "total_class": m["rp_total_class"],
+            "line": " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(totals)),
+            "end": {"left": round(x(len(totals) - 1) / CURVE_W * 100, 2), "top": top(totals[-1])},
+            # 页面上的脚本用：鼠标停在第 i 局时每个人的 [位置, 累计, 这局, 时间]
+            "points": [[top(s["total"]), signed(s["total"]), signed(s["delta"]), s["when"]] for s in m["rp_steps"]],
+        })
+    return {
+        "w": CURVE_W,
+        "h": CURVE_H,
+        "n": n,
+        "series": series,
+        "y_ticks": [{"y": round(y(v), 1), "top": top(v), "label": "0" if v == 0 else signed(v), "zero": v == 0} for v in ticks],
+        "x_ticks": [{"left": round(i / n * 100, 2), "label": i} for i in range(x_step, n + 1, x_step)],
+        "ref": None if avg is None else {"y1": round(y(0), 1), "y2": round(y(avg * n), 1), "avg": signed(round(avg))},
+    }
 
 
 MIN_COMBO_GAMES = 2  # 传奇组合：出现过这么多局才列出
@@ -703,15 +828,7 @@ def weapon_table(rows, holds):
     """最常用武器（2026-10-24 用户决定）：每把武器拿在手上多久，按时间从多到少；局数 = 拿过它的局。
     只算每一局第一次拿到武器 count_after_seconds 秒以后的（不算落地后随手捡的；页面上不写这条规则，用户决定）。
     rows：要统计的局；holds：weapon_holds 表的行（多了不要紧）。返回 (列表, 合计)；这个范围里没记下武器返回 ([], None)。"""
-    after = WEAPONS["count_after_seconds"]
-    games = {r["match_id"] for r in rows}
-    seconds, played = {}, {}
-    for h in holds:
-        counted = h["end_s"] - max(h["start_s"], after)
-        if h["match_id"] not in games or counted <= 0:
-            continue
-        seconds[h["weapon"]] = seconds.get(h["weapon"], 0) + counted
-        played.setdefault(h["weapon"], set()).add(h["match_id"])
+    seconds, played = storage.weapon_totals(holds, WEAPONS["count_after_seconds"], {r["match_id"] for r in rows})
     total = sum(seconds.values())
     if not total:
         return [], None
@@ -971,33 +1088,58 @@ def matches():
         open_id=open_id,
         review_count=storage.count_review(db(), names),
         editable=EDITABLE,
+        maps=MATCH_MAPS,
         share=share,
     )
 
 
+PEEK_ROWS = 5  # 数据页（我的、全体玩家）每张卡片先列这么多行，完整的表格点卡片打开
+STATS_PARTS = ("weapons", "mates", "legends", "combos")  # "我的"每张卡片的完整表格：/stats/<part>
+
+
 @app.route("/stats")
-def stats():
-    """数据页：最常用武器、常一起玩的队友、传奇表现（详细版）、传奇组合。范围按钮和总览页一样（近 30 局 / 全部）。
-    顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
+@app.route("/stats/<part>")
+def stats(part=None):
+    """数据页：两列卡片（2026-10-28 用户决定）：最常用武器、常一起玩的队友、传奇表现（详细版）、传奇组合，
+    每张先列 PEEK_ROWS 行，点卡片打开那张的完整表格（/stats/<part>，左上角"← 数据"回来）。
+    范围按钮和总览页一样（近 30 局 / 全部）。顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
     if request.args.get("view") == "all":
-        return stats_everyone()
+        return stats_everyone(part)
+    if part is not None and part not in STATS_PARTS:
+        abort(404)
     range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
-    in_range = rows[-30:] if range_key == "30" else rows
+    filtered, stat_filters, filter_options, filter_errors = analytics.select(rows, request.args)
+    in_range = filtered[-30:] if range_key == "30" else filtered
     all_mates = storage.all_teammates(db(), names)
     mates = teammate_table(in_range, all_mates)
+    curves = None
+    if part == "mates":  # 和队友一起的 RP 走势（大图）只在完整的表格页；颜色按所有对局里的顺序，换范围不变色
+        stable = teammate_table(rows, all_mates)
+        curves = curve_chart(mates, in_range, [m["key"] for m in stable if m["spark"]])
     legends, no_legend = legend_table(in_range)
     combos, combo_known = combo_table(in_range, all_mates)
     weapons, weapon_all = weapon_table(in_range, storage.all_weapon_holds(db(), names))
     return render_template(
         "stats.html",
+        part=part,
+        peek=PEEK_ROWS,
         range_key=range_key,
         ranges=RANGES,
         total=len(rows),
+        selected_games=len(in_range),
+        stat_filters=stat_filters,
+        filter_options=filter_options,
+        filter_errors=filter_errors,
+        analysis=analytics.payload(in_range, COUNTED_KILLS_NOTES,
+                                   {r["match_id"]: i // PER_PAGE + 1 for i, r in enumerate(reversed(rows))}),
+        analysis_modes=analytics.MODES,
         everyone=group_numbers(in_range),  # 参照：这个范围里的所有对局
         mates=mates,
         min_mate_games=MIN_MATE_GAMES,
+        curves=curves,
+        min_curve_games=MIN_CURVE_GAMES,
         legends=legends,
         no_legend=no_legend,
         combos=combos,
@@ -1010,22 +1152,30 @@ def stats():
     )
 
 
-def stats_everyone():
+def stats_everyone(part=None):
     """数据页"全体玩家"（global_stats.py，2026-10-24 用户决定）：开了匿名统计的所有 Evo 玩家的汇总，和自己的比。
     没开匿名统计：锁住的样子（蒙版 + 锁 + 开启按钮），不下载。开了：用存着的汇总；没有或超过 24 小时，
-    页面打开后脚本马上下载（POST /stats/everyone/refresh），下载好重新打开页面。"""
+    页面打开后脚本马上下载（POST /stats/everyone/refresh），下载好重新打开页面。
+    和"我的"一样是两列卡片，part 是某张卡片的完整表格（global_stats.PARTS）；锁着或还没下载过时回到卡片那页。"""
+    if part is not None and part not in global_stats.PARTS:
+        abort(404)
     range_key, mode, tier = global_stats.choose(request.args)
     allowed = global_stats.allowed()
     cache = global_stats.cached() if allowed else None
+    if part and cache is None:
+        return redirect(url_for("stats", view="all", range=range_key, mode=mode, tier=tier))
     view = None
     if cache is not None:
         names = account_view()["names"]
         rows = storage.all_matches(db(), names)
         rank = latest_rank(rows, storage.lobby_readings(db(), names))
         view = global_stats.page(cache["summary"], rows, storage.all_teammates(db(), names), range_key, mode, tier,
-                                 your_tier=rank[0] if rank else None, icons=LEGEND_ICONS)
+                                 your_tier=rank[0] if rank else None, icons=LEGEND_ICONS,
+                                 holds=storage.all_weapon_holds(db(), names))
     return render_template(
         "stats_all.html",
+        part=part,
+        peek=PEEK_ROWS,
         allowed=allowed,
         view=view,
         fetch_now=allowed and global_stats.stale(cache),
@@ -1057,6 +1207,15 @@ def back_to_list(**changes):
 @app.post("/matches/<int:match_id>/update")
 def update(match_id):
     fields, errors = {}, []
+    row = storage.get_match(db(), match_id)
+    for name, label, allowed in (("mode", "模式", MODES), ("map", "地图", MATCH_MAPS)):
+        if name not in request.form:
+            continue
+        value = request.form.get(name, "").strip()
+        if value and value not in allowed and (row is None or value != row[name]):
+            errors.append(f"{label}选项无效")
+        else:
+            fields[name] = value or None
     for name, (label, low, high) in EDITABLE.items():
         raw = request.form.get(name, "").strip().replace(",", "").replace("−", "-")
         if raw == "":
@@ -1076,9 +1235,8 @@ def update(match_id):
         flash("没有保存：" + "；".join(errors), "error")
         return back_to_list(open=match_id)
 
-    row = storage.get_match(db(), match_id)
     if row is not None:  # 记下改过哪几项（只记改了哪项，不记原来的值；匿名统计的"识别情况"用，见 telemetry.py）
-        edited = {f for f in (row["edited"] or "").split(",") if f} | {k for k in EDITABLE if fields[k] != row[k]}
+        edited = {f for f in (row["edited"] or "").split(",") if f} | {k for k in fields if fields[k] != row[k]}
         if edited:
             fields["edited"] = ",".join(sorted(edited))
     fields["needs_review"] = 0  # 人工确认过了，不再标记待确认（review_note 保留，记录当初为什么待确认）

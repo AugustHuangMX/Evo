@@ -6,6 +6,7 @@
 - 托盘程序（evo_app.PanelServer）：没装上改用浏览器，这次运行里不再问；装好了记进日志；打不开窗口也用浏览器
 - app_window.run：pywebview 要用的不是 WebView2 就报错（托盘程序改用浏览器），不打开 IE 内核的窗口
 - 面板的 .css 一定是 text/css：哪怕注册表被别的软件改成了 text/plain
+- 下载标记（webview2.unblock）：去掉窗口要用的 DLL 上"从网上下载的"标记；真的 Python.Runtime.dll 带着标记加载不了、去掉后能加载
 全部用假的对话框、安装程序、浏览器，不弹窗、不装东西、不打开浏览器。
 
 运行：python tests/test_webview2.py
@@ -13,10 +14,15 @@
 
 import os
 import queue
+import shutil
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+
+import pythonnet
 
 from fake_game import CODE, report  # 要在项目代码之前导入（设置临时数据文件夹）
 
@@ -178,10 +184,75 @@ def mime_checks():
     return {"注册表里 .css 是 text/plain 时，面板的样式表照样是 text/css": out == ["text/plain", "200", "text/css"]}
 
 
+ZONE = "[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=https://dl.evotracker.cn/\r\n"  # 浏览器下载、Windows 解压缩时写的标记
+
+
+def mark(path):
+    with open(f"{path}{webview2.MARK}", "w", encoding="ascii") as f:
+        f.write(ZONE)
+
+
+def marked(path):
+    return os.path.exists(f"{path}{webview2.MARK}")
+
+
+def load_runtime(dll):
+    """在另一个 Python 进程里像 pywebview 的 import clr 那样（.NET Framework）加载 Python.Runtime.dll。"""
+    code = ("import sys; from clr_loader import get_netfx\n"
+            "try:\n    get_netfx().get_assembly(sys.argv[1]).get_function('Python.Runtime.Loader.Initialize')\n"
+            "except RuntimeError as e:\n    print(e)\nelse:\n    print('OK')")
+    return subprocess.run([sys.executable, "-c", code, str(dll)], capture_output=True, text=True,
+                          encoding="utf-8", check=True).stdout.strip()
+
+
+def unblock_checks():
+    """像 Windows 自带的解压缩那样给文件加上标记（%TEMP% 在 NTFS 的 C 盘上），看 unblock 去掉了哪些。"""
+    root = Path(tempfile.mkdtemp(prefix="evo-unblock-"))
+    try:
+        files = [root / "pythonnet" / "runtime" / "Python.Runtime.dll",
+                 root / "clr_loader" / "ffi" / "dlls" / "amd64" / "ClrLoader.dll",
+                 root / "webview" / "lib" / "Microsoft.Web.WebView2.Core.dll",
+                 root / "webview" / "lib" / "Microsoft.Web.WebView2.WinForms.dll"]
+        clean = root / "webview" / "lib" / "WebBrowserInterop.x64.dll"  # 本来就没有标记
+        other = root / "cv2" / "opencv_videoio_ffmpeg.dll"  # 不是 .NET 的，不用管
+        runtime = Path(pythonnet.__file__).parent / "runtime" / "Python.Runtime.dll"  # 第一个用真的
+        for path in files + [clean, other]:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"dll")
+        shutil.copyfile(runtime, files[0])
+        for path in files + [other]:
+            mark(path)
+        before = load_runtime(files[0])
+        logs = []
+        removed = webview2.unblock(logs.append, root)
+        after = load_runtime(files[0])
+        unchanged = files[0].read_bytes() == runtime.read_bytes() and files[1].read_bytes() == b"dll"
+        left = marked(other) and not marked(clean)
+        again = []
+        removed_again = webview2.unblock(again.append, root)
+
+        for path in files:
+            mark(path)
+        stuck = []
+        with mock.patch.object(webview2.os, "remove", side_effect=PermissionError("拒绝访问")):
+            webview2.unblock(stuck.append, root)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    return {
+        "带着标记：Python.Runtime.dll 加载不了（和玩家日志里一样的报错）": "Failed to resolve Python.Runtime.Loader.Initialize" in before,
+        "去掉标记：pythonnet、clr_loader、webview 里的 4 个 DLL，记进日志": removed == 4 and len(logs) == 1 and "4 个" in logs[0],
+        "去掉以后：Python.Runtime.dll 能加载，文件内容没变": after == "OK" and unchanged,
+        "别的文件夹里的文件不动": left,
+        "再启动一次：没有要去掉的，日志里不写": removed_again == 0 and again == [],
+        "去不掉（程序文件夹不能写入）：日志里说窗口可能打不开": len(stuck) == 1 and "去不掉" in stuck[0] and "4 个" in stuck[0],
+    }
+
+
 def main():
     print("WebView2 检查：没有时问要不要装，不装就用浏览器，不用 IE 内核")
     checks = {}
-    for part in (detect_checks, install_checks, window_process_checks, tray_checks, renderer_checks, mime_checks):
+    for part in (detect_checks, install_checks, window_process_checks, tray_checks, renderer_checks, mime_checks,
+                 unblock_checks):
         checks.update(part())
     return report(checks)
 

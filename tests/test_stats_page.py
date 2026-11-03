@@ -2,16 +2,21 @@
 不用截图，不开浏览器（用 Flask 自带的测试客户端）。
 
 - 导航里有"数据"，在"战绩"和"设置"之间；没有对局时显示空白提示
+- 两列卡片（2026-10-28）：每张先列 5 行、只放几列，点卡片打开完整的表格（/stats/<part>，范围跟着带过去，
+  "← 数据"回来）；下面这些表格上的检查都在完整的表格里
 - 队友按 ID 认人：改了名也算同一个人，显示用得最多的名字；没有 ID 的行（没有总结页的局）按名字对上 ID；
   同一局读出两次只算一次；只一起打过 1 局的不列；表下只有一句"*将鼠标停在队友名字上可以看到ID"（2026-10-22 用户定的）
 - 队友的名次、冠军、场均 RP 是自己这几局的；RP 只算排位局，读不到的写"—"不写 0
 - 传奇表现列出每个传奇（不是前 3 个 + 其他），按局数从多到少；没认出传奇的局写明几局
 - 第一行"所有对局"（参照）和总览页的统计数字一样
 - 范围（近 30 局 / 全部）、多账号都和总览页一样筛选
+- 和队友一起的 RP 走势（2026-11-01）：每行最后是小曲线 + 累计 RP（只算读到了 RP 的排位局，读不到的跳过不当 0；
+  一起打满 5 局排位才画线）；完整表格页上面是大图（横轴是一起打的第几局，前 5 个人一人一种颜色，颜色跟着人走）
 
 运行：python tests/test_stats_page.py
 """
 
+import json
 import re
 import tempfile
 from datetime import datetime, timedelta
@@ -79,6 +84,15 @@ def table_rows(page, table):
             for row in re.findall(r"<tr[^>]*>(.*?)</tr>", found.group(1), re.S)]
 
 
+def peek_rows(page, heading):
+    """卡片（标题 id 是 heading）里表格的每一行：各格的文字。"""
+    found = re.search(rf'aria-labelledby="{heading}">.*?<tbody>(.*?)</tbody>', page, re.S)
+    if not found:
+        return []
+    return [[" ".join(re.sub(r"<[^>]+>", " ", c).split()) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, re.S)]
+            for row in re.findall(r"<tr[^>]*>(.*?)</tr>", found.group(1), re.S)]
+
+
 def cells(page, name, table="mates-table"):
     """表里名字是 name 的那一行（第一格去掉"上次一起：……"、"参照"）；没有返回 None。"""
     for row in table_rows(page, table):
@@ -116,23 +130,79 @@ def combo_checks():
     pages = {}
     for name, db in (("combos", path), ("single", single)):
         panel_app.app.config["DB"] = db
-        pages[name] = panel_app.app.test_client().get("/stats?range=all").get_data(as_text=True)
+        client = panel_app.app.test_client()
+        pages[name] = client.get("/stats/combos?range=all").get_data(as_text=True)
+        pages[name + " 卡片"] = client.get("/stats?range=all").get_data(as_text=True)
     rows = table_rows(pages["combos"], "combos-table")
     big = " ".join(sorted(["恶灵", "命脉", "直布罗陀"]))
     small = " ".join(sorted(["罗芭", "寻血猎犬", "沃特森"]))
+    card = peek_rows(pages["combos 卡片"], "h-combos")
     return {
+        "卡片上的组合：只放头像（名字在悬停和读屏里）、局数、场均名次":
+            card == [[big.replace(" ", "、"), "5", "4.5"], [small.replace(" ", "、"), "2", "3.0"]]
+            and f'title="{big.replace(" ", "、")}"' in pages["combos 卡片"],
         "传奇组合：不管谁用的哪个算同一个组合，按局数从多到少；只出现过 1 局的不列":
             [r[0] for r in rows[1:]] == [big, small],
         "选取率 = 局数 ÷ 全队传奇都认出的局数（没认全、没有队友、两个一样的、自己没认出的都不算）":
             rows[1:] and rows[1][1:3] == ["5", f"{5 / 8:.0%}"] and rows[2][1:3] == ["2", f"{2 / 8:.0%}"],
         "组合的场均名次不算没读到名次的局（1、5、9、3 → 4.5）": len(rows) > 1 and rows[1][3] == "4.5",
         "参照行：所有组合 8 局、100%": rows[:1] and rows[0][:3] == ["所有组合 参照", "8", "100%"],
-        "只有 1 局的组合：写明，不出空表": "还没有出现过 2 局以上的组合" in pages["single"] and "combos-table" not in pages["single"],
+        "只有 1 局的组合：写明，不出空表（卡片上也一样）": all(
+            "还没有出现过 2 局以上的组合" in pages[k] and "<table" not in pages[k].split('id="h-combos"')[1]
+            for k in ("single", "single 卡片")),
+    }
+
+
+def curve_checks(everything, cards, recent_mates, ref):
+    """和队友一起的 RP 走势（2026-11-01）：每行的小曲线 + 累计，完整表格页上面的大图。
+    测试数据里阿亮亮 12 局排位，RP 10、9、8、7、6、5、4、10、9、8、7、6（累计 +89）；小白 4 局里只有 1 局排位（−20）。"""
+    def mate_row(name):
+        found = re.search(rf'<tr[^>]*>\s*<th scope="row">\s*<span class="stats-name"[^>]*>{name}</span>.*?</tr>',
+                          everything.split('class="stats-table mates-table"')[-1], re.S)
+        return found.group(0) if found else ""
+
+    data = re.search(r'<script type="application/json" class="curve-data">(.*?)</script>', everything, re.S)
+    chart = json.loads(data.group(1)) if data else {"n": 0, "series": []}
+    liang = chart["series"][0] if chart["series"] else {"name": None, "points": []}
+
+    # 读不到 RP 的局跳过（不当 0）、匹配不算：直接调 teammate_table
+    def game(i, rp):
+        return {"match_id": i, "mode": "ranked", "ended_at": f"2026-10-20 {10 + i}:00:00", "rp_delta": rp, "placement": 5, "kills": 1,
+                "damage": 100, "assists": None, "knockdowns": None, "survival_time": None, "review_note": None}
+    six = [game(i, rp) for i, rp in enumerate([10, None, -5, 20, None, 7, 3])]
+    four = [game(10 + i, rp) for i, rp in enumerate([10, 20, 30, 40])]
+    table = {m["name"]: m for m in panel_app.teammate_table(six + four, [
+        *({"match_id": r["match_id"], "name": "甲", "player_id": "1"} for r in six),
+        *({"match_id": r["match_id"], "name": "乙", "player_id": "2"} for r in four)])}
+
+    return {
+        "RP 走势：读到了 RP 的排位局一局局加起来（阿亮亮 +89；小白只有 1 局排位 −20）": (
+            (cells(everything, "阿亮亮") or [None])[-1] == "+89" and (cells(everything, "小白") or [None])[-1] == "−20"),
+        "读不到 RP 的局跳过，不当 0（10、−5、20、7、3 → 累计 10、5、25、32、35）":
+            [s["total"] for s in table["甲"]["rp_steps"]] == [10, 5, 25, 32, 35] and table["甲"]["rp_total"] == "+35",
+        "一起打满 5 局排位才画线：5 局有，4 局没有（只写累计）":
+            table["甲"]["spark"] is not None and table["乙"]["spark"] is None and table["乙"]["rp_total"] == "+100",
+        "表里阿亮亮那一行有小曲线（大图里那种颜色），小白没有": (
+            '<svg class="spark series-0"' in mate_row("阿亮亮") and "<svg" not in mate_row("小白")),
+        "大图只在完整的表格页（卡片那页没有）": 'id="h-curves"' in everything and 'id="h-curves"' not in cards,
+        "大图：阿亮亮一条线，横轴 12 局；鼠标停在第 i 局显示到这局的累计、这局的 RP": (
+            chart["n"] == 12 and [s["name"] for s in chart["series"]] == ["阿亮亮"]
+            and [p[1] for p in liang["points"]][:3] == ["+10", "+19", "+27"] and liang["points"][-1][1] == "+89"
+            and liang["points"][7][2] == "+10"),
+        "大图的图例：名字和累计；灰色虚线是所有对局的场均 RP": (
+            re.search(r'data-hl="0"><i aria-hidden="true"></i>阿亮亮<span class="num rp-good">\+89</span>', everything) is not None
+            and f'你的平均<span class="num">每局 {ref["avg_rp"]}</span>' in everything),
+        "大图有给读屏软件的文字（每个人几局、累计），能用方向键逐局看":
+            'aria-label="累计 RP：阿亮亮 12 局 +89；' in everything and 'tabindex="0" data-curves' in everything,
+        "近 30 局：没有一起打满 5 局排位的队友时写明，不画空图": (
+            "这个范围里还没有和同一名队友一起打满 5 局排位" in recent_mates and "curve-data" not in recent_mates),
+        "颜色跟着人走：所有对局里排前 5 的人固定一种颜色，其余的人用剩下的":
+            panel_app.curve_slots(["b", "x", "a"], ["a", "b", "c", "d", "e", "x"]) == [1, 2, 0],
     }
 
 
 def main():
-    print("数据页：常一起玩的队友、传奇表现、传奇组合")
+    print("数据页：常一起玩的队友、传奇表现、传奇组合、和队友一起的 RP 走势")
     path = new_db("stats")
     panel_app.app.config.update(DB=path, TESTING=True)
     conn = storage.connect(path)
@@ -143,8 +213,11 @@ def main():
     with client.session_transaction() as s:
         s["account"] = main_id  # 大号（没选时默认看最近玩过的小号）
     recent = client.get("/stats").get_data(as_text=True)
-    everything = client.get("/stats?range=all").get_data(as_text=True)
+    cards = client.get("/stats?range=all").get_data(as_text=True)
+    everything = "".join(client.get(f"/stats/{part}?range=all").get_data(as_text=True) for part in ("mates", "legends"))
+    recent_mates = client.get("/stats/mates").get_data(as_text=True)
     overview_all = client.get("/?range=all").get_data(as_text=True)
+    unknown = client.get("/stats/x").status_code
     nav = re.findall(r'<nav class="nav".*?</nav>', recent, re.S)[0]
 
     liang, bai = cells(everything, "阿亮亮"), cells(everything, "小白")
@@ -156,7 +229,7 @@ def main():
     everyone = panel_app.app.test_client()
     with everyone.session_transaction() as s:
         s["account"] = "all"
-    all_accounts = everyone.get("/stats?range=all").get_data(as_text=True)
+    all_accounts = everyone.get("/stats/mates?range=all").get_data(as_text=True)
 
     # 没有对局、没有一起打过 2 局的队友
     empty_path = FOLDER / "empty.db"
@@ -170,6 +243,18 @@ def main():
     conn.close()
     panel_app.app.config["DB"] = lonely_path
     lonely = panel_app.app.test_client().get("/stats").get_data(as_text=True)
+    lonely_mates = panel_app.app.test_client().get("/stats/mates").get_data(as_text=True)
+    # 卡片最多列 5 行：7 个传奇各 1 局
+    many_path = FOLDER / "many.db"
+    many_path.unlink(missing_ok=True)
+    conn = storage.connect(many_path)
+    seven = ["恶灵", "命脉", "直布罗陀", "罗芭", "寻血猎犬", "沃特森", "希尔"]
+    for i, name in enumerate(seven):
+        storage.insert_match(conn, {"ended_at": f"2026-10-01 {10 + i}:00:00", "legend": name, "placement": i + 1})
+    conn.close()
+    panel_app.app.config["DB"] = many_path
+    many = panel_app.app.test_client().get("/stats").get_data(as_text=True)
+    many_full = panel_app.app.test_client().get("/stats/legends").get_data(as_text=True)
     combos = combo_checks()
     panel_app.app.config["DB"] = path
 
@@ -177,7 +262,29 @@ def main():
         "导航：总览、战绩、数据、设置": re.findall(r">\s*([^<>\s]+)\s*</a>", nav) == ["总览", "战绩", "数据", "设置"],
         "数据页打开时导航里\"数据\"是选中的": 'class="active"' in re.findall(r'<a href="/stats"[^>]*>', nav)[0],
         "没有对局：显示\"还没有任何对局记录\"": "还没有任何对局记录" in empty,
-        "没有一起打过 2 局的队友：写明，不出空表": "还没有一起打过 2 局以上的队友" in lonely and "mates-table" not in lonely,
+        "两列卡片：最常用武器、常一起玩的队友、传奇表现、传奇组合": re.search(
+            r'<div class="stats-grid">.*id="h-weapons".*id="h-mates".*id="h-legends".*id="h-combos"', cards, re.S) is not None,
+        "卡片上的队友：一起打几局、场均名次、RP 走势（累计）；下面一行是所有对局的场均名次": peek_rows(cards, "h-mates") == [
+            ["阿亮亮", "12 局", liang[3] if liang else None, "+89"], ["小白", "4 局", "4.0", "−20"]]
+            and f'所有对局：场均名次 <span class="num">{ref["avg_place"]}</span>' in cards,
+        "卡片上的传奇：局数、名次分布、场均名次": [r[:2] + r[3:] for r in peek_rows(cards, "h-legends")] == [
+            [r[0], r[1], r[5]] for r in legends],
+        "行都列出来了：右下角写\"查看完整表格\"，链接带着范围": (
+            '<a class="peek-more" href="/stats/mates?range=all">' in cards
+            and '<a class="peek-more" href="/stats/legends?range=all">' in cards and "查看完整表格" in cards),
+        "没有武器的范围：卡片上写明，没有链接": "这个范围里还没有记下武器" in cards and "/stats/weapons" not in cards,
+        "卡片最多列 5 行，\"查看全部 7 个传奇\"打开完整的表格（7 个）": (
+            [r[0] for r in peek_rows(many, "h-legends")] == sorted(seven)[:5]  # 局数一样时按名字排
+            and "查看全部 <span class=\"num\">7</span> 个传奇" in many
+            and [r[0] for r in table_rows(many_full, "legends-table")[1:]] == sorted(seven)),
+        "完整的表格：\"← 数据\"回到卡片那页（带范围），没有\"我的 / 全体玩家\"切换，导航里\"数据\"还是选中的": (
+            '<a class="back-link" href="/stats?range=all">' in everything and "stats-tabs" not in everything
+            and 'class="active"' in re.findall(r'<a href="/stats"[^>]*>', everything)[0]),
+        "完整的表格：范围按钮留在这一页": 'href="/stats/mates"' in everything and 'href="/stats/mates?range=all"' in everything,
+        "不认识的完整表格：404": unknown == 404,
+        "没有一起打过 2 局的队友：写明，不出空表（卡片和完整的表格都是）": all(
+            "还没有一起打过 2 局以上的队友" in p and "mates-table" not in p and "<table" not in p.split('id="h-mates"')[1].split("</section>")[0]
+            for p in (lonely, lonely_mates)),
         "改了名按 ID 算同一个人（12 局），显示最近用的名字": liang is not None and liang[1] == "12 局"
                                                   and cells(everything, "阿亮") is None and cells(everything, "阿 亮") is None,
         "鼠标停在名字上能看到 ID": 'title="ID 111"' in everything,
@@ -189,9 +296,10 @@ def main():
         "队友的冠军是自己的名次（阿亮那 12 局有 1 次冠军）": liang is not None and liang[2] == "1 次 8%",
         "队友的场均 RP 只算排位局（小白 4 局里只有 1 局排位 −20）": bai is not None and bai[4] == "−20",
         "队友的场均名次不算没读到名次的局（小白：1、3、8 → 4.0）": bai is not None and bai[3] == "4.0",
-        "近 30 局：前 12 局的队友不在里面": cells(recent, "阿亮亮") is None and cells(recent, "小白") is not None,
-        "参照行（全部）和总览页的统计数字一样": cells(everything, "所有对局") == [
-            "所有对局 参照", f"{ref['games']} 局", f"{ref['wins']} 次 {ref['win_rate']}", ref["avg_place"], ref["avg_rp"]]
+        "近 30 局：前 12 局的队友不在里面": cells(recent_mates, "阿亮亮") is None and cells(recent_mates, "小白") is not None
+                                         and [r[0] for r in peek_rows(recent, "h-mates")] == ["小白"],
+        "参照行（全部）和总览页的统计数字一样（RP 走势那一格空着）": cells(everything, "所有对局") == [
+            "所有对局 参照", f"{ref['games']} 局", f"{ref['wins']} 次 {ref['win_rate']}", ref["avg_place"], ref["avg_rp"], ""]
                                          and stat_values["场均名次"] == ref["avg_place"]
                                          and f">{stat_values['场均伤害']}<" in overview_all,
         "传奇表现：每个传奇都列出（不合并成\"其他\"），按局数从多到少": [r[0] for r in legends] == ["罗芭", "恶灵"],
@@ -202,7 +310,9 @@ def main():
         "只看大号时没有小号的队友": "小黑" not in everything,
         "\"全部账号\"时算上小号的局（小白 5 局）": (cells(all_accounts, "小白") or [None, None])[1] == "5 局",
         "传奇组合：没有认出全队传奇的局时写明": "还没有认出全队传奇的对局" in lonely,
+        "没有可列的队友时也没有 RP 走势的大图": "h-curves" not in lonely_mates,
         **combos,
+        **curve_checks(everything, cards, recent_mates, ref),
     }
     return report(checks)
 

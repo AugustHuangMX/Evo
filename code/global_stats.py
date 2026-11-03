@@ -7,8 +7,8 @@
   （global_stats.json），FRESH_HOURS 小时内不重复下载；右上角的刷新按钮马上重新下载。
   只有 Evo 窗口（面板进程）下载，托盘和记录程序不下载
 - 服务器能看到的和打开一个网页一样（IP 地址、时间；见隐私政策第三节）
-- 全体的数字按全队三个人算（自己 + 两名队友）；"你"的数字在本机算（只用自己的数据库、选中的账号），
-  和全体用同样的范围、模式、段位，同样不算待确认的局
+- 全体的数字按全队三个人算（自己 + 两名队友），武器除外（只有每名玩家自己的，队友的认不出）；
+  "你"的数字在本机算（只用自己的数据库、选中的账号），和全体用同样的范围、模式、段位，同样不算待确认的局
 - "匹配"是不是排位的局（包括没认出模式的局：简体中文的匹配开局画面还没加进识别规则），和服务器一样
 
 测试时把 telemetry.STATS_URL 换成本机的测试地址（或者设环境变量 EVO_STATS_URL）。
@@ -22,6 +22,7 @@ import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
 
+import game_lang
 import storage
 import telemetry
 from paths import DB_PATH
@@ -38,8 +39,8 @@ MODES = {"ranked": "排位", "pubs": "匹配"}
 TIERS = {"all": "全部段位", "low": "白金及以下", "diamond": "钻石", "master": "大师以上"}  # 只有排位分段位
 TIER_ORDER = ("菜鸟", "青铜", "白银", "黄金", "白金", "钻石", "大师", "Apex 猎杀者")
 TIER_GROUP = {**{t: "low" for t in TIER_ORDER[:5]}, "钻石": "diamond", "大师": "master", "Apex 猎杀者": "master"}
-SHOW_LEGENDS = 8  # 传奇热度先列这么多个，其余点"展开全部"
-SHOW_COMBOS = 5  # 热门组合同上
+PARTS = ("legends", "combos", "weapons")  # 传奇热度、热门组合、大家常用的武器：卡片上先列几行，完整的表格在 /stats/<part>?view=all
+WEAPONS = game_lang.load("weapons.json")  # 武器的名字、只算第一次拿到武器多少秒以后的（同数据页"最常用武器"）
 # "你在 Evo 玩家中"的四项：(汇总里的键, 显示名, 小数位（和服务器取整一样）, 越小越好)
 PEOPLE = (("place", "场均名次", 2, True), ("win", "胜率", 4, False), ("kills", "场均击杀", 2, False),
           ("damage", "场均伤害", 0, False))
@@ -188,9 +189,10 @@ def when_text(made_at):
     return f"{made:%m-%d %H:%M}"
 
 
-def page(summary, rows, mates, range_key, mode, tier, your_tier=None, icons=None):
+def page(summary, rows, mates, range_key, mode, tier, your_tier=None, icons=None, holds=()):
     """"全体玩家"一页要显示的。rows：自己的局（选中的账号）；mates：这些局的队友（storage.all_teammates）；
-    your_tier：最近一次读到的段位（段位分布上标出"你"）；icons：传奇名 → 头像（panel_app.LEGEND_ICONS）。"""
+    your_tier：最近一次读到的段位（段位分布上标出"你"）；icons：传奇名 → 头像（panel_app.LEGEND_ICONS）；
+    holds：自己的局拿过的武器（storage.all_weapon_holds，多了不要紧）。"""
     icons = icons or {}
     key = f"{range_key}.{mode}.{tier}"
     part = summary["slices"].get(key) or {}
@@ -230,6 +232,19 @@ def page(summary, rows, mates, range_key, mode, tier, your_tier=None, icons=None
             "you_vs": _versus(own["place"], c.get("place")),
         })
 
+    # 大家常用的武器（2026-10-28 用户决定）："你"是自己拿这把武器的时间占自己所有武器时间的多少，只是对照，不分好坏
+    own_seconds, own_played = storage.weapon_totals(holds, WEAPONS["count_after_seconds"], {r["match_id"] for r in mine})
+    own_total = sum(own_seconds.values())
+    weapons = part.get("weapons") or []
+    widest = max((w.get("share") or 0 for w in weapons), default=0) or 1
+    weapon_rows = [{
+        "name": WEAPONS["weapons"].get(w.get("key"), {}).get("zh", w.get("key")),  # 新赛季的枪 Evo 还不认识：显示编号
+        "share": _pct(w.get("share"), 1), "share_width": round((w.get("share") or 0) / widest * 100, 1),
+        "rate": _pct(w.get("rate")),
+        "you_games": len(own_played.get(w.get("key"), ())),
+        "you_share": _pct(own_seconds[w.get("key")] / own_total, 1) if w.get("key") in own_seconds else None,
+    } for w in weapons]
+
     you = own_numbers(mine)
     people = part.get("people") or {}
     tiles = []
@@ -252,8 +267,8 @@ def page(summary, rows, mates, range_key, mode, tier, your_tier=None, icons=None
     return {
         "players": part.get("players", 0), "matches": part.get("matches", 0),
         "updated": when_text(summary.get("made_at")),
-        "legends": legend_rows, "show_legends": SHOW_LEGENDS,
-        "combos": combo_rows, "show_combos": SHOW_COMBOS,
+        "legends": legend_rows, "combos": combo_rows,
+        "weapons": weapon_rows, "weapon_games": part.get("weapon_games", 0),
         "you_games": you["games"], "tiles": tiles,
         "tiers": tier_rows, "tier_players": spread.get("players", 0), "your_tier": your_tier,
     }

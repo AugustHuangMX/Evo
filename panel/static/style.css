@@ -39,6 +39,8 @@
   --p4-bg: #E6E9EE; --p4-fg: #0D0F13;
   --seg-other: #E6E9EE;
   --titlebar-bg: #08090C;
+  /* 一张图里几个人（和队友一起的 RP 走势）：一人一种颜色，按这个顺序（色盲也分得开，检查过卡片底色上的对比度） */
+  --series-0: #3987E5; --series-1: #D95926; --series-2: #199E70; --series-3: #C98500; --series-4: #D55181;
   color-scheme: dark;
 }
 
@@ -75,6 +77,7 @@
   --p4-bg: #E7E7E2; --p4-fg: #17191E;
   --seg-other: #A3A8B0;
   --titlebar-bg: #EAEAE5;
+  --series-0: #2A78D6; --series-1: #EB6834; --series-2: #1BAF7A; --series-3: #EDA100; --series-4: #E87BA4;
   color-scheme: light;
 }
 
@@ -460,7 +463,7 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .everyone-meta .num { color: var(--text); font-weight: 500; }
 .everyone-status:empty { display: none; }
 .refresh-btn { margin-left: 0; }
-.refresh-btn:focus-visible, .more-btn:focus-visible, .stats-tabs a:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.refresh-btn:focus-visible, .stats-tabs a:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
 .refresh-btn[aria-busy="true"] { cursor: progress; }
 .refresh-btn[aria-busy="true"] svg { animation: evo-spin 0.9s linear infinite; }
 @keyframes evo-spin { to { transform: rotate(360deg); } }
@@ -468,7 +471,10 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 /* 全体玩家的表格：选用率是一条横条（最多的那个占满）；最后一列"你"和全体比，好的绿色、差的红色（旁边有箭头，不只靠颜色） */
 .everyone-table { min-width: 940px; }
 .everyone-combos { min-width: 640px; }
+.everyone-weapons { min-width: 600px; }
+.everyone-weapons thead th + th { width: 130px; }  /* 大家常用的武器只有四列：拿过的局、你窄一些，横条那列宽一些 */
 .stats-table .pick-col { width: 22%; min-width: 180px; }
+.everyone-weapons .pick-col { width: 40%; }  /* 要在上一行后面才生效 */
 .pick { display: flex; align-items: center; gap: 10px; }
 .pick-bar { flex: 1; min-width: 80px; }
 .pick-bar > span, .tier-bar > span, .beat-track > span { display: block; height: 100%; border-radius: inherit; background: var(--p3-bg); }
@@ -480,7 +486,36 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .you-games { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
 .you-none { color: var(--muted); }
 .vs-mark { flex: none; }
-.more-btn { display: block; margin: 14px auto 0; min-height: 36px; padding: 8px 16px; }
+
+/* 数据页的卡片（2026-10-28 用户决定）：两列，每张先列几行、只放最要紧的几列；整张卡片都能点（base.html 的脚本），
+   打开完整的表格（/stats/<part>）。卡片里的表格不设最小宽度，窄了才左右滚动；窗口窄时变回一列（最下面） */
+.stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.peek-card { display: flex; flex-direction: column; min-width: 0; }
+.peek-card:has(.peek-more) { cursor: pointer; transition: border-color 0.15s; }
+.peek-card:has(.peek-more):hover { border-color: var(--dashed); }
+.peek-card:has(.peek-more:focus-visible) { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
+.peek-more:focus-visible { outline: none; }  /* 焦点框画在整张卡片上 */
+.peek-table .share-col { width: 62%; }
+.peek-table .dist-col { width: 42%; min-width: 96px; }
+.peek-table .dist-col .bar { min-width: 96px; }
+.peek-table .pick-col { width: 40%; min-width: 120px; }
+.peek-table .pick-bar { min-width: 48px; }
+.peek-table .stats-name { max-width: 180px; }
+.combo-icons { display: inline-flex; align-items: center; gap: 10px; vertical-align: middle; }
+.combo-name { font-size: 12px; font-weight: 400; }
+.peek-ref { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+.legend-key.peek-key { margin-top: 12px; padding-top: 12px; }
+.peek-foot { margin-top: auto; padding-top: 14px; display: flex; justify-content: flex-end; }
+.peek-more { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; font-size: 13px; color: var(--muted); transition: color 0.15s; }
+.peek-arrow { flex: none; transition: transform 0.15s; }
+.peek-card:hover .peek-more { color: var(--text); }
+.peek-card:hover .peek-arrow { transform: translateX(2px); }
+.stats-grid .beat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }  /* 你在 Evo 玩家中：卡片里四格排成 2×2 */
+/* 完整表格页左上角"← 数据"（Evo 窗口没有浏览器的后退按钮） */
+.back-link { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 6px 14px 6px 10px; border-radius: 4px;
+  color: var(--muted); font-weight: 500; transition: color 0.15s, background-color 0.15s; }
+.back-link:hover { color: var(--text); background: var(--nav-on-bg); }
+.back-link:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 2px; }
 
 /* 你在 Evo 玩家中：四个小格，横条是"超过多少玩家" */
 .beat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -722,6 +757,9 @@ table.stats-table { width: 100%; border-collapse: collapse; }
   .progress-busy .progress-bar { left: 32%; }  /* 解压的横条不来回走，停在中间 */
 }
 
+@media (max-width: 1099px) {
+  .stats-grid { grid-template-columns: 1fr; }  /* 数据页的卡片：两列放不下"你"那一列时变回一列 */
+}
 @media (max-width: 900px) {
   .settings-layout { grid-template-columns: 1fr; }
   .ov-top, .ov-bottom { grid-template-columns: 1fr; }
@@ -737,3 +775,57 @@ table.stats-table { width: 100%; border-collapse: collapse; }
   .setting-actions { justify-content: flex-start; }
   .info-grid { grid-template-columns: 1fr; }
 }
+/* 和队友一起的 RP 走势（数据页"常一起玩的队友"，2026-11-01；_curves.html、panel_app.add_sparks / curve_chart）：
+   每行后面的小曲线（各自的比例，只看起伏）+ 完整表格页上面的大图。线 2px（小曲线 1.5px），终点圆点外面一圈卡片底色；颜色跟着人走（--series-0…4），
+   大图里的人表里那一行的小曲线也是这种颜色，其余的小曲线是灰色。文字不用线的颜色（累计 RP 照旧红绿 + 正负号） */
+.series-0 { --c: var(--series-0); }
+.series-1 { --c: var(--series-1); }
+.series-2 { --c: var(--series-2); }
+.series-3 { --c: var(--series-3); }
+.series-4 { --c: var(--series-4); }
+.spark-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 10px; vertical-align: middle; }
+.spark-cell .num { min-width: 44px; text-align: right; }
+.spark, .spark-none { flex: none; display: block; width: 88px; height: 28px; }
+.spark-zero { stroke: var(--border); stroke-width: 1; }
+.spark-line { fill: none; stroke: var(--c, var(--muted)); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.spark-end { fill: var(--c, var(--muted)); stroke: var(--card); stroke-width: 1.5; }
+.mates-table tr[data-hl]:hover { background: var(--nav-on-bg); }  /* 鼠标停在这一行：大图里只突出这个人 */
+
+.curve-card { padding: 24px; }
+.curve-key { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 20px; font-size: 13px; }
+.curve-key > span { display: inline-flex; align-items: center; gap: 8px; cursor: default; }
+.curve-key i { flex: none; width: 18px; border-top: 2px solid var(--c); }
+.curve-key .num { font-weight: 500; }
+.curve-key .key-ref { color: var(--muted); }
+.curve-key .key-ref i { border-top: 2px dashed var(--muted); }
+.curve-key .key-ref .num { color: var(--text); }
+.curve-plot { position: relative; height: 260px; margin-left: 48px; }
+.curve-plot:focus-visible { outline: 2px solid var(--p3-bg); outline-offset: 6px; border-radius: 2px; }
+.curve-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+.curve-grid { stroke: var(--row-border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.curve-grid.zero { stroke: var(--dashed); }
+.curve-ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 5; stroke-opacity: 0.8; vector-effect: non-scaling-stroke; }
+.curve-line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke;
+              transition: opacity 0.15s; }
+.curve-end, .curve-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--c);
+                         box-shadow: 0 0 0 2px var(--card); pointer-events: none; transition: opacity 0.15s; }
+.curve-dot { z-index: 2; width: 12px; height: 12px; margin: -6px 0 0 -6px; }
+.curve-card.focusing [data-line]:not(.on) { opacity: 0.18; }
+.curve-ytick { position: absolute; right: calc(100% + 10px); transform: translateY(-50%); font-size: 11px; font-weight: 500; color: var(--muted);
+               white-space: nowrap; font-variant-numeric: tabular-nums; }
+.curve-cross { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--dashed); pointer-events: none; }
+.curve-tip { position: absolute; top: 8px; z-index: 3; min-width: 200px; padding: 10px 12px; transform: translateX(16px); pointer-events: none;
+             border: 1px solid var(--border); border-radius: 6px; background: var(--card); box-shadow: 0 8px 24px rgb(0 0 0 / 0.35); font-size: 12px; }
+.curve-tip.flip { transform: translateX(calc(-100% - 16px)); }
+[data-theme="light"] .curve-tip { box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }
+.curve-tip-head { margin-bottom: 6px; color: var(--muted); }
+.curve-tip-row { display: grid; grid-template-columns: 14px auto minmax(0, 1fr); align-items: center; gap: 0 8px; padding: 4px 0; }
+.curve-tip-row i { border-top: 2px solid var(--c); }
+.curve-tip-row .num { min-width: 44px; text-align: right; font-size: 14px; color: var(--text); }
+.curve-tip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.curve-tip-sub { grid-column: 2 / -1; color: var(--muted); }
+.curve-xaxis { position: relative; height: 16px; margin: 8px 0 0 48px; font-size: 11px; color: var(--muted); }
+.curve-xaxis span { position: absolute; transform: translateX(-50%); font-weight: 500; }
+.curve-caption { margin: 8px 0 0 48px; color: var(--muted); font-size: 12px; }
+.curve-plot svg { animation: evo-wipe 800ms cubic-bezier(0.4, 0, 0.2, 1) 100ms backwards; }  /* 和总览页的走势图一样从左往右画出来 */
+.curve-end { animation: evo-pop 300ms cubic-bezier(0.3, 1.6, 0.6, 1) 800ms backwards; }

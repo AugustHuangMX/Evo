@@ -8,9 +8,12 @@
   - 右上角那一块存在内存里：内容变了才存，只留最近的 keep 块（一局结束时每块要读约 0.2 秒）
   - 自己那一行变红 = 倒地；看到"观战"标签 = 成盒；成盒后又看到自己的界面 = 被复活
   - 没倒地时看右下角手上那把武器（weapons.py：图标变了才和参照图比），记下每一段拿在手上的时间（2026-10-24）
-- 交火时一律不用识别引擎（原则 3）。一局结束时（淘汰画面、冠军横幅、总结页、经验值页、返回大厅按钮、回到大厅、下一局开局、停止记录）
-  才读：右上角从最新的一块往回读，每一项取最后一次读到的值；击杀、助攻、老板分、伤害从没显示过就是 0
+- 交火时一律不用识别引擎（原则 3）。一局结束（淘汰画面、冠军横幅、总结页、经验值页、返回大厅按钮、回到大厅、下一局开局、停止记录）
+  以后才读：右上角从最新的一块往回读，每一项取最后一次读到的值；击杀、助攻、老板分、伤害从没显示过就是 0
   （前提是这几块确实是右上角：剩余小队数或 RP 至少读到过一次，否则全部当作没读到）
+- 在结算画面上结束的，先记下结束了，等回到大厅、下一局开局、停止记录时才读（都没认出来时，等下一局看到自己的界面；
+  2026-10-27 用户决定"停在总结页时只读总结页"：
+  笔记本上读右上角要 3–7 秒，这期间看不到总结页，玩家常常没等读完就离开了；存下的几块在内存里，晚点读结果一样）
 - 对局中截图加快到每 match_interval 秒一张（config/hud.json，2026-10-18 用户决定先用 0.3 秒测 CPU）：
   从开局画面或看到自己的界面起，到结算画面或回到大厅为止（active）
 """
@@ -62,8 +65,9 @@ class InMatchWatcher:
         self.tops = deque(maxlen=self.keep)  # 右上角
         self.weapons.reset()  # 每一段拿在手上的武器
         self.last_frame = None
-        self.done = False  # 这一局已经交给 PostMatch 了
+        self.done = False  # 这一局已经结束了
         self.done_at = None
+        self.ending = None  # 怎么结束的（见 _END_TEXT）；还没读、没交给 PostMatch 时才有
 
     @property
     def pending(self):
@@ -76,14 +80,17 @@ class InMatchWatcher:
             if self.done or (self.pending and (not self.saw_start or self.dead_at is not None
                                                 or (now - self.started).total_seconds() > SAME_MATCH_SECONDS)):
                 if self.pending:
-                    self._finish(now, "next")
+                    self._end(now, "next")
+                self._hand_over(now)
                 self._reset(saw_start=True)
                 self.post.on_legend(None, now)
             self.saw_start = self.active = True
             return
         if screen in END_SCREENS or screen == "lobby":
             if self.pending:
-                self._finish(now, screen)
+                self._end(now, screen)
+            if screen == "lobby":
+                self._hand_over(now)
             self.active = False
             return
         if screen is not None:
@@ -104,6 +111,7 @@ class InMatchWatcher:
         if self.done:  # 结算之后又看到了自己的界面：过了一会儿才算新的一局（没认出开局画面）
             if (now - self.done_at).total_seconds() <= AFTER_END_SECONDS:
                 return
+            self._hand_over(now)
             self._reset(saw_start=False)
             self.post.on_legend(None, now)
         if self.started is None:
@@ -127,9 +135,10 @@ class InMatchWatcher:
                 self.last_frame = frame.copy()
 
     def stop(self, now):
-        """停止记录时：还有没交的数据就交上去（PostMatch 会标"没看到结算画面"）。"""
+        """停止记录时：还有没交的数据就交上去（还没结束的，PostMatch 会标"没看到结算画面"）。"""
         if self.pending:
-            self._finish(now, "stop")
+            self._end(now, "stop")
+        self._hand_over(now)
         self.active = False
 
     def _set_state(self, state, now):
@@ -193,11 +202,21 @@ class InMatchWatcher:
                 out.append({"slot": f"hud{slot + 1}", "name": name, "legend": self.hud.legends.name(key) if key else None})
         return out
 
-    def _finish(self, now, end):
-        """一局结束：读存下来的右上角、名字，交给 PostMatch。"""
+    def _end(self, now, end):
+        """一局结束：先记下什么时候、怎么结束的，存下的右上角、名字等 _hand_over 再读。"""
         self.done, self.done_at, self.active = True, now, False
+        self.ending = end
+        self.post.on_hud_end(now)
+
+    def _hand_over(self, now):
+        """读存下来的右上角、名字，交给 PostMatch（回到大厅、下一局开局、认出了新的一局、停止记录时；
+        已经交过、还没结束的不用管）。"""
+        if self.ending is None:
+            return
+        ended, end = self.done_at, self.ending
+        self.ending = None
         if not self.saw_start and end not in END_SCREENS:
-            self.log(f"[{now:%H:%M:%S}] 对局中的数据不记：没看到开局画面，也没看到结算画面（可能是靶场）")
+            self.log(f"[{ended:%H:%M:%S}] 对局中的数据不记：没看到开局画面，也没看到结算画面（可能是靶场）")
             return
         if self.post.player_name is None:
             for snip in self.own_names:
@@ -215,19 +234,19 @@ class InMatchWatcher:
         top = "，".join(f"{TOP_LABELS[k]} {'-' if values[k] is None else values[k]}" for k in TOP_FIELDS)
         mate_text = "、".join(f"{m['name'] or '名字没读到'}（{m['legend'] or '传奇认不出'}）" for m in mates) or "没认出"
         weapons = self.weapons.result()
-        self.log(f"[{now:%H:%M:%S}] 对局结束（{_END_TEXT.get(end, end)}）：右上角最后读到 {top}；"
+        self.log(f"[{now:%H:%M:%S}] 对局中的数据（{ended:%H:%M:%S} 结束，{_END_TEXT.get(end, end)}）：右上角最后读到 {top}；"
                  f"自己最后是{self.state or '-'}；队友 {mate_text}；武器 {self._weapon_text(weapons)}")
         if last_one:
             watched = "、".join(self.hud.legends.name(k) for k in self.spectated)
             self.log(f"           成盒以后观战的是 {watched}，不是队友：自己是小队最后一个被淘汰的，右上角最后的名次、RP 就是最终的")
         self.post.on_hud_final({
-            "started": self.started, "ended": now, "end": end, "saw_start": self.saw_start,
+            "started": self.started, "ended": ended, "end": end, "saw_start": self.saw_start,
             "own_dead": own_dead and not last_one, "values": values, "mates": mates,
             "legend": self.hud.legends.name(self.legend) if self.legend else None,
             "weapons": weapons,
         })
         if self.last_frame is not None:
-            name = f"hud_{now:%H%M%S}_last.png"
+            name = f"hud_{ended:%H%M%S}_last.png"
             self.save(self.last_frame, name)
             self.log(f"           保留全部截图：存下最后一张自己的界面（{name}），用来核对右上角、队友的区域")
         self.tops.clear()  # 读完就放掉，省内存
