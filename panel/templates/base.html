@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 {% if request.endpoint == 'stats' %}<link rel="stylesheet" href="{{ url_for('static', filename='analytics.css') }}">{% endif %}
 </head>
-<body>
+<body{% if request.endpoint == 'stats' %} class="data-page"{% endif %}>
 {% if in_app %}
 {# Evo 窗口没有 Windows 自带的标题栏和边框：这条是自己的标题栏，四边和四角的细条用来改大小（见 app_window.py） #}
 <div class="titlebar">

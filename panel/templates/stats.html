@@ -18,6 +18,8 @@
 </a>
 {% endif %}
 
+<header class="stats-page-header">
+  <div><h1>{{ {'weapons': '武器使用', 'mates': '队友表现', 'legends': '传奇表现', 'combos': '传奇组合'}.get(part, '对局数据') }}</h1><p>查看表现变化，比较不同场景下的战绩。</p></div>
 <div class="stats-top">
   {% if part %}
   {{ back_link(stats_url(part=none), '数据') }}
@@ -25,6 +27,7 @@
   {% with everyone=False %}{% include "_stats_tabs.html" %}{% endwith %}
   {% endif %}
 </div>
+</header>
 
 {% if not total %}
 <div class="card empty-card">
@@ -32,6 +35,7 @@
 </div>
 {% else %}
 
+<section class="stats-scope" aria-label="对局筛选">
 <div class="filters">
   <div class="filter">
     <span class="label">统计范围</span>
@@ -49,15 +53,19 @@
   {% for key, label in [('legend', '传奇'), ('map', '地图')] %}
   <label>{{ label }}<select name="{{ key }}"><option value="">全部{{ label }}</option><option value="__unknown__"{{ ' selected' if stat_filters[key] == '__unknown__' }}>未识别{{ label }}</option>{% for value in filter_options[key] %}<option value="{{ value }}"{{ ' selected' if stat_filters[key] == value }}>{{ value }}</option>{% endfor %}</select></label>
   {% endfor %}
-  <label>开始日期<input type="date" name="since" value="{{ stat_filters.since }}"></label>
-  <label>结束日期<input type="date" name="until" value="{{ stat_filters.until }}"></label>
+  <details class="stats-date-filter"><summary>日期范围{{ ' · 已设置' if stat_filters.since or stat_filters.until }}</summary><div class="stats-date-fields">
+    <label>开始日期<input type="date" name="since" value="{{ stat_filters.since }}"></label>
+    <label>结束日期<input type="date" name="until" value="{{ stat_filters.until }}"></label>
+  </div></details>
   <button class="btn" type="submit">应用筛选</button><a class="btn" href="{{ url_for('stats', part=part) }}">重置</a>
 </form>
+</section>
 {% for error in filter_errors %}<p role="alert">{{ error }}</p>{% endfor %}
-<p class="stats-filter-status">筛选后共 {{ selected_games }} 局 · 先筛选，再取{{ ranges[range_key] }}。全部图表与下方表格使用相同范围。</p>
+<p class="stats-filter-status">筛选后共 {{ selected_games }} 局 · 先筛选，再取{{ ranges[range_key] }}。</p>
 {% if not selected_games %}<div class="stats-empty" role="status">这个筛选下还没有对局，请调整条件或重置。</div>{% endif %}
 {% if not part %}
 {% include '_analytics.html' %}
+<h2 class="stats-breakdown-title">分类明细</h2>
 <div class="stats-grid">
 
 {# 最常用武器：只列占比（横条和拿得最久的那把比）；时间、局数在完整的表格里 #}

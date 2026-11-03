@@ -1,44 +1,44 @@
 <section class="analysis-workbench" aria-labelledby="h-analysis" data-analysis>
   <div class="analysis-heading">
-    <div><h2 id="h-analysis">对局分析</h2><p>切换指标、比较分组，点选图中的对局查看明细。</p></div>
-    <button type="button" class="analysis-button" data-export>导出筛选结果 CSV</button>
-  </div>
-  <div class="analysis-controls">
-    <label>分析指标 <select data-metric>{% for key, m in analysis.metrics.items() %}<option value="{{ key }}">{{ m.label }}</option>{% endfor %}</select></label>
-    <label>趋势粒度 <select data-grain><option value="match">逐局</option><option value="day">按日均值</option></select></label>
-    <label>比较维度 <select data-group><option value="legend">传奇</option><option value="map">地图</option><option value="mode">模式</option></select></label>
+    <div><h2 id="h-analysis">对局分析</h2><p>从整体表现，看到每一局的变化。</p></div>
+    <button type="button" class="analysis-button" data-export><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/></svg>导出筛选结果 CSV</button>
   </div>
   <div class="analysis-summary" aria-live="polite" data-summary></div>
-  <div class="analysis-panels">
-    <section class="analysis-panel analysis-wide" aria-labelledby="h-trend">
-      <div class="analysis-panel-head"><h3 id="h-trend">表现趋势</h3><span data-trend-note></span></div>
-      <svg data-trend viewBox="0 0 760 230" role="img" tabindex="0" aria-label="表现趋势，左右方向键选择数据点，回车查看对局"></svg>
+  <div class="analysis-toolbar">
+    <div class="analysis-tabs" role="tablist" aria-label="分析视图">
+      <button id="analysis-tab-trend" type="button" role="tab" aria-selected="true" aria-controls="analysis-view-trend" data-view-tab="trend">表现走势</button>
+      <button id="analysis-tab-compare" type="button" role="tab" aria-selected="false" aria-controls="analysis-view-compare" tabindex="-1" data-view-tab="compare">分组比较</button>
+      <button id="analysis-tab-scatter" type="button" role="tab" aria-selected="false" aria-controls="analysis-view-scatter" tabindex="-1" data-view-tab="scatter">伤害与击杀</button>
+    </div>
+    <label class="analysis-metric-control">分析指标 <select data-metric>{% for key, m in analysis.metrics.items() %}<option value="{{ key }}">{{ m.label }}</option>{% endfor %}</select></label>
+  </div>
+  <div id="analysis-view-trend" class="analysis-visual-grid" role="tabpanel" aria-labelledby="analysis-tab-trend" data-view-panel="trend">
+    <section class="analysis-panel analysis-trend-panel" aria-labelledby="h-trend">
+      <div class="analysis-panel-head"><div><h3 id="h-trend">表现趋势</h3><span data-trend-note></span></div><label><span class="sr-only">趋势粒度</span><select data-grain><option value="match">逐局</option><option value="day">按日均值</option></select></label></div>
+      <svg data-trend viewBox="0 0 760 260" role="img" tabindex="0" aria-label="表现趋势，左右方向键选择数据点，回车查看对局"></svg>
       <div class="analysis-detail" data-detail aria-live="polite">将鼠标移到曲线上，或聚焦图表后按左右方向键。</div>
     </section>
-    <section class="analysis-panel" aria-labelledby="h-distribution">
-      <div class="analysis-panel-head"><h3 id="h-distribution">名次分布</h3><span data-placement-note></span></div>
+    <section class="analysis-panel analysis-placement-panel" aria-labelledby="h-distribution">
+      <div class="analysis-panel-head"><div><h3 id="h-distribution">名次分布</h3><span data-placement-note></span></div></div>
       <div class="analysis-distribution" data-distribution></div>
-    </section>
-    <section class="analysis-panel" aria-labelledby="h-scatter">
-      <div class="analysis-panel-head"><h3 id="h-scatter">伤害 × 击杀</h3><span data-scatter-note></span></div>
-      <svg data-scatter viewBox="0 0 480 230" role="img" tabindex="0" aria-label="伤害与击杀散点图，左右方向键选择对局，回车查看明细"></svg>
-      <p class="analysis-caption">横轴：伤害 · 纵轴：击杀 · 空心点：待确认。点选查看对局；这张图描述关联。</p>
-      <div class="analysis-detail" data-scatter-detail aria-live="polite"></div>
-    </section>
-    <section class="analysis-panel analysis-wide" aria-labelledby="h-compare">
-      <div class="analysis-panel-head"><h3 id="h-compare">分组比较</h3><label>查找分组 <input type="search" data-search placeholder="输入传奇、地图或模式"></label></div>
-      <p class="analysis-caption">条形长度表示当前指标均值；RP 以零为基线。名次越小越好。小样本请结合局数判断。</p>
-      <p class="analysis-caption analysis-scroll-hint">表格可横向滚动，查看全部指标。</p>
-      <div class="table-wrap" tabindex="0" aria-label="分组比较，可横向滚动"><table class="analysis-table"><thead><tr>
-        <th scope="col"><button type="button" data-sort="name">分组</button></th>
-        <th scope="col"><button type="button" data-sort="games">局数</button></th>
-        <th scope="col"><button type="button" data-sort="mean">指标均值</button></th>
-        <th scope="col">有效 / 总局数</th><th scope="col">胜率</th><th scope="col">前五率</th>
-      </tr></thead><tbody data-groups></tbody></table></div>
-      <p data-group-note class="analysis-caption" aria-live="polite"></p>
+      <p class="analysis-caption">仅计算已识别名次的对局。</p>
     </section>
   </div>
-  <p class="analysis-footnote">所有分析使用上方筛选后的对局。缺失读数不计入均值和比例；胜率及前五率只使用已识别名次。待确认对局保留在内，请先核对后再判断表现。</p>
+  <section id="analysis-view-compare" class="analysis-panel" role="tabpanel" aria-labelledby="analysis-tab-compare" data-view-panel="compare" hidden>
+    <div class="analysis-panel-head"><div><h3 id="h-compare">分组比较</h3><span>同一指标，比较不同场景下的表现。</span></div><div class="analysis-compare-controls"><label><span class="sr-only">比较维度</span><select data-group><option value="legend">按传奇</option><option value="map">按地图</option><option value="mode">按模式</option></select></label><label><span class="sr-only">查找分组</span><input type="search" data-search placeholder="查找分组"></label></div></div>
+    <p class="analysis-caption analysis-scroll-hint">表格可横向滚动，查看全部指标。</p>
+    <div class="table-wrap" tabindex="0" aria-label="分组比较，可横向滚动"><table class="analysis-table"><thead><tr>
+      <th scope="col"><button type="button" data-sort="name">分组</button></th><th scope="col"><button type="button" data-sort="games">局数</button></th><th scope="col"><button type="button" data-sort="mean">指标均值</button></th><th scope="col">有效 / 总局数</th><th scope="col">胜率</th><th scope="col">前五率</th>
+    </tr></thead><tbody data-groups></tbody></table></div>
+    <div class="analysis-table-foot"><p data-group-note aria-live="polite"></p><span>名次越小越好 · 小样本请结合局数判断</span></div>
+  </section>
+  <section id="analysis-view-scatter" class="analysis-panel analysis-scatter-panel" role="tabpanel" aria-labelledby="analysis-tab-scatter" data-view-panel="scatter" hidden>
+    <div class="analysis-panel-head"><div><h3 id="h-scatter">伤害与击杀</h3><span data-scatter-note></span></div><span class="analysis-point-key"><i></i>已记录 <i class="review"></i>待确认</span></div>
+    <svg data-scatter viewBox="0 0 760 260" role="img" tabindex="0" aria-label="伤害与击杀散点图，左右方向键选择对局，回车查看明细"></svg>
+    <div class="analysis-detail" data-scatter-detail aria-live="polite"></div>
+    <p class="analysis-caption">横轴为伤害，纵轴为击杀。点选查看对局，也可使用左右方向键；此图描述关联。</p>
+  </section>
+  <details class="analysis-method"><summary>统计口径与缺失值</summary><p>所有分析使用上方筛选后的对局。缺失读数不计入均值和比例；胜率及前五率只使用已识别名次。待确认对局保留在内，请先核对后再判断表现。</p></details>
   <noscript>启用 JavaScript 后可查看交互图表。下方的统计表格仍可使用。</noscript>
   <script type="application/json" data-analysis-json>{{ analysis|tojson }}</script>
 </section>

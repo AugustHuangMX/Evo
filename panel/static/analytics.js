@@ -59,7 +59,7 @@
       const p = trendPoints[trendIndex], svg = $('[data-trend]');
       svg.querySelectorAll('.analysis-cursor').forEach(n => n.remove());
       const x = 54 + trendIndex / Math.max(1, trendPoints.length - 1) * (trendWidth - 80);
-      svgNode(svg, 'line', {x1: x, x2: x, y1: 18, y2: 190, class: 'analysis-cursor'});
+      svgNode(svg, 'line', {x1: x, x2: x, y1: 18, y2: 220, class: 'analysis-cursor'});
       if (p.row) {
         detail($('[data-detail]'), p.row);
       } else {
@@ -71,7 +71,7 @@
     function drawTrend() {
       const svg = $('[data-trend]');
       trendWidth = Math.max(300, Math.round(svg.getBoundingClientRect().width));
-      svg.setAttribute('viewBox', `0 0 ${trendWidth} 230`);
+      svg.setAttribute('viewBox', `0 0 ${trendWidth} 260`);
       if (grain === 'match') trendPoints = rows.map((r, i) => ({value: r[metric], label: `第 ${i + 1} 局`, row: r}));
       else {
         const days = new Map();
@@ -90,7 +90,7 @@
         $('[data-detail]').textContent = '更换指标或调整上方筛选条件。';
         return;
       }
-      const {x, y} = axes(svg, trendWidth, 230, values, trendPoints.length - 1, [trendPoints[0].label, trendPoints[trendPoints.length - 1].label]);
+      const {x, y} = axes(svg, trendWidth, 260, values, trendPoints.length - 1, [trendPoints[0].label, trendPoints[trendPoints.length - 1].label]);
       let segment = [];
       const flush = () => {
         if (segment.length > 1) svgNode(svg, 'polyline', {points: segment.join(' '), class: 'analysis-line'});
@@ -121,10 +121,10 @@
       $('[data-scatter-note]').textContent = `有效 ${all.length} / ${rows.length} 局${all.length > 600 ? ' · 等距抽样显示 600 点' : ''}`;
       const svg = $('[data-scatter]');
       const width = Math.max(300, Math.round(svg.getBoundingClientRect().width));
-      svg.setAttribute('viewBox', `0 0 ${width} 230`);
+      svg.setAttribute('viewBox', `0 0 ${width} 260`);
       if (!all.length) { empty(svg, width, '伤害或击杀读数不足'); return; }
       const maxDamage = all.reduce((v, r) => Math.max(v, r.damage), 1);
-      const {x, y} = axes(svg, width, 230, all.map(r => r.kills), maxDamage, ['0 伤害', `${fmt(maxDamage)} 伤害`]);
+      const {x, y} = axes(svg, width, 260, all.map(r => r.kills), maxDamage, ['0 伤害', `${fmt(maxDamage)} 伤害`]);
       scatterPoints.forEach((r, i) => {
         const circle = svgNode(svg, 'circle', {cx: x(r.damage), cy: y(r.kills), r: 3.5, class: `analysis-point${r.review ? ' review' : ''}`});
         svgNode(circle, 'title', {}, `${r.when} · ${r.legend} · 伤害 ${r.damage} · 击杀 ${r.kills}`);
@@ -212,6 +212,28 @@
       const a = el('a'); a.href = url; a.download = 'Evo-筛选对局.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
     render(); distribution(); drawScatter();
+    const viewTabs = Array.from(root.querySelectorAll('[data-view-tab]'));
+    function selectView(name) {
+      viewTabs.forEach(tab => {
+        const active = tab.dataset.viewTab === name;
+        tab.setAttribute('aria-selected', String(active));
+        tab.tabIndex = active ? 0 : -1;
+      });
+      root.querySelectorAll('[data-view-panel]').forEach(panel => { panel.hidden = panel.dataset.viewPanel !== name; });
+      $('[data-metric]').closest('label').hidden = name === 'scatter';
+      if (name === 'trend') drawTrend();
+      if (name === 'scatter') drawScatter();
+    }
+    viewTabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => selectView(tab.dataset.viewTab));
+      tab.addEventListener('keydown', e => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+        e.preventDefault();
+        const next = e.key === 'Home' ? 0 : e.key === 'End' ? viewTabs.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + viewTabs.length) % viewTabs.length;
+        selectView(viewTabs[next].dataset.viewTab);
+        viewTabs[next].focus();
+      });
+    });
     let observedWidth = root.clientWidth;
     new ResizeObserver(() => {
       if (root.clientWidth === observedWidth) return;
