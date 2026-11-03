@@ -2,7 +2,8 @@
 
 录入历史赛季数据时用（2026-11-01 用户定的：设置页按钮进入录入模式，玩家在游戏里自己一个一个点赛季，原则 1）。
 规则在 config/season_stats.json，页面的样子见 docs/识别经验.md"游戏里的数据页"。
-- 认出这一页：右边一栏左上角"赛季 / 比赛"两行小字（下拉菜单开着时被挡住，不算），先比外观、像了再读关键字（screens.py）
+- 认出这一页：右边一栏左上角"赛季 / 比赛"两行小字，或者右上角"赛季 / 前5名"（鼠标停在下拉框上弹出的提示一次只挡住一个；
+  下拉菜单开着时两个都被挡住，不算），先比外观、像了再读关键字（screens.py）
 - 下拉框里选中的那一项："第 30 赛季：诸神烙印" = 这个赛季全部大逃杀（排位 + 匹配），"第 30 赛季：排位" = 只算排位
 - 每一栏 15 个数，按块读（一块一次识别，一项一项读要多三倍）：上面一行比赛 / 胜利 / 前 5 名，两个圆圈
   （伤害：最高、平均；击杀：阵亡、击杀/阵亡比），下面六行（最高击杀、击倒、助攻、最长连胜、急救、重生）
@@ -13,7 +14,7 @@
 - 不读的：赛段的段位徽章、账号等级
 
 检查截图：python code/season_stats.py 截图1.png [截图2.png ...]   （读两栏，打印结果和核对）
-生成参照图：python code/season_stats.py --save-template 截图.png
+生成参照图（两个角各一张）：python code/season_stats.py --save-template 截图.png
 游戏画面不是 16:9 时（比如拉伸的 16:10）两条命令都加 --aspect 16:10，和记录程序一样换算（见 layout.py）
 """
 
@@ -31,13 +32,13 @@ from layout import cut, set_game_aspect
 from ocr import load_config, load_image
 from player_name import pick_name
 from screens import ScreenDetector, save_template
-from season_rules import (FIELDS, KIND_ALL, KIND_CAREER, KIND_RANKED, LABELS, NUMBER,  # noqa: F401  别的文件也从这里用
-                          check, empty, parse_number, show)
+from season_rules import (DECIMALS, FIELDS, KIND_ALL, KIND_CAREER, KIND_RANKED, LABELS,  # noqa: F401  别的文件也从这里用
+                          NUMBER, check, empty, parse_number, show)
 from storage import name_key
 from summary_page import same_piece
 
 CONFIG_NAME = "season_stats.json"
-PAGE = "season_stats"  # detect 里这个画面的名字（参照图 config/templates/season_stats.png）
+PAGE = "season_stats"  # detect 里这个画面的名字（参照图 config/templates/season_stats.png；另一个角 "as" 这个名字）
 
 
 class SeasonPage:
@@ -120,7 +121,8 @@ class SeasonPage:
 
     def _by_line(self, texts, names):
         """一块里的"名字 + 数"：名字和数连在一起读出来的（"最高4,453"）直接拆开；分开读出来的，每个数归到
-        同一行、左边最近的那个名字。names：名字 → 项。返回 ([(项, 数的文字)], [没归上的数 (文字, x, y)])。"""
+        同一行、左边最近的那个名字；同一行没有名字的，归到正上方还没有数的那个名字（游戏把数折到了下一行，
+        见 config 的 wrap_gap）。names：名字 → 项。返回 ([(项, 数的文字)], [没归上的数 (文字, x, y)])。"""
         found, spots, rest = [], [], []
         for text, _, cx, cy in texts:
             head = next((n for n in names if text.startswith(n) and text != n), None)
@@ -130,11 +132,20 @@ class SeasonPage:
                 spots.append((names[text], cx, cy))
             elif self._number(text):
                 rest.append((text, cx, cy))
-        left = []
+        unsure = []
         for text, cx, cy in rest:
             near = [(cx - lx, field) for field, lx, ly in spots if lx < cx and abs(cy - ly) <= self.cfg["row_gap"]]
             if near:
                 found.append((min(near)[1], text))
+            else:
+                unsure.append((text, cx, cy))
+        gap, left = self.cfg["wrap_gap"], []
+        for text, cx, cy in unsure:
+            done = {field for field, _ in found}
+            above = [(cy - ly, field) for field, lx, ly in spots
+                     if field not in done and 0 < cy - ly <= gap and abs(cx - lx) <= 2 * gap]
+            if above:
+                found.append((min(above)[1], text))
             else:
                 left.append((text, cx, cy))
         return found, left
@@ -148,7 +159,7 @@ class SeasonPage:
         values, approx = {}, {}
 
         def take(field, text):
-            value, rough = parse_number(text)
+            value, rough = parse_number(text, integer=field not in DECIMALS)
             if value is None:
                 return
             values[field] = value
@@ -186,14 +197,15 @@ def main():
     parser.add_argument("images", type=Path, nargs="+", help="截图")
     parser.add_argument("--lang", choices=game_lang.languages(), default=game_lang.DEFAULT,
                         help="游戏语言（默认简体中文 zh-CN）")
-    parser.add_argument("--save-template", action="store_true", help="从第一张截图生成\"数据页\"的参照图")
+    parser.add_argument("--save-template", action="store_true", help="从第一张截图生成\"数据页\"的参照图（两个角各一张）")
     parser.add_argument("--aspect", choices=tuple(ASPECTS), help="游戏画面的比例（不写 = 和截图一样）")
     args = parser.parse_args()
     if args.aspect:
         set_game_aspect(ASPECTS[args.aspect])
     cfg = load_config(CONFIG_NAME, args.lang)
     if args.save_template:
-        print(f"已生成参照图：{save_template(PAGE, args.images[0], {**cfg['detect'], 'language': args.lang})}")
+        for name in cfg["detect"]["screens"]:
+            print(f"已生成参照图：{save_template(name, args.images[0], {**cfg['detect'], 'language': args.lang})}")
         return
 
     from ocr import SMALL_CROP_PARAMS, create_engine

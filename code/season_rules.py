@@ -11,17 +11,24 @@ LABELS = {"games": "比赛", "wins": "胜利", "top5": "前 5 名", "damage": "�
           "damage_avg": "平均伤害", "kills": "击杀", "deaths": "阵亡", "kd": "击杀/阵亡比", "kills_max": "最高击杀",
           "knockdowns": "击倒", "assists": "助攻", "win_streak": "最长连胜", "revives": "急救队友", "respawns": "重生队友"}
 DECIMALS = ("damage_avg", "kd")  # 游戏里带两位小数的，其余都是整数
-NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?K?")
+NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)*K?")  # 几个点的（"9.107.772"）也算一个数，见 parse_number
 KIND_ALL, KIND_RANKED, KIND_CAREER = "all", "ranked", "career"
 
 
-def parse_number(text):
+def parse_number(text, integer=False):
     """"4,678,720" → (4678720, None)；"537.59" → (537.59, None)；"1.03K" → (1030, (1025, 1035))：
-    第二项是约数的范围（游戏把 1000 以上的写成几 K，只留三位有效数字），不是约数为 None。读不出返回 (None, None)。"""
+    第二项是约数的范围（游戏把 1000 以上的写成几 K，只留三位有效数字），不是约数为 None。读不出返回 (None, None)。
+    integer：这一项是整数（不在 DECIMALS 里）。千分位的逗号有时读成点（"1,495" → "1.495"，2026-11-03 测试员的
+    截图），整数项里点后面正好三位的当作逗号；剩下还有几个点的读不出。"""
     m = NUMBER.search(text.replace("，", ","))
     if not m:
         return None, None
-    raw = m[0].replace(",", "")
+    raw = m[0]
+    if integer and re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", raw):
+        raw = raw.replace(".", ",")
+    raw = raw.replace(",", "")
+    if raw.count(".") > 1:
+        return None, None
     if raw.endswith("K"):
         digits = raw[:-1]
         step = 10 ** -len(digits.split(".")[1]) if "." in digits else 1
@@ -64,7 +71,7 @@ def check(values, approx):
     if "games" in approx and v("damage") is not None and v("damage_avg"):
         games = round(v("damage") / v("damage_avg"))
         low, high = approx["games"]
-        if low <= games < high:
+        if low <= games <= high:  # 两头都算：1015 局游戏写"1.01K"（2026-11-03 测试员的截图）
             values["games"] = games
             approx.pop("games")
         else:
