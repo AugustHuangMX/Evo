@@ -3,16 +3,32 @@
     <div><h2 id="h-analysis">对局分析</h2><p>从整体表现，看到每一局的变化。</p></div>
     <button type="button" class="analysis-button" data-export><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/></svg>导出筛选结果 CSV</button>
   </div>
+  <div class="combat-kpis" aria-label="击杀、助攻、击倒" data-combat-kpis></div>
   <div class="analysis-summary" aria-live="polite" data-summary></div>
   <div class="analysis-toolbar">
     <div class="analysis-tabs" role="tablist" aria-label="分析视图">
-      <button id="analysis-tab-trend" type="button" role="tab" aria-selected="true" aria-controls="analysis-view-trend" data-view-tab="trend">表现走势</button>
+      <button id="analysis-tab-combat" type="button" role="tab" aria-selected="true" aria-controls="analysis-view-combat" data-view-tab="combat">战斗贡献</button>
+      <button id="analysis-tab-trend" type="button" role="tab" aria-selected="false" aria-controls="analysis-view-trend" tabindex="-1" data-view-tab="trend">表现走势</button>
       <button id="analysis-tab-compare" type="button" role="tab" aria-selected="false" aria-controls="analysis-view-compare" tabindex="-1" data-view-tab="compare">分组比较</button>
-      <button id="analysis-tab-scatter" type="button" role="tab" aria-selected="false" aria-controls="analysis-view-scatter" tabindex="-1" data-view-tab="scatter">伤害与击杀</button>
+      <button id="analysis-tab-scatter" type="button" role="tab" aria-selected="false" aria-controls="analysis-view-scatter" tabindex="-1" data-view-tab="scatter">多维关系</button>
+      <button id="analysis-tab-outcomes" type="button" role="tab" aria-selected="false" aria-controls="analysis-view-outcomes" tabindex="-1" data-view-tab="outcomes">名次与 RP</button>
     </div>
-    <label class="analysis-metric-control">分析指标 <select data-metric>{% for key, m in analysis.metrics.items() %}<option value="{{ key }}">{{ m.label }}</option>{% endfor %}</select></label>
+    <label class="analysis-metric-control" hidden>分析指标 <select data-metric>{% for key, m in analysis.metrics.items() %}<option value="{{ key }}">{{ m.label }}</option>{% endfor %}</select></label>
   </div>
-  <div id="analysis-view-trend" class="analysis-visual-grid" role="tabpanel" aria-labelledby="analysis-tab-trend" data-view-panel="trend">
+  <div id="analysis-view-combat" role="tabpanel" aria-labelledby="analysis-tab-combat" data-view-panel="combat">
+    <section class="analysis-panel">
+      <div class="analysis-panel-head"><div><h3>击杀、助攻与击倒走势</h3><span data-combat-coverage></span></div><label><span class="sr-only">战斗走势粒度</span><select data-combat-grain><option value="match">逐局</option><option value="day">按日均值</option></select></label></div>
+      <div class="combat-series" role="group" aria-label="战斗走势指标"><button type="button" class="combat-kills" data-combat-series="kills" aria-pressed="true">击杀</button><button type="button" class="combat-assists" data-combat-series="assists" aria-pressed="true">助攻</button><button type="button" class="combat-knocks" data-combat-series="knockdowns" aria-pressed="true">击倒</button></div>
+      <svg data-combat-chart viewBox="0 0 760 270" role="img" tabindex="0" aria-label="击杀助攻击倒走势，左右键选点，回车查看对局"></svg>
+      <div class="analysis-detail" data-combat-detail aria-live="polite"></div>
+      <p class="analysis-caption">三条线共用次数轴；击倒单独观察，不与击杀、助攻累加。点击图例显示或隐藏；虚线与点形帮助区分。</p>
+    </section>
+    <div class="combat-context-grid">
+      <section class="analysis-panel"><div class="analysis-panel-head"><div><h3>输出节奏与协作</h3><span>均值使用各指标的有效对局</span></div></div><div data-combat-context class="combat-context"></div></section>
+      <section class="analysis-panel"><div class="analysis-panel-head"><div><h3>小队贡献对照</h3><span>每局占比的均值；与同一批对局中的队友合计对照</span></div></div><div data-team-shares></div><p class="analysis-caption">击杀参与率 = (击杀 + 助攻) ÷ 小队击杀；伤害占比要求本人及两名队友伤害完整。它们衡量不同侧面，不构成综合评分。</p></section>
+    </div>
+  </div>
+  <div id="analysis-view-trend" class="analysis-visual-grid" role="tabpanel" aria-labelledby="analysis-tab-trend" data-view-panel="trend" hidden>
     <section class="analysis-panel analysis-trend-panel" aria-labelledby="h-trend">
       <div class="analysis-panel-head"><div><h3 id="h-trend">表现趋势</h3><span data-trend-note></span></div><label><span class="sr-only">趋势粒度</span><select data-grain><option value="match">逐局</option><option value="day">按日均值</option></select></label></div>
       <svg data-trend viewBox="0 0 760 260" role="img" tabindex="0" aria-label="表现趋势，左右方向键选择数据点，回车查看对局"></svg>
@@ -25,20 +41,32 @@
     </section>
   </div>
   <section id="analysis-view-compare" class="analysis-panel" role="tabpanel" aria-labelledby="analysis-tab-compare" data-view-panel="compare" hidden>
-    <div class="analysis-panel-head"><div><h3 id="h-compare">分组比较</h3><span>同一指标，比较不同场景下的表现。</span></div><div class="analysis-compare-controls"><label><span class="sr-only">比较维度</span><select data-group><option value="legend">按传奇</option><option value="map">按地图</option><option value="mode">按模式</option></select></label><label><span class="sr-only">查找分组</span><input type="search" data-search placeholder="查找分组"></label></div></div>
+    <div class="analysis-panel-head"><div><h3 id="h-compare">分组比较</h3><span>并列观察战斗、协作、生存与排位表现。</span></div><div class="analysis-compare-controls"><label><span class="sr-only">比较维度</span><select data-group><option value="legend">按传奇</option><option value="map">按地图</option><option value="mode">按模式</option><option value="rank_tier">按记录段位</option></select></label><label><span class="sr-only">查找分组</span><input type="search" data-search placeholder="查找分组"></label></div></div>
+    <label class="combat-matrix-toggle"><input type="checkbox" data-profile-toggle checked> 多指标矩阵</label>
+    <div class="table-wrap" data-profile-wrap tabindex="0" aria-label="多指标战斗矩阵，可横向滚动"><table class="analysis-table combat-profile"><thead data-profile-head></thead><tbody data-profile-body></tbody></table></div>
+    <p class="analysis-caption" data-profile-note>每列独立着色；颜色只表示本列数值大小，不代表全能评分。将指针停在单元格查看有效局数。</p>
     <p class="analysis-caption analysis-scroll-hint">表格可横向滚动，查看全部指标。</p>
-    <div class="table-wrap" tabindex="0" aria-label="分组比较，可横向滚动"><table class="analysis-table"><thead><tr>
+    <div class="table-wrap" data-single-table tabindex="0" aria-label="分组比较，可横向滚动" hidden><table class="analysis-table"><thead><tr>
       <th scope="col"><button type="button" data-sort="name">分组</button></th><th scope="col"><button type="button" data-sort="games">局数</button></th><th scope="col"><button type="button" data-sort="mean">指标均值</button></th><th scope="col">有效 / 总局数</th><th scope="col">胜率</th><th scope="col">前五率</th>
     </tr></thead><tbody data-groups></tbody></table></div>
-    <div class="analysis-table-foot"><p data-group-note aria-live="polite"></p><span>名次越小越好 · 小样本请结合局数判断</span></div>
+    <div class="analysis-table-foot" data-single-foot hidden><p data-group-note aria-live="polite"></p><span>名次越小越好 · 小样本请结合局数判断</span></div>
   </section>
   <section id="analysis-view-scatter" class="analysis-panel analysis-scatter-panel" role="tabpanel" aria-labelledby="analysis-tab-scatter" data-view-panel="scatter" hidden>
-    <div class="analysis-panel-head"><div><h3 id="h-scatter">伤害与击杀</h3><span data-scatter-note></span></div><span class="analysis-point-key"><i></i>已记录 <i class="review"></i>待确认</span></div>
+    <div class="analysis-panel-head"><div><h3 id="h-scatter">多维关系图</h3><span data-scatter-note></span></div><span class="analysis-point-key"><i></i>已记录 <i class="review"></i>待确认</span></div>
+    <div class="combat-presets" role="group" aria-label="关系图预设"><button type="button" data-scatter-preset="pressure">伤害 × 击倒</button><button type="button" data-scatter-preset="involvement">击倒 × K+A</button><button type="button" data-scatter-preset="survival">存活 × K+A</button><button type="button" data-scatter-preset="ranked">K+A × RP</button><button type="button" data-scatter-preset="team">小队贡献</button></div>
+    <div class="combat-scatter-controls"><label>横轴<select data-scatter-x></select></label><label>纵轴<select data-scatter-y></select></label><label>气泡面积<select data-scatter-size></select></label><label>颜色<select data-scatter-color><option value="placement">名次区间</option><option value="rp_delta">RP 正负</option><option value="legend">传奇</option></select></label></div>
     <svg data-scatter viewBox="0 0 760 260" role="img" tabindex="0" aria-label="伤害与击杀散点图，左右方向键选择对局，回车查看明细"></svg>
     <div class="analysis-detail" data-scatter-detail aria-live="polite"></div>
-    <p class="analysis-caption">横轴为伤害，纵轴为击杀。点选查看对局，也可使用左右方向键；此图描述关联。</p>
+    <div class="combat-color-key" data-scatter-key></div>
+    <p class="analysis-caption">横纵坐标、气泡面积和颜色共同展示表现；编码所需读数缺失的局不绘点。点选或方向键查看完整数据；关联不代表因果。</p>
   </section>
-  <details class="analysis-method"><summary>统计口径与缺失值</summary><p>所有分析使用上方筛选后的对局。缺失读数不计入均值和比例；胜率及前五率只使用已识别名次。待确认对局保留在内，请先核对后再判断表现。</p></details>
+  <section id="analysis-view-outcomes" class="analysis-panel" role="tabpanel" aria-labelledby="analysis-tab-outcomes" data-view-panel="outcomes" hidden>
+    <div class="analysis-panel-head"><div><h3>K+A × 名次：对局结果矩阵</h3><span data-outcome-note></span></div><label><span class="sr-only">结果矩阵指标</span><select data-outcome-metric><option value="rp_delta">实际 RP 均值</option><option value="damage">伤害均值</option><option value="knockdowns">击倒均值</option></select></label></div>
+    <div class="table-wrap" tabindex="0" aria-label="K+A与名次矩阵，可横向滚动"><table class="combat-outcomes"><thead><tr><th>名次 / K+A</th><th>0</th><th>1–2</th><th>3–5</th><th>6+</th></tr></thead><tbody data-outcomes></tbody></table></div>
+    <p class="analysis-caption">K+A = 击杀 + 助攻。点击单元格查看所含对局；RP 只使用排位的实际读数，受段位、入场费与赛季规则影响，不能解读为 K+A 的独立收益。空白表示没有有效读数。</p>
+    <div data-outcome-detail aria-live="polite" class="combat-outcome-detail"></div>
+  </section>
+  <details class="analysis-method"><summary>统计口径与缺失值</summary><p>所有分析使用上方筛选后的对局。缺失读数不计入均值和比例；经验值页的计分次数不作真实击杀或助攻。待确认对局保留并标识。每存活分钟伤害按总伤害除以存活分钟计算，不是交火时 DPS；各局比值取均值，短局更易波动，请结合原始次数与存活时间查看。小队分母为零、读数矛盾或队友不完整时占比留空。没有死亡次数或逐次战斗事件，因此不计算 K/D、击倒转化率或综合能力评分。</p></details>
   <noscript>启用 JavaScript 后可查看交互图表。下方的统计表格仍可使用。</noscript>
   <script type="application/json" data-analysis-json>{{ analysis|tojson }}</script>
 </section>

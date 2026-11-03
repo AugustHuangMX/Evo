@@ -491,7 +491,8 @@ def group_numbers(rows):
     # 击杀来自经验值页的局（没有总结页，也没读到对局中右上角），击杀是"计分次数"（可能比实际少），不算进场均击杀
     kills = [r["kills"] for r in rows if r["kills"] is not None
              and not any(n in (r["review_note"] or "") for n in COUNTED_KILLS_NOTES)]
-    assists = [r["assists"] for r in rows if r["assists"] is not None]
+    assists = [r["assists"] for r in rows if r["assists"] is not None
+               and not any(n in (r["review_note"] or "") for n in COUNTED_KILLS_NOTES)]
     knockdowns = [r["knockdowns"] for r in rows if r["knockdowns"] is not None]
     damages = [r["damage"] for r in rows if r["damage"] is not None]
     survivals = [r["survival_time"] for r in rows if r["survival_time"] is not None]
@@ -1133,7 +1134,8 @@ def stats(part=None):
         filter_options=filter_options,
         filter_errors=filter_errors,
         analysis=analytics.payload(in_range, COUNTED_KILLS_NOTES,
-                                   {r["match_id"]: i // PER_PAGE + 1 for i, r in enumerate(reversed(rows))}),
+                                   {r["match_id"]: i // PER_PAGE + 1 for i, r in enumerate(reversed(rows))},
+                                   teammates=all_mates),
         analysis_modes=analytics.MODES,
         everyone=group_numbers(in_range),  # 参照：这个范围里的所有对局
         mates=mates,

@@ -7,7 +7,7 @@
     const $ = s => root.querySelector(s);
     const ns = 'http://www.w3.org/2000/svg';
     let metric = 'damage', grain = 'match', dimension = 'legend', sort = 'games', ascending = false;
-    let trendPoints = [], scatterPoints = [], trendIndex = 0, scatterIndex = 0, trendWidth = 760;
+    let trendPoints = [], trendIndex = 0, trendWidth = 760;
     const fmt = (v, digits = 0) => v == null ? '—' : v.toLocaleString('zh-CN', {maximumFractionDigits: digits, minimumFractionDigits: digits});
     const average = values => values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
     const valid = (data, key) => data.map(r => r[key]).filter(v => v != null);
@@ -51,7 +51,7 @@
     }
     function detail(target, r) {
       target.replaceChildren(el('span', `${r.when || '时间未识别'} · ${r.legend} · ${r.map} · ${r.mode}${r.review ? ' · 待确认' : ''}`),
-        el('strong', `伤害 ${fmt(r.damage)} / 击杀 ${fmt(r.kills)} / 名次 ${fmt(r.placement)} / RP ${fmt(r.rp_delta)}`), matchLink(r));
+        el('strong', `击杀 ${fmt(r.kills)} / 助攻 ${fmt(r.assists)} / 击倒 ${fmt(r.knockdowns)} / 伤害 ${fmt(r.damage)} / 名次 ${fmt(r.placement)} / RP ${fmt(r.rp_delta)}`), matchLink(r));
     }
     function showTrend(index) {
       if (!trendPoints.length) return;
@@ -104,35 +104,6 @@
       flush();
       showTrend(trendPoints.length - 1);
     }
-    function showScatter(index) {
-      if (!scatterPoints.length) return;
-      scatterIndex = Math.max(0, Math.min(scatterPoints.length - 1, index));
-      const r = scatterPoints[scatterIndex];
-      $('[data-scatter]').querySelectorAll('circle').forEach((n, i) => {
-        n.classList.toggle('selected', i === scatterIndex);
-        n.setAttribute('r', i === scatterIndex ? 6 : 3.5);
-      });
-      detail($('[data-scatter-detail]'), r);
-      $('[data-scatter]').setAttribute('aria-label', `伤害与击杀散点图，${r.when}，伤害 ${r.damage}，击杀 ${r.kills}；左右键切换，回车查看对局`);
-    }
-    function drawScatter() {
-      const all = rows.filter(r => r.damage != null && r.kills != null);
-      scatterPoints = all.length <= 600 ? all : Array.from({length: 600}, (_, i) => all[Math.round(i * (all.length - 1) / 599)]);
-      $('[data-scatter-note]').textContent = `有效 ${all.length} / ${rows.length} 局${all.length > 600 ? ' · 等距抽样显示 600 点' : ''}`;
-      const svg = $('[data-scatter]');
-      const width = Math.max(300, Math.round(svg.getBoundingClientRect().width));
-      svg.setAttribute('viewBox', `0 0 ${width} 260`);
-      if (!all.length) { empty(svg, width, '伤害或击杀读数不足'); return; }
-      const maxDamage = all.reduce((v, r) => Math.max(v, r.damage), 1);
-      const {x, y} = axes(svg, width, 260, all.map(r => r.kills), maxDamage, ['0 伤害', `${fmt(maxDamage)} 伤害`]);
-      scatterPoints.forEach((r, i) => {
-        const circle = svgNode(svg, 'circle', {cx: x(r.damage), cy: y(r.kills), r: 3.5, class: `analysis-point${r.review ? ' review' : ''}`});
-        svgNode(circle, 'title', {}, `${r.when} · ${r.legend} · 伤害 ${r.damage} · 击杀 ${r.kills}`);
-        circle.addEventListener('pointerenter', () => showScatter(i));
-        circle.addEventListener('click', () => showScatter(i));
-      });
-      showScatter(scatterPoints.length - 1);
-    }
     function distribution() {
       const placements = valid(rows, 'placement');
       $('[data-placement-note]').textContent = `有效 ${placements.length} / ${rows.length} 局`;
@@ -175,6 +146,7 @@
       });
       if (!data.length) { const tr = el('tr'), td = el('td', '没有匹配的分组'); td.colSpan = 6; tr.appendChild(td); target.appendChild(tr); }
       root.querySelectorAll('[data-sort]').forEach(button => button.closest('th').setAttribute('aria-sort', button.dataset.sort === sort ? (ascending ? 'ascending' : 'descending') : 'none'));
+      root.dispatchEvent(new CustomEvent('analysis-group', {detail: {dimension, query}}));
       $('[data-group-note]').textContent = `共 ${data.length} 个分组 · 当前比较${metrics[metric].label} · 点击列标题排序`;
     }
     function render() {
@@ -194,7 +166,7 @@
       const rect = e.currentTarget.getBoundingClientRect();
       showTrend(Math.round(((e.clientX - rect.left) / rect.width * trendWidth - 54) / (trendWidth - 80) * (trendPoints.length - 1)));
     });
-    [['[data-trend]', () => trendIndex, () => trendPoints, showTrend], ['[data-scatter]', () => scatterIndex, () => scatterPoints, showScatter]].forEach(([selector, index, points, show]) => {
+    [['[data-trend]', () => trendIndex, () => trendPoints, showTrend]].forEach(([selector, index, points, show]) => {
       $(selector).addEventListener('keydown', e => {
         if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
           e.preventDefault(); show(e.key === 'Home' ? 0 : e.key === 'End' ? points().length - 1 : index() + (e.key === 'ArrowLeft' ? -1 : 1));
@@ -211,7 +183,7 @@
       const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8;'}));
       const a = el('a'); a.href = url; a.download = 'Evo-筛选对局.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
-    render(); distribution(); drawScatter();
+    render(); distribution();
     const viewTabs = Array.from(root.querySelectorAll('[data-view-tab]'));
     function selectView(name) {
       viewTabs.forEach(tab => {
@@ -220,9 +192,9 @@
         tab.tabIndex = active ? 0 : -1;
       });
       root.querySelectorAll('[data-view-panel]').forEach(panel => { panel.hidden = panel.dataset.viewPanel !== name; });
-      $('[data-metric]').closest('label').hidden = name === 'scatter';
+      $('[data-metric]').closest('label').hidden = ['combat', 'scatter', 'outcomes'].includes(name) || (name === 'compare' && $('[data-profile-toggle]').checked);
       if (name === 'trend') drawTrend();
-      if (name === 'scatter') drawScatter();
+      root.dispatchEvent(new CustomEvent('analysis-view', {detail: name}));
     }
     viewTabs.forEach((tab, i) => {
       tab.addEventListener('click', () => selectView(tab.dataset.viewTab));
@@ -238,7 +210,8 @@
     new ResizeObserver(() => {
       if (root.clientWidth === observedWidth) return;
       observedWidth = root.clientWidth;
-      drawTrend(); drawScatter();
+      if (!$('[data-trend]').closest('[data-view-panel]').hidden) drawTrend();
+      root.dispatchEvent(new CustomEvent('analysis-resize'));
     }).observe(root);
   }
 

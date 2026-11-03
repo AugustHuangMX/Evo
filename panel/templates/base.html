@@ -17,7 +17,7 @@
   })();
 </script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-{% if request.endpoint == 'stats' %}<link rel="stylesheet" href="{{ url_for('static', filename='analytics.css') }}">{% endif %}
+{% if request.endpoint == 'stats' %}<link rel="stylesheet" href="{{ url_for('static', filename='analytics.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='combat.css') }}">{% endif %}
 </head>
 <body{% if request.endpoint == 'stats' %} class="data-page"{% endif %}>
 {% if in_app %}

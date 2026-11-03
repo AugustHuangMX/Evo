@@ -12,6 +12,42 @@ import storage
 import telemetry
 
 
+def combat_checks(row):
+    base = {**dict(row), "kills": 2, "assists": 3, "knockdowns": 7, "damage": 900, "survival_time": 600,
+            "squad_kills": 10, "rank_tier": "黄金", "mode": "ranked", "review_note": None}
+    mates = [{"match_id": base["match_id"], "slot": "left", "name": "甲", "player_id": "1", "kills": 5, "damage": 600},
+             {"match_id": base["match_id"], "slot": "right", "name": "乙", "player_id": "2", "kills": 3, "damage": 300}]
+
+    def out(r=base, ms=mates):
+        return analytics.payload([r], panel_app.COUNTED_KILLS_NOTES, teammates=ms)["rows"][0]
+
+    normal = out()
+    fallback = out({**base, "squad_kills": None})
+    partial = out({**base, "squad_kills": None}, mates[:1])
+    duplicate = out({**base, "squad_kills": None}, [mates[0], {**mates[1], "player_id": "1"}])
+    zeros = out({**base, "kills": 0, "assists": 0, "damage": 0, "squad_kills": 0, "survival_time": 0},
+                [{**m, "damage": 0, "kills": 0} for m in mates])
+    counted = out({**base, "review_note": panel_app.COUNTED_KILLS_NOTES[0]})
+    inconsistent = out({**base, "kills": 11, "assists": 5})
+    missing = out({**base, "assists": None})
+    return {
+        "战斗指标：K+A 不叠加击倒": normal["ka"] == 5 and normal["knockdowns"] == 7,
+        "按存活时间归一化：900伤害/10分钟=90；K+A=5；击倒=7": normal["damage_per_min"] == 90 and normal["ka_per10"] == 5 and normal["knocks_per10"] == 7,
+        "小队占比：K+A参与50%、击杀占比20%、伤害占比50%": normal["kill_participation"] == 50 and normal["kill_share"] == 20 and normal["damage_share"] == 50,
+        "小队击杀缺失：只有本人和两名完整队友才补足分母": fallback["squad_kills"] == 10 and fallback["squad_source"] == "本人及两名队友击杀合计",
+        "不完整队友：不估算全队击杀或伤害占比": partial["squad_kills"] is None and partial["damage_share"] is None,
+        "重复识别的队友不能当作两个人": duplicate["squad_kills"] is None and duplicate["damage_share"] is None,
+        "同名但ID不同的真实队友仍是两个人": out(base, [mates[0], {**mates[1], "name": "甲"}])["damage_share"] == 50,
+        "零分母留空，真实零K+A仍保留": zeros["damage_per_min"] is None and zeros["kill_participation"] is None and zeros["damage_share"] is None and zeros["ka"] == 0,
+        "经验值页的击杀和助攻计分次数都不作实际战斗数据": counted["kills"] is None and counted["assists"] is None and counted["ka"] is None and counted["knockdowns"] == 7 and panel_app.group_numbers([{**base, "review_note": panel_app.COUNTED_KILLS_NOTES[0]}])["avg_assists"] == "—",
+        "矛盾占比留空而不是截断成100%": inconsistent["kill_participation"] is None and inconsistent["kill_share"] is None,
+        "助攻缺失时不把它作0，击倒仍可独立展示": missing["ka"] is None and missing["knockdowns"] == 7,
+        "记录段位可用于比较，不计算不存在的死亡数和转化率": normal["rank_tier"] == "黄金" and not {"deaths", "kd", "conversion"} & normal.keys(),
+        "小队分析不把队友姓名和ID传到浏览器": not {"name", "player_id", "teammates"} & normal.keys(),
+        "非排位不沿用历史段位；异常名次不进入名次分析": out({**base, "mode": "pubs", "placement": 0})["rank_tier"] == "非排位 / 未识别模式" and out({**base, "placement": 21})["placement"] is None,
+    }
+
+
 def main():
     path = storage.DB_PATH.parent / "analytics.db"
     conn = storage.connect(path)
@@ -86,6 +122,7 @@ def main():
         session["account"] = account
     scoped = client.get('/stats?range=all').get_data(as_text=True)
     checks["账号边界：其他账号的对局不进入图表"] = '999999' not in scoped
+    checks.update(combat_checks(rows[0]))
     return report(checks)
 
 
