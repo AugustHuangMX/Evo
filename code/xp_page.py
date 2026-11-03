@@ -55,17 +55,19 @@ def split_count_points(digits):
 def current_rank(next_text, names=None):
     """由"下一段位：钻石 I"推出当前段位（钻石, II）；"下一段位：大师" → (钻石, I)；
     "下一段位：Apex 猎杀者" → (大师, None)（大师不分段）。段位名和顺序见 config/ranks.json。读不懂返回 None。
+    段位名在这一行里哪儿都行，后面跟着段：第 31 赛季起写成"43 RP ▶ 黄金 IV"（还差多少分 ▶ 下一段位）。
     names：画面上的段位名 → 简体段位名（ranks.tier_names，别的语言如 "Diamond"）；不给就是简体。"""
-    name = next_text.split(":")[-1].replace(" ", "")
+    text = next_text.split(":")[-1].replace(" ", "")
+    name = text.lower()
     tiers, divisions = ranks.TIERS, ranks.DIVISIONS
     names = names or ranks.tier_names()
     keys = {shown: shown.replace(" ", "").lower() for shown in names}  # 比较时不管空格和大小写（"Apex猎杀者"）
-    shown = next((s for s in sorted(names, key=lambda s: len(keys[s]), reverse=True)
-                  if name.lower().startswith(keys[s])), None)
-    if shown is None:
+    found = [(name.find(keys[s]), -len(keys[s]), s) for s in names if keys[s] in name]
+    if not found:
         return None
+    start, _, shown = min(found)  # 最靠前的段位名；同一位置取最长的
     tier = names[shown]
-    roman = "".join(ROMAN.get(c, c) for c in name[len(keys[shown]):])
+    roman = "".join(ROMAN.get(c, c) for c in text[start + len(keys[shown]):])  # 段（大小写不变："IV"）
     t = tiers.index(tier)
 
     def top_of_previous():  # 当前是上一个段位的最高段（不分段的段位没有段）
@@ -84,15 +86,23 @@ def current_rank(next_text, names=None):
     return (tier, divisions[d - 1]) if d > 0 else top_of_previous()
 
 
-def read_xp(engine, img, cfg):
-    """识别一张经验值页。返回 (结果, 问题列表)。结果里读不出的项为 None。"""
-    raw = {}
-    for name, spec in cfg["fields"].items():
-        text, score = read_text(engine, img, spec, cfg)
+def read_field(engine, img, name, spec, cfg):
+    """读一项，返回文字（置信度不够为 ""）。这一项写了 pattern（格式）时，读到的不合格式就依次再读 also 里的
+    几处（每处只写和主区域不一样的项，如第 30 赛季的位置和写法，见 xp.json），都不合格式返回 ""。"""
+    for spot in [spec, *({**spec, **other} for other in spec.get("also", []))]:
+        text, score = read_text(engine, img, spot, cfg)
         if name != "next_rank":  # 数字那几行修正常见误读（英文把"0 RP"读成"O RP"）；段位名不改（"BRONZE"里有 O）
             for wrong, right in cfg.get("replace", {}).items():
                 text = text.replace(wrong, right)
-        raw[name] = text if score is not None and score >= cfg["min_score"] else ""
+        text = text if score is not None and score >= cfg["min_score"] else ""
+        if "pattern" not in spot or re.match(spot["pattern"], text):
+            return text
+    return ""
+
+
+def read_xp(engine, img, cfg):
+    """识别一张经验值页。返回 (结果, 问题列表)。结果里读不出的项为 None。"""
+    raw = {name: read_field(engine, img, name, spec, cfg) for name, spec in cfg["fields"].items()}
     patterns = cfg["patterns"]
     glued = cfg.get("split_glued", True)  # 次数和分数连在一起时（"00排位点数"）去拆；英文中间隔得远，不会连在一起，不拆
 

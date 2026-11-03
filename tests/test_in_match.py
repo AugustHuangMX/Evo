@@ -286,6 +286,13 @@ def rule_checks():
     g = game(130, 99, name="Alt")
     lobby(140, 30, "大师", None)
     out["other_account"] = pick(storage.get_match(conn, g), "needs_review")
+    # 大厅之前最近的那一局没有段位：补上这次读到的；那一局结束一小时以后才回大厅的不补（中间可能换了赛季、段位重置）
+    h = game(150, 10)
+    lobby(160, 40, "大师", None)
+    out["fill_rank"] = pick(storage.get_match(conn, h), "rank_tier", "rank_progress")
+    i = game(170, 5)
+    lobby(170 + 7 * 24 * 60, 688, "白银", "I")
+    out["fill_rank_late"] = pick(storage.get_match(conn, i), "rank_tier", "rank_progress")
 
     # 各来源的优先级
     def match_with(readings, note=None):
@@ -355,6 +362,8 @@ def main():
         "大厅校准：对上了，不标": r["agree"] == (0,),
         "大厅校准：跨了大段（升段奖励、降段保护），不核对": r["cross_tier"] == (0,),
         "大厅校准：别的账号的局不算进来": r["other_account"] == (0,),
+        f"大厅之前那一局没有段位：补上大厅读到的（{r['fill_rank']}）": r["fill_rank"] == ("大师", 40),
+        f"那一局结束一周后才回大厅（中间换了赛季）：不补（{r['fill_rank_late']}）": r["fill_rank_late"] == (None, None),
         f"对局中比总结页少（最后一秒没截到）：用总结页的，不标；老板分、RP 用对局中的（{r['hud_less']}）":
             r["hud_less"] == (3, 900, 2, 30, "对局中", 0),
         f"对局中比总结页多：用总结页的，标待确认（{r['hud_more']}）":

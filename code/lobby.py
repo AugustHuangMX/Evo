@@ -54,6 +54,11 @@ class LobbyReader:
         result = self.engine(crop(frame, spec["roi"], {**self.cfg, "upscale": spec["upscale"]}, spec.get("anchor")))
         return list(zip(result.txts or (), result.scores or ()))
 
+    @staticmethod
+    def _spots(spec):
+        """主区域，再加上 also 里的几处（只写和主区域不一样的项，如第 30 赛季的位置）：前面的读不到才读后面的。"""
+        return [spec, *({**spec, **other} for other in spec.get("also", []))]
+
     def read(self, frame):
         """读一张大厅截图。返回字典：name、tier、division、progress、score（读不出的为 None），
         以及 text_division、emblem（文字和徽章各自读到的段，写日志用）。"""
@@ -62,6 +67,7 @@ class LobbyReader:
                "text_division": None, "emblem": None}
         panel, patterns = c["panel"], c["patterns"]
         names = ranks.tier_names(c.get("language"))
+        whole = None  # 只有一个分数的那一行（"16523 排位点数"）：只在段位不分段时算数，见下面
         for text, score in self._lines(frame, panel):
             if score < panel["min_score"]:
                 continue
@@ -70,20 +76,30 @@ class LobbyReader:
                 out["tier"] = tier[0]
                 out["text_division"] = tier[1] if score >= c["text_division_score"] else None
             compact = text.replace(" ", "")
-            m = re.search(patterns["progress"], compact) or re.match(patterns["whole_progress"], compact)
+            m = re.search(patterns["progress"], compact)
             if m and out["progress"] is None:
                 out["progress"] = int(m[1])
-        emblem = c["emblem"]
-        for text, score in self._lines(frame, emblem):
-            if score >= emblem["min_score"] and roman(text):
-                out["emblem"] = roman(text)
+            m = re.match(patterns["whole_progress"], compact)
+            if m and whole is None:
+                whole = int(m[1])
+        if out["progress"] is None and out["tier"] is not None and not ranks.has_divisions(out["tier"]):
+            # 大师、猎杀者不分段，可能只写一个分数。分段的段位不用它：第 31 赛季起"688/750 RP"右边还有
+            # "▶ 62 RP"（离下一段还差多少），"▶"没读出来时就是"62RP"
+            out["progress"] = whole
+        for emblem in self._spots(c["emblem"]):
+            out["emblem"] = next((roman(text) for text, score in self._lines(frame, emblem)
+                                  if score >= emblem["min_score"] and roman(text)), None)
+            if out["emblem"]:
                 break
         if out["tier"] is not None:
             if ranks.has_divisions(out["tier"]):
                 out["division"] = out["emblem"] or out["text_division"]
             out["score"] = ranks.score(out["tier"], out["division"], out["progress"])
-        n = c["name"]
-        out["name"] = read_name(self.engine, Snip(frame, n["roi"], c["base_resolution"], n.get("anchor")), n["left"], n["min_score"])
+        for n in self._spots(c["name"]):
+            out["name"] = read_name(self.engine, Snip(frame, n["roi"], c["base_resolution"], n.get("anchor")),
+                                    n["left"], n["min_score"])
+            if out["name"]:
+                break
         return out
 
 

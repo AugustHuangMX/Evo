@@ -6,15 +6,22 @@
 - 对不上，或者缺两局以上：这几局标"待确认"，备注写出差多少；总分仍以大厅为准
 - 跨了大段（如钻石 → 大师、钻石 → 白金）：升大段可能有奖励分、降大段有保护，前后之差 ≠ 各局 RP 之和，只写日志不标
 - 两次之间没有记下任何排位局但总分变了（Evo 没开的时候打过）：只写日志
-- 大厅之前最近的那一局没有段位（没进经验值页）：它结束后的段位就是这次大厅读到的，顺便补上（匹配等不算排位的局不补）
+- 大厅之前最近的那一局没有段位（没进经验值页）：它结束后的段位就是这次大厅读到的，顺便补上（匹配等不算排位的局不补；
+  那一局结束一小时以后才读到的大厅不补，见 FILL_WITHIN）
 只看同一个玩家名的局（多账号），还不知道玩家名的局也算进去。
 """
+
+from datetime import datetime, timedelta
 
 import ranks
 import storage
 from post_match import SOURCE_LOBBY, settle
 
 RP_RANGE = (-200, 600)  # 补出来的 RP 不在这个范围里，说明中间还有别的变化（掉线惩罚、赛季重置……），不补
+# 一局结束多久以内读到的大厅，才把段位补给那一局。打完回大厅一般只要几分钟；隔得久了中间可能换了赛季（段位重置）、
+# 在别处打过：2026-11-03 第 31 赛季开始时，上一局是 10-27 没有段位的钻石局，会被补成新赛季的白银 I
+FILL_WITHIN = timedelta(hours=1)
+STAMP = "%Y-%m-%d %H:%M:%S"  # 数据库里时间的写法
 
 
 def _same_player(row_name, name):
@@ -84,6 +91,9 @@ def _fill_last_rank(conn, reading, games, previous, log):
         return  # 已经有段位；或者是匹配等不算排位的局：段位不会变，不补
     if previous and previous[-1]["read_at"] >= last["ended_at"]:
         return  # 这一局之后已经回过大厅了，那次才是它结束后的段位
+    if datetime.strptime(reading["read_at"], STAMP) - datetime.strptime(last["ended_at"], STAMP) > FILL_WITHIN:
+        log(f"           编号 {last['match_id']} 没有段位：结束一小时以后才回到大厅（中间可能换了赛季），不补")
+        return
     storage.update_match(conn, last["match_id"], {"rank_tier": reading["rank_tier"],
                                                   "rank_division": reading["rank_division"],
                                                   "rank_progress": reading["rank_progress"]})

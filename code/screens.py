@@ -150,10 +150,11 @@ class ScreenDetector:
         return float(np.mean(np.abs(region - before))) <= limit * max(float(np.mean(np.abs(before))), 1e-6)
 
     def has_keywords(self, frame, name):
-        """第 2 步：用识别引擎读检查区域，关键字是不是全都在（不管空格和大小写：英文常读成"SQUADELIMINATED"）。"""
+        """第 2 步：用识别引擎读检查区域，关键字是不是全都在（不管空格和大小写：英文常读成"SQUADELIMINATED"）。
+        一个关键字里用"|"隔开几种写法（如新旧赛季的"RP总计|排位点数总计"），有一种在就算。"""
         spec = self.cfg["screens"][name]
         text = compact("".join(t for t, _ in read_lines(self.engine, frame, spec["roi"], {**self.cfg, **spec})))
-        return all(compact(k) in text for k in spec["keywords"])
+        return all(any(compact(k) in text for k in keyword.split("|")) for keyword in spec["keywords"])
 
     def check(self, frame, name):
         """这一帧是不是这个画面：外观像了，再读关键字（文字轮廓和上次读到关键字时几乎一样就不再读）。"""
