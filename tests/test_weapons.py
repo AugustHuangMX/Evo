@@ -187,8 +187,8 @@ def panel_checks():
     conn.close()
     panel_app.app.config.update(DB=path, TESTING=True)
     client = panel_app.app.test_client()
-    recent = client.get("/stats").get_data(as_text=True)  # 卡片
-    recent_full = client.get("/stats/weapons").get_data(as_text=True)  # 完整的表格
+    recent = client.get("/stats?range=30").get_data(as_text=True)  # 卡片（默认是本赛季，这里测近 30 局）
+    recent_full = client.get("/stats/weapons?range=30").get_data(as_text=True)  # 完整的表格
     everything = client.get("/stats?range=all").get_data(as_text=True)
     empty_path = FOLDER / "no_weapons.db"
     empty_path.unlink(missing_ok=True)

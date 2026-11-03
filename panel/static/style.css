@@ -354,7 +354,12 @@ table.matches { width: 100%; min-width: 900px; border-collapse: collapse; }
 .small { font-size: 13px; }
 code { font-family: Consolas, monospace; font-size: 13px; padding: 1px 6px; border-radius: 4px; background: var(--inset); border: 1px solid var(--border); }
 .empty-card { padding: 40px; text-align: center; color: var(--muted); }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+/* 这个范围里还没有对局（新赛季刚开始，_range.html）：两行字居中，链接带下划线 */
+.range-empty { text-align: center; color: var(--muted); line-height: 1.7; }
+.range-empty p { margin: 0; }
+.range-empty p + p { margin-top: 4px; }
+.list-card .range-empty { padding: 24px 0 12px; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .card-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
 
 .ov-top { display: grid; grid-template-columns: minmax(300px, 410px) minmax(0, 1fr); gap: 20px; }

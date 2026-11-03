@@ -2,6 +2,7 @@
 {% from "_legend.html" import legend_icon %}
 {% from "_share.html" import share_button, share_dialog with context %}
 {% from "_radar.html" import radar_card, radar_script with context %}
+{% from "_range.html" import range_seg, range_empty_text with context %}
 {% block title %}总览 · Evo{% endblock %}
 
 {% macro follow_card() %}
@@ -45,7 +46,7 @@
     <div class="label">当前段位</div>
     <div class="rank-empty">段位按账号分开。在右上角选一个账号，就能看到它的段位。</div>
     {% elif rank %}
-    <div class="label">当前段位 · 截至 {{ rank.as_of }}</div>
+    <div class="label">{{ '上赛季结束时的段位' if range_key == 'last' else '当前段位' }} · 截至 {{ rank.as_of }}</div>
     <div class="rank-head">
       {% if rank.icon %}
       <div class="rank-emblem tier-{{ rank.tier_class }}" aria-hidden="true">
@@ -60,9 +61,13 @@
         <div class="rank-points"><span class="num" data-count>{{ rank.progress }}</span><span class="unit"> 排位点数</span></div>
       </div>
     </div>
+    {% elif range_key == 'last' %}
+    <div class="label">上赛季结束时的段位</div>
+    <div class="rank-empty">上赛季没有读到段位。</div>
     {% else %}
     <div class="label">当前段位</div>
-    <div class="rank-empty">还没有段位数据。每局结束后切到经验值页、等数字停下再离开，这里就会显示段位。</div>
+    {# 赛季：只看这个赛季读到的段位（新赛季刚开始、还没回过大厅时是空的） #}
+    <div class="rank-empty">{{ '本赛季还没有读到段位。回到大厅，或者' if range_key == 'season' else '还没有段位数据。' }}每局结束后切到经验值页、等数字停下再离开，这里就会显示段位。</div>
     {% endif %}
     <div class="mini-stats">
       <div><div class="label">{{ ranges[range_key] }} RP</div><div class="mini num {{ 'rp-good' if range_rp.good else ('rp-bad' if range_rp.good is false else 'rp-none') }}" data-count>{{ range_rp.text }}</div></div>
@@ -74,11 +79,7 @@
   <section class="card chart-card" aria-label="RP 走势">
     <div class="card-head">
       <h2>RP 走势</h2>
-      <div class="seg" role="group" aria-label="统计范围">
-        {% for key, label in ranges.items() %}
-        <a href="{{ url_for('overview', range=key) if key != '30' else url_for('overview') }}" class="{{ 'on' if range_key == key }}">{{ label }}</a>
-        {% endfor %}
-      </div>
+      {{ range_seg('overview') }}
     </div>
     {% if account_view.all %}
     <div class="chart-empty">RP 走势按账号分开。在右上角选一个账号查看。</div>
@@ -122,8 +123,12 @@
   <section class="card list-card" aria-label="最近对局">
     <div class="card-head">
       <h2>最近对局</h2>
-      <a class="muted small" href="{{ url_for('matches') }}">查看全部 →</a>
+      {# 战绩页没有"近 30 局"：近 30 局、全部都去全部赛季 #}
+      <a class="muted small" href="{{ url_for('matches', range={'last': 'last', '30': 'all', 'all': 'all'}.get(range_key)) }}">查看全部 →</a>
     </div>
+    {% if not recent %}
+    <div class="range-empty">{{ range_empty_text('overview') }}</div>
+    {% else %}
     <ul class="recent">
       {% for r in recent %}
       <li>
@@ -140,6 +145,7 @@
       </li>
       {% endfor %}
     </ul>
+    {% endif %}
   </section>
   {{ follow_card() }}
   </div>

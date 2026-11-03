@@ -212,10 +212,10 @@ def main():
     client = panel_app.app.test_client()
     with client.session_transaction() as s:
         s["account"] = main_id  # 大号（没选时默认看最近玩过的小号）
-    recent = client.get("/stats").get_data(as_text=True)
+    recent = client.get("/stats?range=30").get_data(as_text=True)  # 默认是本赛季（2026-11-03），这里测近 30 局
     cards = client.get("/stats?range=all").get_data(as_text=True)
     everything = "".join(client.get(f"/stats/{part}?range=all").get_data(as_text=True) for part in ("mates", "legends"))
-    recent_mates = client.get("/stats/mates").get_data(as_text=True)
+    recent_mates = client.get("/stats/mates?range=30").get_data(as_text=True)
     overview_all = client.get("/?range=all").get_data(as_text=True)
     unknown = client.get("/stats/x").status_code
     nav = re.findall(r'<nav class="nav".*?</nav>', recent, re.S)[0]

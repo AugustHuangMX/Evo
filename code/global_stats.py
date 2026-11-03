@@ -34,7 +34,10 @@ TIMEOUT = 15  # 秒：和匿名统计一样，国内有的网络到 Cloudflare �
 MAX_SIZE = 4 * 1024 * 1024
 FORMAT = 1  # 汇总的格式版本（服务器的 SUMMARY_NAME = v1）
 
-RANGES = {"all": "全部", "7d": "近 7 天"}  # 赛季以后再说（2026-10-24 用户决定；数据 10-22 才开始，"全部"就是本赛季）
+# 2026-11-03 用户决定加"本赛季"（默认，和总览页、数据页"我的"一样从 0 开始）。服务器只知道每局是哪天打的（玩家电脑上的日期），
+# 本赛季从开赛后第一个整天算起（汇总里的 season_from，见 server/stats/worker.js 的 SEASON）
+RANGES = {"season": "本赛季", "all": "全部", "7d": "近 7 天"}
+DEFAULT_RANGE = "season"
 MODES = {"ranked": "排位", "pubs": "匹配"}
 TIERS = {"all": "全部段位", "low": "白金及以下", "diamond": "钻石", "master": "大师以上"}  # 只有排位分段位
 TIER_ORDER = ("菜鸟", "青铜", "白银", "黄金", "白金", "钻石", "大师", "Apex 猎杀者")
@@ -115,8 +118,8 @@ def fetch(now=None):
 # ---------- 页面上显示的 ----------
 
 def choose(args):
-    """网址里的筛选条件 → (范围, 模式, 段位)。不认识的用默认（全部、排位、全部段位）；匹配不分段位。"""
-    range_key = args.get("range") if args.get("range") in RANGES else "all"
+    """网址里的筛选条件 → (范围, 模式, 段位)。不认识的用默认（本赛季、排位、全部段位）；匹配不分段位。"""
+    range_key = args.get("range") if args.get("range") in RANGES else DEFAULT_RANGE
     mode = args.get("mode") if args.get("mode") in MODES else "ranked"
     tier = args.get("tier") if mode == "ranked" and args.get("tier") in TIERS else "all"
     return range_key, mode, tier
@@ -131,6 +134,10 @@ def _mine(rows, summary, range_key, mode, tier):
     start = None
     if range_key == "7d":
         start = summary.get("recent_from") or (date.today() - timedelta(days=6)).isoformat()
+    elif range_key == "season":
+        start = summary.get("season_from")
+        if start is None:  # 老的汇总（服务器还没按赛季算）：没有本赛季，自己的也不算
+            return []
     return [r for r in rows if _mode_of(r) == mode
             and (start is None or (r["ended_at"] or "")[:10] >= start)
             and (tier == "all" or TIER_GROUP.get(r["rank_tier"]) == tier)]
@@ -271,6 +278,8 @@ def page(summary, rows, mates, range_key, mode, tier, your_tier=None, icons=None
         "weapons": weapon_rows, "weapon_games": part.get("weapon_games", 0),
         "you_games": you["games"], "tiles": tiles,
         "tiers": tier_rows, "tier_players": spread.get("players", 0), "your_tier": your_tier,
+        # 本赛季：从哪天算起（"11/04 起"）；老的汇总里没有（服务器还没按赛季算）时页面上说一句
+        "season_from": summary.get("season_from"), "season_missing": range_key == "season" and not summary.get("season_from"),
     }
 
 

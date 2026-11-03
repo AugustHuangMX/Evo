@@ -37,6 +37,7 @@ import panel_seasons
 import radar
 import ranks
 import screenshots
+import seasons
 import sounds
 import storage
 import telemetry
@@ -93,8 +94,52 @@ try:  # 段位图标的铭牌位置（python code/icons.py 生成）；没有图
 except (OSError, ValueError):
     RANK_PLATES = {}
 DAY_START_HOUR = 5  # "今日"从早上 5 点算起：打到凌晨的局仍算前一天
-RANGES = {"30": "近 30 局", "all": "全部"}
+# 总览页、数据页的范围（2026-11-03 用户决定：新赛季从 0 开始算，默认本赛季，能切到上赛季；赛季见 seasons.py）
+RANGES = {"season": "本赛季", "last": "上赛季", "30": "近 30 局", "all": "全部"}
+DEFAULT_RANGE = "season"
+SHARE_RANGES = ("30", "all")  # 分享的概况卡片照旧只有近 30 局 / 全部（用户没要求按赛季）
 CHART_W, CHART_H = 600, 200  # 走势图的坐标范围（网页上会按卡片宽度拉伸）
+
+
+def choose_range(args):
+    """网址里的范围 → 范围的键；没写、不认识、配置里没有上赛季时用默认（本赛季）。"""
+    key = args.get("range")
+    return key if key in ranges_now() else DEFAULT_RANGE
+
+
+def range_season(range_key):
+    """范围是"本赛季 / 上赛季"时是第几赛季，别的范围返回 None。"""
+    return {"season": seasons.current, "last": seasons.previous}.get(range_key, lambda: None)()
+
+
+def ranges_now():
+    """这时候能选的范围（配置里没有上一个赛季时没有"上赛季"）。"""
+    return {k: v for k, v in RANGES.items() if k != "last" or seasons.previous() is not None}
+
+
+def range_titles():
+    """范围按钮悬停时的说明：本赛季、上赛季是第几赛季、从哪天起。"""
+    out = {}
+    for key in ("season", "last"):
+        number = range_season(key)
+        if number is not None:
+            start, end = seasons.bounds(number)
+            out[key] = f"{seasons.label(number)}：{start[5:10].replace('-', '/')} 起" + (
+                f"，到 {end[5:10].replace('-', '/')}" if end else "")
+    return out
+
+
+def range_scope(rows, lobby, range_key):
+    """一个范围里的局，和段位卡片、走势图、六维图分段用的局和大厅读数：
+    赛季（本赛季 / 上赛季）只用这个赛季的（上赛季的段位卡片就是上赛季结束时的段位）；近 30 局、全部用全部的。
+    返回 (范围里的局, 段位用的局, 段位用的大厅读数)。"""
+    if range_key == "30":
+        return rows[-30:], rows, lobby
+    if range_key == "all":
+        return rows, rows, lobby
+    number = range_season(range_key)
+    in_season = seasons.pick(rows, number)
+    return in_season, in_season, seasons.pick(lobby, number, key="read_at")
 
 # ---- 传奇头像（战绩页、总览页）----
 
@@ -204,6 +249,7 @@ def template_globals():
         "db_name": Path(app.config["DB"]).name,
         "nav": NAV,
         "switch": page_switch(),
+        "default_range": DEFAULT_RANGE,  # 范围按钮：默认的那个不写进网址（_range.html）
         # 检查更新：还没问过要不要自动检查 → 页面顶部问一次；已知有新版本 → 顶部提示条（一键更新的各个阶段见 updater.state）
         "ask_update": ask_update,
         # 开机自启：回答了上面那个以后再问（一次只问一件事）
@@ -305,8 +351,11 @@ def page_switch():
 @app.template_global()
 def url_with(**changes):
     """在当前网址的筛选条件基础上，改动其中几项（值为 None 表示去掉这一项）。
-    改了展开哪一局（open）时，"详情与修改"（detail）也收起，除非同时指定了 detail。"""
+    改了展开哪一局（open）时，"详情与修改"（detail）也收起，除非同时指定了 detail。
+    网址里没写赛季、是推断出来的（点开上赛季的一局、只看待确认，见 match_range）：写上，翻页、换筛选时不跳回本赛季。"""
     args = request.args.to_dict()
+    if "range" not in args and g.get("match_range") not in (None, DEFAULT_RANGE):
+        args["range"] = g.match_range
     if "open" in changes and "detail" not in changes:
         args.pop("detail", None)
     for key, value in changes.items():
@@ -524,7 +573,7 @@ def stat_cards(rows):
         {"label": "场均击杀", "value": n["avg_kills"]},
         {"label": "场均伤害", "value": n["avg_damage"]},
         {"label": "前五率", "value": n["top5"]},
-        {"label": "胜率", "value": n["win_rate"], "accent": True},
+        {"label": "胜率", "value": n["win_rate"], "accent": n["win_rate"] != "—"},  # 新赛季还没有对局时"—"不标红
         {"label": "统计局数", "value": str(n["games"])},
     ]
 
@@ -917,8 +966,8 @@ def share_today_card(rows, lobby, player):
 
 
 def share_overview_card(rows, lobby, range_key, player):
-    """概况卡片：段位、RP 走势、统计数字、传奇表现，范围和总览页一样（近 30 局 / 全部）。
-    以后能按赛季看了，改成按赛季（见 todo.md）。"""
+    """概况卡片：段位、RP 走势、统计数字、传奇表现，近 30 局 / 全部（总览页选的是赛季时用近 30 局；
+    2026-11-03 用户没要求分享按赛季）。"""
     in_range = rows[-30:] if range_key == "30" else rows
     days = [f"{int(r['ended_at'][5:7])}月{int(r['ended_at'][8:10])}日" for r in in_range if r["ended_at"]]
     period = None  # 第一局到最后一局的日期，如"10月19日 – 10月21日"（同一天只写一个）
@@ -964,48 +1013,54 @@ def radar_card(rows, in_range, lobby):
 def radar_fragment():
     """只有六维图那张卡片：页面在后台下载好全体玩家的数据后，用它换掉旧的卡片。size：small（总览页）/ big（数据页）。"""
     size = "small" if request.args.get("size") == "small" else "big"
-    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    range_key = choose_range(request.args)
     names = account_view()["names"]
-    rows = storage.all_matches(db(), names)
-    in_range = rows[-30:] if range_key == "30" else rows
+    in_range, rank_rows, rank_lobby = range_scope(storage.all_matches(db(), names), storage.lobby_readings(db(), names),
+                                                  range_key)
     return render_template("radar_fragment.html", size=size, range_label=RANGES[range_key],
-                           radar=radar_card(rows, in_range, storage.lobby_readings(db(), names)))
+                           radar=radar_card(rank_rows, in_range, rank_lobby))
 
 
 # ---------- 页面 ----------
 
 @app.route("/")
 def overview():
-    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    range_key = choose_range(request.args)
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
-    in_range = rows[-30:] if range_key == "30" else rows
-    today = today_matches(rows)
     lobby = storage.lobby_readings(db(), names)  # 每次回大厅读到的段位（总分以它为准）
-    # 分享：今日战绩、概况（范围和这一页一样）。"全部账号"时不能分享（几个账号的段位混在一起）
+    # 赛季：段位卡片、走势图、最近对局也只看这个赛季（上赛季的段位卡片 = 上赛季结束时的段位）
+    in_range, rank_rows, rank_lobby = range_scope(rows, lobby, range_key)
+    today = today_matches(rows)
+    # 分享：今日战绩、概况（近 30 局 / 全部，页面是赛季时用近 30 局）。"全部账号"时不能分享（几个账号的段位混在一起）
     # review：其中有几局待确认（对话框里提醒：确认后图上的数字更准）
     share = None
     if rows and not account_view()["all"]:
+        share_range = range_key if range_key in SHARE_RANGES else "30"
+        shared = rows if share_range == "all" else rows[-30:]
         share = {"player": share_player(rows), "options": [
             {**share_options("today"), "label": "今日战绩", "disabled": None if today else "今天还没有对局",
              "review": sum(1 for r in today if r["needs_review"])},
-            {**share_options("overview", range=range_key), "label": f"{RANGES[range_key]}概况",
-             "review": sum(1 for r in in_range if r["needs_review"])},
+            {**share_options("overview", range=share_range), "label": f"{RANGES[share_range]}概况",
+             "review": sum(1 for r in shared if r["needs_review"])},
         ]}
 
     return render_template(
         "overview.html",
         range_key=range_key,
-        ranges=RANGES,
-        rank=rank_card(rows, lobby),
-        chart=rp_chart(in_range, lobby),
+        ranges=ranges_now(),
+        range_titles=range_titles(),
+        season_label=seasons.label(range_season(range_key)) if range_season(range_key) else None,
+        rank=rank_card(rank_rows, rank_lobby),
+        chart=rp_chart(in_range, rank_lobby),
         range_rp=rp_sum(in_range),
         today_rp=rp_sum(today),
         today_games=len(today),
         stats=stat_cards(in_range),
-        recent=[view(r) for r in reversed(rows[-5:])],
+        recent=[view(r) for r in reversed(in_range[-5:])],
         legends=legend_bars(in_range),
-        radar=radar_card(rows, in_range, lobby),
+        radar=radar_card(rank_rows, in_range, rank_lobby),
+        in_range_count=len(in_range),
         review_count=storage.count_review(db(), names),
         total=len(rows),
         share=share,
@@ -1022,8 +1077,12 @@ def matches():
     page = max(1, request.args.get("page", 1, type=int))
     open_id = request.args.get("open", type=int)
     names = account_view()["names"]
+    range_key = g.match_range = match_range(request.args, open_id, only_review)
+    number = range_season(range_key)
+    between = seasons.bounds(number) if number is not None else None
 
-    rows, total = storage.query_matches(db(), mode, only_review, legend, PER_PAGE, (page - 1) * PER_PAGE, names)
+    rows, total = storage.query_matches(db(), mode, only_review, legend, PER_PAGE, (page - 1) * PER_PAGE, names,
+                                        between)
     rows = [view(r) for r in rows]
     if only_review and open_id is None and rows:
         open_id = rows[0]["id"]  # "只看待确认"时，自动展开第一局
@@ -1059,7 +1118,35 @@ def matches():
         editable=EDITABLE,
         maps=MATCH_MAPS,
         share=share,
+        range_key=range_key,
+        ranges=match_ranges(),
+        range_titles=range_titles(),
     )
+
+
+def match_ranges():
+    """战绩页的赛季筛选：本赛季 / 上赛季 / 全部（没有"近 30 局"：列表本来就是从新到旧分页的）。"""
+    return {k: v for k, v in ranges_now().items() if k != "30"}
+
+
+def match_range(args, open_id=None, only_review=False):
+    """战绩页的赛季筛选（2026-11-03 用户决定，默认本赛季）。网址里没写时：
+    "只看待确认"看全部赛季（待确认的局可能是上赛季的，顶部的提醒按全部算）；点开某一局（open）看那一局所在的赛季，
+    不在任何一个赛季里（配置里没有那么早的赛季）时看全部。"""
+    key = args.get("range")
+    if key in match_ranges():
+        return key
+    if only_review:
+        return "all"
+    if open_id is not None:
+        row = storage.get_match(db(), open_id)
+        stamp = row["ended_at"] if row else None
+        for key in ("season", "last"):
+            number = range_season(key)
+            if number is not None and seasons.contains(number, stamp):
+                return key
+        return "all"
+    return DEFAULT_RANGE
 
 
 PEEK_ROWS = 5  # 数据页（我的、全体玩家）每张卡片先列这么多行，完整的表格点卡片打开
@@ -1071,15 +1158,15 @@ STATS_PARTS = ("weapons", "mates", "legends", "combos")  # "我的"每张卡片�
 def stats(part=None):
     """数据页：两列卡片（2026-10-28 用户决定）：最常用武器、常一起玩的队友、传奇表现（详细版）、传奇组合，
     每张先列 PEEK_ROWS 行，点卡片打开那张的完整表格（/stats/<part>，左上角"← 数据"回来）。
-    范围按钮和总览页一样（近 30 局 / 全部）。顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
+    范围按钮和总览页一样（本赛季 / 上赛季 / 近 30 局 / 全部）。顶部切换"我的 / 全体玩家"：view=all 是全体玩家（stats_everyone）。"""
     if request.args.get("view") == "all":
         return stats_everyone(part)
     if part is not None and part not in STATS_PARTS:
         abort(404)
-    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    range_key = choose_range(request.args)
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
-    in_range = rows[-30:] if range_key == "30" else rows
+    in_range, rank_rows, rank_lobby = range_scope(rows, storage.lobby_readings(db(), names), range_key)
     all_mates = storage.all_teammates(db(), names)
     mates = teammate_table(in_range, all_mates)
     curves = None
@@ -1094,8 +1181,11 @@ def stats(part=None):
         part=part,
         peek=PEEK_ROWS,
         range_key=range_key,
-        ranges=RANGES,
+        ranges=ranges_now(),
+        range_titles=range_titles(),
+        season_label=seasons.label(range_season(range_key)) if range_season(range_key) else None,
         total=len(rows),
+        in_range_count=len(in_range),
         everyone=group_numbers(in_range),  # 参照：这个范围里的所有对局
         mates=mates,
         min_mate_games=MIN_MATE_GAMES,
@@ -1110,7 +1200,7 @@ def stats(part=None):
         weapon_all=weapon_all,
         buckets=PLACE_BUCKETS,
         # 六维图只在卡片那页（完整的表格页没有）
-        radar=None if part else radar_card(rows, in_range, storage.lobby_readings(db(), names)),
+        radar=None if part else radar_card(rank_rows, in_range, rank_lobby),
         review_count=storage.count_review(db(), names),
     )
 
@@ -1273,7 +1363,7 @@ def share_today():
 def share_overview():
     if account_view()["all"]:
         abort(404)
-    range_key = request.args.get("range") if request.args.get("range") in RANGES else "30"
+    range_key = request.args.get("range") if request.args.get("range") in SHARE_RANGES else "30"
     names = account_view()["names"]
     rows = storage.all_matches(db(), names)
     player = share_player(rows) if share_name_on() else None

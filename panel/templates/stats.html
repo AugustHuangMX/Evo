@@ -3,11 +3,12 @@
 {% from "_peek.html" import peek_foot, back_link with context %}
 {% from "_radar.html" import radar_card, radar_script with context %}
 {% from "_curves.html" import spark_cell, spark_head, curve_card, curve_script %}
+{% from "_range.html" import range_seg, range_empty_text with context %}
 {% block title %}数据 · Evo{% endblock %}
 
 {# 数据页"我的"：两列卡片（2026-10-28 用户决定），每张先列 peek 行、只放最要紧的几列；点卡片打开完整的表格
    （part = weapons / mates / legends / combos，还是这个模板，左上角"← 数据"回来）。范围跟着带过去 #}
-{% set range_arg = none if range_key == '30' else range_key %}
+{% set range_arg = none if range_key == default_range else range_key %}
 
 {% block content %}
 
@@ -36,15 +37,14 @@
 <div class="filters">
   <div class="filter">
     <span class="label">统计范围</span>
-    <div class="seg" role="group" aria-label="统计范围">
-      {% for key, label in ranges.items() %}
-      <a href="{{ url_for('stats', part=part, range=none if key == '30' else key) }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}>{{ label }}</a>
-      {% endfor %}
-    </div>
+    {{ range_seg('stats', part=part) }}
   </div>
 </div>
 
-{% if not part %}
+{% if not in_range_count %}
+{# 这个范围里还没有对局（新赛季刚开始）：不摆一排空卡片，只说清楚 #}
+<div class="card empty-card range-empty">{{ range_empty_text('stats', part=part) }}</div>
+{% elif not part %}
 {# 六维图（大图：图 + 旁边的数字表），在卡片上面占满一行 #}
 {{ radar_card(radar, 'big', ranges[range_key]) }}
 

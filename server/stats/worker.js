@@ -181,8 +181,8 @@ async function remove(body, env) {
 }
 
 // ---------- 全体玩家的汇总（GET /v1/summary）----------
-// 范围（近 7 天 / 全部）× 模式（排位 / 匹配）× 段位（排位才分：全部 / 白金及以下 / 钻石 / 大师以上），共 10 份，
-// 键是 "范围.模式.段位"，如 "all.ranked.all"、"7d.ranked.diamond"、"all.pubs.all"。
+// 范围（全部 / 近 7 天 / 本赛季）× 模式（排位 / 匹配）× 段位（排位才分：全部 / 白金及以下 / 钻石 / 大师以上），共 15 份，
+// 键是 "范围.模式.段位"，如 "all.ranked.all"、"7d.ranked.diamond"、"season.pubs.all"。
 // "匹配"是不是排位的局：匹配、其他模式，和没认出模式的局（简体中文的匹配开局画面还没加进识别规则，
 // 匹配局的模式都是空的；排位局有段位分数，几乎都认得出）。每份里：
 // - players、matches：多少个编号、多少局
@@ -202,11 +202,16 @@ async function remove(body, env) {
 //   待确认的局也算（和传奇的出场次数一样，武器和名次、RP 读得准不准无关）
 // tiers（只分范围）：每个编号最近一局排位的段位，各段位多少人
 // "近 7 天"按用户电脑上的日期，从 UTC 的今天往前数 6 天算起（recent_from）
+// "本赛季"（2026-11-03 加的）也按用户电脑上的日期（Evo 只发日期，不发几点、不发赛季），从开赛后第一个整天算起（SEASON.from）：
+// 开赛那天一半是上赛季的局（开赛在太平洋时间上午 10 点，国内是第二天凌晨 2 点），所以那天不算
 // 读数据库：每算一次大约把 matches 表读 9 遍（D1 免费额度每天读 500 万行）。2026-10-29 一万多局、每小时都算时一天读了 380 万行，
 // 改成每 6 小时算一次（用户同意）；局数再多十倍要换算法（每局进来时累加）或者开付费版
 const SUMMARY_NAME = "v1";
 const SUMMARY_CRON = "7 */6 * * *";  // 重算汇总的定时任务（wrangler.toml 的 crons 里也写着；另一个 "* * * * *" 是地图轮换）
 const RECENT_DAYS = 7;
+// 本赛季：第几赛季、从哪天算起。新赛季开始时和 Evo 的 config/seasons.json 一起改，再 wrangler deploy
+const SEASON = { number: 31, from: "2026-11-04" };
+const RANGES = ["all", "7d", "season"];
 const TOP_COMBOS = 30;
 const MIN_PLAYER_GAMES = 3;
 const MAX_POINTS = 201;
@@ -230,16 +235,16 @@ function ratio(part, whole, digits) {
   return whole ? round(part / whole, digits) : null;
 }
 
-// 这一行（某个模式 m、段位组 g、是不是近 7 天）算进哪几份汇总
+// 这一行（某个模式 m、段位组 g、是不是近 7 天、是不是本赛季）算进哪几份汇总
 function sliceKeys(row) {
-  const ranges = row.recent ? ["all", "7d"] : ["all"];
+  const ranges = ["all", ...(row.recent ? ["7d"] : []), ...(row.season ? ["season"] : [])];
   const groups = row.m === "ranked" && row.g ? ["all", row.g] : ["all"];
   return ranges.flatMap((r) => groups.map((g) => `${r}.${row.m}.${g}`));
 }
 
 function emptySlices() {
   const out = {};
-  for (const r of ["all", "7d"]) {
+  for (const r of RANGES) {
     for (const g of ["all", "low", "diamond", "master"]) out[`${r}.ranked.${g}`] = {};
     out[`${r}.pubs.all`] = {};
   }
@@ -267,12 +272,12 @@ async function makeSummary(env, now) {
          SELECT mode, tier, day, review, placement, legend, kills, damage FROM matches
          UNION ALL SELECT mode, tier, day, review, placement, mate1, mate1_kills, mate1_damage FROM matches
          UNION ALL SELECT mode, tier, day, review, placement, mate2, mate2_kills, mate2_damage FROM matches)
-       SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, legend, COUNT(*) AS n, ${PERFORMANCE},
+       SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, day >= ?2 AS season, legend, COUNT(*) AS n, ${PERFORMANCE},
          SUM(review = 0 AND placement <= 5) AS top5,
          SUM(review = 0 AND kills IS NOT NULL) AS nk, SUM(CASE WHEN review = 0 THEN kills END) AS sk,
          SUM(review = 0 AND damage IS NOT NULL) AS nd, SUM(CASE WHEN review = 0 THEN damage END) AS sd
-       FROM s WHERE legend IS NOT NULL GROUP BY m, g, recent, legend`,
-    ).bind(recentFrom),
+       FROM s WHERE legend IS NOT NULL GROUP BY m, g, recent, season, legend`,
+    ).bind(recentFrom, SEASON.from),
     // 三个传奇按名字排好：最小、中间、最大（三个都不一样，中间那个就是既不是最小也不是最大的）
     env.DB.prepare(
       `WITH c AS (
@@ -280,38 +285,38 @@ async function makeSummary(env, now) {
            min(legend, mate1, mate2) AS a, max(legend, mate1, mate2) AS z FROM matches
          WHERE legend IS NOT NULL AND mate1 IS NOT NULL AND mate2 IS NOT NULL AND legend <> mate1 AND legend <> mate2
            AND mate1 <> mate2)
-       SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, a,
+       SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, day >= ?2 AS season, a,
          CASE WHEN legend NOT IN (a, z) THEN legend WHEN mate1 NOT IN (a, z) THEN mate1 ELSE mate2 END AS b, z,
          COUNT(*) AS n, ${PERFORMANCE}
-       FROM c GROUP BY m, g, recent, a, b, z`,
-    ).bind(recentFrom),
+       FROM c GROUP BY m, g, recent, season, a, b, z`,
+    ).bind(recentFrom, SEASON.from),
     env.DB.prepare(
-      `SELECT id, ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, COUNT(*) AS n, ${PERFORMANCE},
+      `SELECT id, ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, day >= ?2 AS season, COUNT(*) AS n, ${PERFORMANCE},
          SUM(review = 0 AND placement <= 5) AS top5,
          SUM(review = 0 AND kills IS NOT NULL) AS nk, SUM(CASE WHEN review = 0 THEN kills END) AS sk,
          SUM(review = 0 AND assists IS NOT NULL) AS na, SUM(CASE WHEN review = 0 THEN assists END) AS sa,
          SUM(review = 0 AND damage IS NOT NULL) AS nd, SUM(CASE WHEN review = 0 THEN damage END) AS sd,
          SUM(${KP_GAME}) AS nkp, SUM(CASE WHEN ${KP_GAME} THEN kills + assists END) AS kpa,
          SUM(CASE WHEN ${KP_GAME} THEN kills + mate1_kills + mate2_kills END) AS kps
-       FROM matches GROUP BY id, m, g, recent`,
-    ).bind(recentFrom),
+       FROM matches GROUP BY id, m, g, recent, season`,
+    ).bind(recentFrom, SEASON.from),
     env.DB.prepare(
       `SELECT id, tier, MAX(day) AS last FROM matches WHERE mode = 'ranked' AND tier IS NOT NULL AND day IS NOT NULL
        GROUP BY id, tier`,
     ),
     env.DB.prepare(
-      `SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, w.key AS weapon, COUNT(*) AS n, SUM(w.value) AS s
-       FROM matches, json_each(matches.weapons) AS w WHERE matches.weapons IS NOT NULL GROUP BY m, g, recent, weapon`,
-    ).bind(recentFrom),
+      `SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, day >= ?2 AS season, w.key AS weapon, COUNT(*) AS n, SUM(w.value) AS s
+       FROM matches, json_each(matches.weapons) AS w WHERE matches.weapons IS NOT NULL GROUP BY m, g, recent, season, weapon`,
+    ).bind(recentFrom, SEASON.from),
     env.DB.prepare(
-      `SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, COUNT(*) AS n FROM matches
-       WHERE weapons IS NOT NULL GROUP BY m, g, recent`,
-    ).bind(recentFrom),
+      `SELECT ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, day >= ?2 AS season, COUNT(*) AS n FROM matches
+       WHERE weapons IS NOT NULL GROUP BY m, g, recent, season`,
+    ).bind(recentFrom, SEASON.from),
     // 英雄池：每个编号每个传奇用了几局（自己的局）
     env.DB.prepare(
-      `SELECT id, ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, legend, COUNT(*) AS n FROM matches
-       WHERE legend IS NOT NULL GROUP BY id, m, g, recent, legend`,
-    ).bind(recentFrom),
+      `SELECT id, ${MODE} AS m, ${TIER_GROUP} AS g, day >= ?1 AS recent, day >= ?2 AS season, legend, COUNT(*) AS n FROM matches
+       WHERE legend IS NOT NULL GROUP BY id, m, g, recent, season, legend`,
+    ).bind(recentFrom, SEASON.from),
   ])).map((r) => r.results);
 
   const legends = emptySlices();
@@ -393,7 +398,7 @@ async function makeSummary(env, now) {
   // 段位分布：每个编号最近一局排位的段位（同一天有两个段位时算高的那个）
   const rank = (tier) => TIER_ORDER.indexOf(tier);
   const tiers = {};
-  for (const [range, from] of [["all", ""], ["7d", recentFrom]]) {
+  for (const [range, from] of [["all", ""], ["7d", recentFrom], ["season", SEASON.from]]) {
     const latest = {};
     for (const row of tierRows) {
       if (row.last < from) continue;
@@ -404,7 +409,8 @@ async function makeSummary(env, now) {
     for (const row of Object.values(latest)) counts[row.tier] = (counts[row.tier] ?? 0) + 1;
     tiers[range] = { players: Object.keys(latest).length, counts };
   }
-  return { v: 1, made_at: now.toISOString(), recent_from: recentFrom, slices, tiers };
+  return { v: 1, made_at: now.toISOString(), recent_from: recentFrom, season: SEASON.number, season_from: SEASON.from,
+           slices, tiers };
 }
 
 // 算一次汇总存起来。force 为 false 时（定时任务）：没有新数据、也没换天，就不重算（少读数据库）

@@ -34,6 +34,7 @@ import test_replay
 import test_screenshots
 import test_season31
 import test_season_import
+import test_season_ranges
 import test_season_stats
 import test_seasons_page
 import test_share
@@ -77,6 +78,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "匿名统计（同意了才发、只发说好的几项、日活、重发改过的局、连不上、面板）": test_telemetry,
          "测试工具（截屏、找 Evo、诊断信息、打包、看压缩包）": test_tester,
          "截屏（dxcam 建不起来时：双显卡的笔记本设成节能、改用 mss）": test_capture,
+         "按赛季看（本赛季 / 上赛季：总览页、数据页、战绩页）": test_season_ranges,
          "游戏里的数据页（认出、读两栏、核对，录入历史赛季数据用）": test_season_stats,
          "录入历史赛季数据（新表、录入模式、记录程序读数据页）": test_season_import,
          "\"赛季\"页面（录入按钮、待核对、保存、历史赛季表、设置页那一行）": test_seasons_page}

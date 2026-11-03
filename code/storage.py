@@ -236,10 +236,17 @@ def recent_matches(conn, limit=20):
     return conn.execute("SELECT * FROM matches ORDER BY match_id DESC LIMIT ?", (limit,)).fetchall()
 
 
-def _where(mode=None, only_review=False, legend=None, names=None):
+def _where(mode=None, only_review=False, legend=None, names=None, between=None):
     """把筛选条件拼成 SQL 的 WHERE 部分。值用 ? 占位，单独传入。
-    names：只要这几个玩家名的局（一个账号用过的所有写法，见 accounts 的 raw）；None = 不按账号分。"""
+    names：只要这几个玩家名的局（一个账号用过的所有写法，见 accounts 的 raw）；None = 不按账号分。
+    between：(开始, 结束) 只要这段时间里结束的局（结束为 None = 到现在；战绩页按赛季筛选，见 seasons.bounds）。"""
     clauses, params = [], []
+    if between is not None:
+        clauses.append("ended_at >= ?")
+        params.append(between[0])
+        if between[1] is not None:
+            clauses.append("ended_at < ?")
+            params.append(between[1])
     if names is not None:
         clauses.append(f"player_name IN ({', '.join('?' for _ in names)})" if names else "0")
         params.extend(names)
@@ -254,9 +261,9 @@ def _where(mode=None, only_review=False, legend=None, names=None):
     return (" WHERE " + " AND ".join(clauses) if clauses else ""), params
 
 
-def query_matches(conn, mode=None, only_review=False, legend=None, limit=20, offset=0, names=None):
-    """按条件查询，最新的在前。返回 (这一页的记录, 符合条件的总局数)。"""
-    where, params = _where(mode, only_review, legend, names)
+def query_matches(conn, mode=None, only_review=False, legend=None, limit=20, offset=0, names=None, between=None):
+    """按条件查询，最新的在前。返回 (这一页的记录, 符合条件的总局数)。between：见 _where。"""
+    where, params = _where(mode, only_review, legend, names, between)
     rows = conn.execute(
         f"SELECT * FROM matches{where} ORDER BY ended_at DESC, match_id DESC LIMIT ? OFFSET ?",
         [*params, limit, offset],

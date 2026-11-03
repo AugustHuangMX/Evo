@@ -5,15 +5,17 @@
 - 只缺一局的 RP（比如没进经验值页、成盒后提前回了大厅）：用差值补上，来源记"大厅校准"
 - 对不上，或者缺两局以上：这几局标"待确认"，备注写出差多少；总分仍以大厅为准
 - 跨了大段（如钻石 → 大师、钻石 → 白金）：升大段可能有奖励分、降大段有保护，前后之差 ≠ 各局 RP 之和，只写日志不标
+- 两次大厅中间换了赛季（config/seasons.json，段位重置）：只写日志不标（重置后还在同一个大段时，前后之差也对不上）
 - 两次之间没有记下任何排位局但总分变了（Evo 没开的时候打过）：只写日志
 - 大厅之前最近的那一局没有段位（没进经验值页）：它结束后的段位就是这次大厅读到的，顺便补上（匹配等不算排位的局不补；
-  那一局结束一小时以后才读到的大厅不补，见 FILL_WITHIN）
+  那一局结束一小时以后才读到的大厅、那一局是上个赛季的都不补，见 FILL_WITHIN）
 只看同一个玩家名的局（多账号），还不知道玩家名的局也算进去。
 """
 
 from datetime import datetime, timedelta
 
 import ranks
+import seasons
 import storage
 from post_match import SOURCE_LOBBY, settle
 
@@ -47,6 +49,9 @@ def calibrate(conn, reading, log=print):
     missing = [m for m in ranked if m["rp_delta"] is None]
     ids = "、".join(str(m["match_id"]) for m in ranked)
     head = f"           大厅校准：上次大厅总分 {prev['score']}，这次 {reading['score']}（{diff:+d}）"
+    if seasons.of(prev["read_at"]) != seasons.of(reading["read_at"]):
+        log(f"{head}，中间换了赛季（段位重置），不核对")
+        return
     if not ranked:
         if diff:
             log(f"{head}，但中间没有记下排位局（可能 Evo 没开的时候打过），不核对")
@@ -91,6 +96,9 @@ def _fill_last_rank(conn, reading, games, previous, log):
         return  # 已经有段位；或者是匹配等不算排位的局：段位不会变，不补
     if previous and previous[-1]["read_at"] >= last["ended_at"]:
         return  # 这一局之后已经回过大厅了，那次才是它结束后的段位
+    if seasons.of(last["ended_at"]) != seasons.of(reading["read_at"]):
+        log(f"           编号 {last['match_id']} 没有段位：是上个赛季的局，不补这个赛季读到的段位")
+        return
     if datetime.strptime(reading["read_at"], STAMP) - datetime.strptime(last["ended_at"], STAMP) > FILL_WITHIN:
         log(f"           编号 {last['match_id']} 没有段位：结束一小时以后才回到大厅（中间可能换了赛季），不补")
         return

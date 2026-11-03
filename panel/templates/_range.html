@@ -1,0 +1,22 @@
+{# 范围按钮（总览页、数据页"我的"、战绩页）：本赛季 / 上赛季 / 近 30 局 / 全部，默认本赛季（2026-11-03 用户决定：
+   新赛季从 0 开始算，能切到上赛季；战绩页没有"近 30 局"）。默认的那个不写进网址；悬停写着是第几赛季、从哪天起。
+   用到的变量：ranges、range_key、range_titles（panel_app 传进来）、default_range（全局）。 #}
+
+{% macro range_seg(endpoint, label='统计范围') -%}
+<div class="seg" role="group" aria-label="{{ label }}">
+  {% for key, name in ranges.items() %}
+  <a href="{{ url_for(endpoint, range=none if key == default_range else key, **kwargs) }}" class="{{ 'on' if range_key == key }}"{% if range_key == key %} aria-current="true"{% endif %}{% if range_titles[key] %} title="{{ range_titles[key] }}"{% endif %}>{{ name }}</a>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{# 这个赛季里还没有对局（新赛季刚开始）：说清楚是哪个赛季、打完一局就会算进来，给出去别的范围的链接 #}
+{% macro range_empty_text(endpoint) -%}
+<p>{{ ranges[range_key] }}{% if range_titles[range_key] %}（{{ range_titles[range_key] }}）{% endif %}还没有对局{% if range_key == default_range %}，打完一局就会算进来{% endif %}。</p>
+<p class="range-empty-links">看看
+  {%- for key in ('last', 'all') if key != range_key and key in ranges -%}
+  {%- if not loop.first %}或{% endif -%}
+  <a class="text-link" href="{{ url_for(endpoint, range=key, **kwargs) }}"{% if range_titles[key] %} title="{{ range_titles[key] }}"{% endif %}>{{ ranges[key] }}</a>
+  {%- endfor -%}
+  的战绩</p>
+{%- endmacro %}

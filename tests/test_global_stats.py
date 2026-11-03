@@ -190,7 +190,7 @@ def checks():
     out = {}
     client, token = panel_app.app.test_client(), panel_app.app.config["TOKEN"]
 
-    def page(url="/stats?view=all"):
+    def page(url="/stats?view=all&range=all"):  # 默认看本赛季（2026-11-03），这里测的是"全部"
         return client.get(url).get_data(as_text=True)
 
     # ---- 没开匿名统计 ----
@@ -206,7 +206,7 @@ def checks():
     locked_part = client.get("/stats/legends?view=all")
     out["锁住时打开完整的表格：回到卡片那页（锁在那里），不下载"] = (
         locked_part.status_code == 302
-        and locked_part.headers["Location"].endswith("/stats?view=all&range=all&mode=ranked&tier=all") and not Handler.requests)
+        and locked_part.headers["Location"].endswith("/stats?view=all&range=season&mode=ranked&tier=all") and not Handler.requests)
     out["锁住时：开启按钮发 on=1，开好回到全体玩家；能去设置页关闭"] = (
         re.search(r'name="on" value="1">\s*<input type="hidden" name="next" value="/stats\?view=all">', locked) is not None
         and "/settings#stats" in locked)
@@ -238,7 +238,7 @@ def checks():
     out["下载好：人数、局数、更新时间（本机时间），有刷新按钮，不再自动下载"] = (
         "12</span> 名玩家" in full and "340</span> 局" in full and "更新于 今天" in full
         and 'id="everyone-refresh"' in full and "refresh();" not in full)
-    hot, combos = page("/stats/legends?view=all"), page("/stats/combos?view=all")
+    hot, combos = page("/stats/legends?view=all&range=all"), page("/stats/combos?view=all&range=all")
     out["两列卡片：传奇热度、热门组合、大家常用的武器、你在 Evo 玩家中；段位分布在下面"] = (
         re.search(r'<div class="stats-grid">.*id="h-hot".*id="h-combos".*id="h-weapons".*id="h-you".*</div>\s*<details', full, re.S)
         is not None)
@@ -270,7 +270,7 @@ def checks():
         and re.findall(r'<span class="tier-name">([^<]+)', tiers.group(1)) == ["黄金", "白金", "钻石"]
         and re.search(r'<li class="you">\s*<span class="tier-name">钻石<span class="you-tag">你</span>', tiers.group(1)))
 
-    guns_page = page("/stats/weapons?view=all")
+    guns_page = page("/stats/weapons?view=all&range=all")
     guns_card, guns = weapon_section(full), weapon_section(guns_page)
     out["大家常用的武器：卡片上列前 5 把（按占比，显示中文名），完整的表格 10 把；两边都写记下了几局"] = (
         rows_of(guns_card) == WEAPON_NAMES[:5] and "查看全部 <span class=\"num\">10</span> 把武器" in guns_card
@@ -290,23 +290,41 @@ def checks():
     out["近 7 天：用近 7 天的汇总，你的局只算 7 天以内（罗芭那局 10 天前，不算）"] = (
         rows_of(week.split('id="h-combos"')[0]) == ["罗芭", "恶灵"] and you_cell(week, "罗芭") == ("—", None)
         and "5</span> 名玩家" in week)
-    diamond = page("/stats?view=all&tier=diamond")
+    diamond = page("/stats?view=all&range=all&tier=diamond")
     out["钻石：用钻石的汇总，筛选按钮选中钻石"] = (
         rows_of(diamond.split('id="h-combos"')[0]) == ["探路者"] and 'aria-current="true">钻石</a>' in diamond)
-    pubs = page("/stats?view=all&mode=pubs&tier=diamond")
+    pubs = page("/stats?view=all&range=all&mode=pubs&tier=diamond")
     out["匹配：没有段位按钮；没认出模式的局算匹配（动力小子 1 局，名次 4）"] = (
         "段位</span>" not in pubs and rows_of(pubs.split('id="h-combos"')[0]) == ["动力小子"]
         and you_cell(pubs, "动力小子") == ("4.0（比全体好）1局", "better"))
     out["汇总里没有武器（老的统计服务器、还没人发过）：写\"还没有记下武器的对局\"，不写局数"] = (
         "这个范围里还没有记下武器的对局" in weapon_section(pubs) and "记下了武器的" not in weapon_section(pubs))
-    deep = page("/stats/legends?view=all&tier=diamond")
+    deep = page("/stats/legends?view=all&range=all&tier=diamond")
     out["完整的表格带着筛选：按钮留在这一页，\"← 全体玩家\"回到同样筛选的卡片"] = (
         rows_of(deep) == ["探路者"] and 'href="/stats/legends?view=all&amp;range=7d&amp;mode=ranked&amp;tier=diamond"' in deep
         and '<a class="back-link" href="/stats?view=all&amp;range=all&amp;mode=ranked&amp;tier=diamond">' in deep)
     out["不认识的完整表格（全体玩家没有队友表）：404"] = (
         client.get("/stats/mates?view=all").status_code == 404 and client.get("/stats/x?view=all").status_code == 404)
-    out["网址里不认识的筛选：用默认（全部、排位、全部段位）"] = (
-        global_stats.choose({"range": "x", "mode": "y", "tier": "z"}) == ("all", "ranked", "all"))
+    out["网址里不认识的筛选：用默认（本赛季、排位、全部段位）"] = (
+        global_stats.choose({"range": "x", "mode": "y", "tier": "z"}) == ("season", "ranked", "all"))
+
+    # ---- 本赛季（2026-11-03 加的，默认）----
+    plain = page("/stats?view=all")
+    out["本赛季（默认）：存着的是服务器按赛季算以前的汇总，写明，给出去全部的链接，不摆空卡片"] = (
+        "统计服务器还没有按赛季汇总" in plain and 'href="/stats?view=all&amp;range=all&amp;mode=ranked&amp;tier=all"' in plain
+        and 'class="stats-grid"' not in plain and 'aria-current="true">本赛季</a>' in plain)
+    with_season = {**SUMMARY, "season": 31, "season_from": RECENT_FROM,
+                   "slices": {**SUMMARY["slices"], "season.ranked.all": part(3, 40, [legend("罗芭", 12, 8.5),
+                                                                                    legend("恶灵", 9, 9.0)])},
+                   "tiers": {**SUMMARY["tiers"], "season": {"players": 3, "counts": {"钻石": 3}}}}
+    plain_body, Handler.body = Handler.body, json.dumps(with_season, ensure_ascii=False).encode("utf-8")
+    client.post("/stats/everyone/refresh", data={"token": token})
+    season = page("/stats?view=all")
+    Handler.body = plain_body
+    client.post("/stats/everyone/refresh", data={"token": token})
+    out["本赛季：用本赛季的汇总，你的局只算开赛那天以后的（罗芭那局 10 天前，不算），按钮写着从哪天算起"] = (
+        rows_of(season.split('id="h-combos"')[0]) == ["罗芭", "恶灵"] and you_cell(season, "罗芭") == ("—", None)
+        and "3</span> 名玩家" in season and f'title="从 {RECENT_FROM[5:].replace("-", "/")} 算起' in season)
 
     # ---- 什么时候重新下载 ----
     Handler.requests.clear()
