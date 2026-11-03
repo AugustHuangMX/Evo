@@ -33,6 +33,7 @@ os.environ["EVO_VIDEOCONFIG"] = str(_TEMP / "videoconfig.txt")
 sys.path.insert(0, str(CODE))
 
 import cv2  # noqa: E402
+import dxcam  # noqa: E402
 import numpy as np  # noqa: E402
 
 import live_collect  # noqa: E402
@@ -115,7 +116,7 @@ def run_collect(frames, picture, **options):
     clock = FakeClock(camera)
     log = []
     db = last_db = _TEMP / f"run{next(_runs)}.db"
-    with mock.patch.object(live_collect.dxcam, "create", lambda **kw: camera), \
+    with mock.patch.object(dxcam, "create", lambda **kw: camera), \
             mock.patch.object(live_collect, "time", clock):
         live_collect.collect(db_path=db, stop=stop, log=log.append, **options)
     conn = storage.connect(db)

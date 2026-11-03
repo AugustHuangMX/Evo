@@ -296,8 +296,12 @@ def collect_process(stop, queue):
     """子程序的入口：在单独的进程里截屏、识别、记录。游戏关掉后整个进程退出，识别模型占的内存全部还给系统。"""
     try:
         import live_collect
+        from capture import NeedRestart
 
-        live_collect.collect(stop=stop, log=lambda msg: queue.put(("log", msg)), status=_QueueStatus(queue))
+        try:
+            live_collect.collect(stop=stop, log=lambda msg: queue.put(("log", msg)), status=_QueueStatus(queue))
+        except NeedRestart as e:  # 刚把 Evo 设成「节能」（capture.py）：新开的记录程序才生效
+            queue.put(("restart", str(e)))
     except Exception:  # noqa: BLE001 把出错信息交给托盘程序写进日志
         import traceback
 
@@ -318,6 +322,7 @@ class Recorder:
         self._wake, self._quit = threading.Event(), threading.Event()
         self._stop, self._proc, self._loop_thread = None, None, None
         self._last_error = 0.0
+        self._restarted = False  # 记录程序要求过马上重来（capture.NeedRestart）：只马上重来一次，再要就按出错等一会儿
 
     @property
     def saved(self):
@@ -385,6 +390,13 @@ class Recorder:
             elif kind == "status":
                 status[rest[0]] = rest[1]
                 self.on_change()
+            elif kind == "restart":
+                if self._restarted:
+                    self._last_error = time.monotonic()
+                    self.log(f"{rest[0]}；刚才已经马上重来过一次，{RETRY_AFTER_ERROR} 秒后重试")
+                else:
+                    self._restarted = True
+                    self.log(f"{rest[0]}，马上重新开始记录")
             elif kind == "error":
                 self._last_error = time.monotonic()
                 self.log(f"记录出错，{RETRY_AFTER_ERROR} 秒后重试：\n{rest[0]}")

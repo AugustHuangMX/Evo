@@ -33,7 +33,7 @@ from tester_info import _safe, collect_info, copy_evo_logs, find_evo_data_dirs, 
 from tester_projects import (languages, load_config, load_profile, load_projects, package_name, save_profile,
                              weapon_list)
 
-VERSION = "2.0"  # 1.x 是原来的诊断工具
+VERSION = "2.1"  # 1.x 是原来的诊断工具；2.1：dxcam 用不了时换 mss（capture.py）
 BEEP_HZ, BEEP_MS = 1200, 150  # "嘀"一声（同 tools/legend_capture.py）
 WATCH_SECONDS = 30  # 打一局：录的时候每隔这么久看一眼 Evo 记下了什么
 
@@ -130,17 +130,18 @@ class Session:
         dx_logger.setLevel(logging.WARNING)
 
         self.log(f"Evo 测试工具 {self.version}：{self.project['name']}，先存在：{self.folder}")
-        dxcam_mod, self.camera, camera_error = open_camera()
-        if camera_error:
-            self.log(f"⚠ {camera_error}")
+        dxcam_mod, self.camera, notes = open_camera(lambda text: self.log(f"⚠ {text}"))
+        if self.camera is None:
+            self.log(f"⚠ 截屏对象建不起来（Evo 也会在这里出错）：{notes['错误']}")
         else:
-            self.log(f"截屏对象建好了：{self.camera.width}x{self.camera.height}（和 Evo 截的是同一个显示器）")
+            self.log(f"截屏对象建好了（{notes['截法']}）：{self.camera.width}x{self.camera.height}"
+                     "（和 Evo 截的是同一个显示器）")
         evo_dirs = _safe(find_evo_data_dirs)
         self.evo_dirs = evo_dirs if isinstance(evo_dirs, list) else []
         self.log(f"找到了 Evo：{self.evo_dirs[0][0]}（结束时带上 Evo 的日志）" if self.evo_dirs
                  else "没找到 Evo（没装，或者装了但没开着）：不影响，照样截图")
         self.db = db_path(self.evo_dirs)
-        self.info = collect_info(dxcam_mod, self.camera, camera_error, self.evo_dirs, self.version)
+        self.info = collect_info(dxcam_mod, self.camera, notes, self.evo_dirs, self.version)
         write_info(self.folder, self.info)  # 先写一份：万一中途被关掉，也有这些信息
         self._write_tester()
 

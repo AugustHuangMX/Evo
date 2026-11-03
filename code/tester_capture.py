@@ -1,4 +1,5 @@
-"""测试工具（evo_tester.py）的截屏和打包：截法和 Evo 的记录程序一样（dxcam、主显示器、同样的参数），截到的就是 Evo 看到的样子。
+"""测试工具（evo_tester.py）的截屏和打包：截法和 Evo 的记录程序一样（capture.py：dxcam、主显示器、同样的参数，
+dxcam 用不了时一样换 mss），截到的就是 Evo 看到的样子。
 
 三种截法（config/tester.json 的 capture）：
 - every（打一局、排查问题，Recorder）：游戏开着时每 interval 秒截一张（和上一张存的几乎一样就不存），比 1920 宽的缩到
@@ -9,7 +10,7 @@
 拿到新画面没有、和上一张差多少。游戏开着却一直"没有新画面" = 截屏卡住了（Evo 这时拿到的是 dxcam 缓存的上一张旧图）；
 每分钟给每个显示器存一张很小的缩略图（monitors/，用 mss，和 dxcam 不是一条路）：看得出游戏在哪个屏幕上，看不清字
 - 打包：整个文件夹打成一个 zip（JPEG、PNG 不再压缩），核对后删掉文件夹
-- 只看不动（原则 1）：只截屏、只读进程名
+- 只看不动（原则 1）：只截屏、只读进程名（dxcam 建不起来时，改的是本工具自己的图形设置，见 capture.py）
 """
 
 import csv
@@ -28,6 +29,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+import capture
 from game_detect import GAME_PROCESSES
 from layout import Mapping
 from tester_info import KNOWN_APPS
@@ -87,7 +89,7 @@ def encode_jpeg(frame, width=None, quality=JPEG_QUALITY, subsampling=2):
 
 class Recorder:
     """截屏、存图、把每次截屏的结果记进 captures.csv。游戏开着时每 interval 秒一张，画面没变不存（"打一局""排查问题"）。
-    camera：dxcam 的截屏对象（None = 建不起来，只看进程、存缩略图）；names()：现在开着的进程名；
+    camera：截屏对象（capture.open_camera；None = 建不起来，只看进程、存缩略图）；names()：现在开着的进程名；
     thumbs(时间)：给每个显示器存缩略图，返回存了多少字节（可以不给）；log(文字)：写进窗口和 tool_log.txt。
     full_seconds：游戏开着时每隔这么久另存一张原尺寸（None = 不存）；beep()：存好一样东西时"嘀"一声（可以不给）。
     clock、wait(事件, 秒)、now：测试时换成假时钟；free_mb()：硬盘还剩多少 MB。"""
@@ -494,17 +496,15 @@ class MonitorThumbs:
         self.sct.close()
 
 
-def open_camera():
-    """和 Evo 的记录程序一样建截屏对象（live_collect.collect：主显示器、BGR、numpy）。
-    返回 (dxcam 模块或 None, 截屏对象或 None, 建不起来的原因或 None)。"""
+def open_camera(log):
+    """和 Evo 的记录程序一样建截屏对象（capture.open_camera：主显示器、BGR；dxcam 用不了时，双显卡的电脑上先把
+    本工具设成「节能」（下次打开生效），这次和别的原因一样改用 mss）。
+    返回 (dxcam 模块或 None, 截屏对象或 None, 说明)。说明见 capture.open_camera；连 mss 也建不起来时另有"错误"。"""
     try:
-        import dxcam
-    except Exception as e:
-        return None, None, f"dxcam 加载不了：{e}"
-    try:
-        return dxcam, dxcam.create(output_color="BGR", processor_backend="numpy"), None
-    except Exception as e:
-        return dxcam, None, f"截屏对象建不起来（Evo 也会在这里出错）：{e}"
+        camera, notes = capture.open_camera(log=log, restart=False)
+    except Exception as e:  # noqa: BLE001 只看进程、存缩略图
+        camera, notes = None, {"截法": None, "dxcam": "建不起来", "图形设置": None, "错误": f"{type(e).__name__}: {e}"}
+    return sys.modules.get("dxcam"), camera, notes
 
 
 # ---------- 打包 ----------

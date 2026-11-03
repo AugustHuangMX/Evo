@@ -1,7 +1,7 @@
 """测试工具（evo_tester.py）用的电脑信息：显示器（分辨率、缩放、主显示器、HDR）、Apex 的视频设置和兼容性设置、
 开着的几个已知软件、电脑上的 Evo（数据文件夹、日志、设置里跟识别有关的几项），写成 info.json / info.txt。
 
-只读：只读 Windows 的显示设置、注册表里的兼容性设置和开机自启、进程名；只查 Evo.exe 自己在哪个文件夹，不打开游戏进程。
+只读：只读 Windows 的显示设置、注册表里的兼容性设置、开机自启和图形设置、进程名；只查 Evo.exe 自己在哪个文件夹，不打开游戏进程。
 不 import paths.py（它一 import 就会在程序旁边建"Evo Tracker Data"文件夹）：Evo 的数据文件夹按 find_evo_data_dirs 找。
 """
 
@@ -15,6 +15,7 @@ import winreg
 from ctypes import wintypes
 from pathlib import Path
 
+from capture import GPU_PREF_NAMES, gpu_preference
 from game_aspect import ASPECTS, AUTO, SETTING_KEY, from_video_config, read_video_config
 from game_detect import GAME_PROCESSES, processes
 
@@ -38,6 +39,7 @@ VIDEO_KEYS = {"setting.defaultres": "宽", "setting.defaultresheight": "高", "s
 LAYERS_KEY = r"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"  # 右键 exe → 属性 → 兼容性
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"  # Evo 的开机自启（见 autostart.py）
 EVO_RUN_VALUE = "Evo Tracker"
+GPU_VENDORS = {0x10DE: "NVIDIA", 0x1002: "AMD", 0x8086: "Intel", 0x1414: "微软，软件模拟的"}
 LOCAL_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Evo"  # 同 paths.LOCAL_DIR
 DATA_NAME = "Evo Tracker Data"  # 同 paths.DATA_NAME
 POINTER_NAME = "data_location.txt"
@@ -298,6 +300,25 @@ def find_evo_data_dirs(exes=None, local_dir=None):
     return found
 
 
+def gpus():
+    """电脑上所有的显卡（DXGI 看到的，包括没接显示器的）：["名字（厂商）", ...]。dxcam 只列接着显示器的那块；
+    双显卡的笔记本上，程序跑在哪块显卡上，屏幕就算在哪块上（见 capture.py），所以要另外列全。"""
+    from dxcam._libs.dxgi import DXGI_ADAPTER_DESC1
+    from dxcam.util.io import enum_dxgi_adapters
+
+    names = []
+    for adapter in enum_dxgi_adapters():
+        desc = DXGI_ADAPTER_DESC1()
+        adapter.GetDesc1(ctypes.byref(desc))
+        names.append(f"{desc.Description}（{GPU_VENDORS.get(desc.VendorId, f'厂商 {desc.VendorId:#06x}')}）")
+    return names
+
+
+def gpu_preferences(exes):
+    """Windows 图形设置里给这几个 Evo.exe 选的显卡：{路径: "节能" / "高性能" / "让 Windows 决定" / "没设过"}。"""
+    return {str(exe): GPU_PREF_NAMES.get(gpu_preference(exe), "没设过") for exe, _ in exes}
+
+
 def evo_settings(folder):
     """Evo 设置里跟识别有关的几项（EVO_SETTINGS）；读不到返回 {}。"""
     try:
@@ -341,14 +362,18 @@ def _safe(func, *args):
         return {"错误": f"{type(e).__name__}: {e}"}
 
 
-def collect_info(dxcam_mod, camera, camera_error, evo_dirs, version="-"):
-    """开始时读的信息（info.json 的大部分；截屏结果在结束时加上）。version：测试工具的版本。"""
+def collect_info(dxcam_mod, camera, notes, evo_dirs, version="-"):
+    """开始时读的信息（info.json 的大部分；截屏结果在结束时加上）。notes：建截屏对象时的说明（capture.open_camera）；
+    version：测试工具的版本。"""
     info = {"工具": {"版本": version},
             "Windows": {"系统": platform.platform(), "版本号": platform.version(), "处理器架构": platform.machine()}}
-    dx = {"截屏对象": camera_error or "建好了"}
+    dx = {"截屏对象": notes["dxcam"] or "建好了", "截法": notes["截法"] or f"建不起来：{notes.get('错误')}"}
+    if notes["图形设置"]:
+        dx["图形设置"] = notes["图形设置"]
     if dxcam_mod is not None:
         dx["显卡"] = _safe(lambda: dxcam_mod.device_info().strip())
         dx["输出"] = _safe(lambda: dxcam_mod.output_info().strip())
+        dx["全部显卡"] = _safe(gpus)
     if camera is not None:
         output = getattr(camera, "_output", None)
         dx["Evo 截的显示器"] = getattr(output, "devicename", None)
@@ -359,7 +384,8 @@ def collect_info(dxcam_mod, camera, camera_error, evo_dirs, version="-"):
     info["Apex"] = {"视频设置": video if video is not None else "没找到视频设置文件",
                     "兼容性设置": _safe(compat_flags)}
     info["Evo"] = {"数据文件夹": [[str(folder), how] for folder, how in evo_dirs],
-                   "设置": evo_settings(evo_dirs[0][0]) if evo_dirs else {}}
+                   "设置": evo_settings(evo_dirs[0][0]) if evo_dirs else {},
+                   "图形设置": _safe(lambda: gpu_preferences(evo_exes()))}
     return info
 
 
@@ -392,13 +418,19 @@ def render_info(info):
     else:
         lines.append(f"  读不到：{info['显示器']}")
     dx = info["dxcam"]
-    lines += ["", "[dxcam（Evo 用的截屏方式）]", f"  截屏对象：{dx['截屏对象']}"]
-    if dx.get("Evo 截的显示器"):
+    lines += ["", "[dxcam（Evo 用的截屏方式，用不了时换 mss）]", f"  截屏对象：{dx['截屏对象']}",
+              f"  这次的截法：{dx.get('截法', '-')}"]
+    if dx.get("图形设置"):
+        lines.append(f"  图形设置：{dx['图形设置']}")
+    if dx.get("Evo 截的尺寸"):
         w, h = dx["Evo 截的尺寸"]
-        lines.append(f"  Evo 截的是：{dx['Evo 截的显示器']}，{w}×{h}")
+        lines.append(f"  Evo 截的是：{dx.get('Evo 截的显示器') or '主显示器'}，{w}×{h}")
     for key in ("显卡", "输出"):
         if key in dx:
             lines += [f"  {key}："] + [f"    {line}" for line in str(dx[key]).splitlines()]
+    if "全部显卡" in dx:
+        found = dx["全部显卡"]
+        lines.append(f"  全部显卡（包括没接显示器的）：{'、'.join(found) if isinstance(found, list) else found}")
     apex = info["Apex"]
     video = apex["视频设置"]
     lines += ["", "[Apex]"]
@@ -426,6 +458,11 @@ def render_info(info):
         lines.append(f"  带上了 {evo['日志']} 个日志文件（evo_logs/）")
     if evo["设置"]:
         lines.append("  设置：" + "，".join(f"{k} = {v}" for k, v in evo["设置"].items()))
+    prefs = evo.get("图形设置")
+    if isinstance(prefs, dict):
+        lines += [f"  Windows 图形设置：{exe}：{pref}" for exe, pref in prefs.items()]
+    elif prefs:
+        lines.append(f"  Windows 图形设置：读不到（{prefs}）")
     if run:
         sizes = "、".join(f"{size}（{n} 次）" for size, n in run["截到的尺寸"].items()) or "-"
         lines += ["", "[截屏结果]",

@@ -580,7 +580,8 @@ def info_checks(tmp):
                                                             "keep_all_screenshots": False, "cloud_device": "秘密",
                                                             "telemetry_id": "x"}), encoding="utf-8")
     picked = tester_info.evo_settings(settings_dir)
-    info = tester_info.collect_info(None, None, "测试时不建截屏对象", [(settings_dir, "开机自启")])
+    info = tester_info.collect_info(None, None, {"截法": None, "dxcam": "测试时不建截屏对象", "图形设置": None,
+                                                "错误": "测试"}, [(settings_dir, "开机自启")])
     mons = info["显示器"]
     text = tester_info.render_info(info)
     return {
@@ -640,7 +641,11 @@ def real_checks(tmp):
     out_checks = {
         f"真的截几秒：压缩包里有截图（{len(frames)} 张）、诊断信息、截屏记录、工具日志、tester.json":
             frames and all(n in names for n in ("info.json", "info.txt", "captures.csv", "tool_log.txt", "tester.json")),
-        f"截屏对象和 Evo 一样建好了（{info['dxcam']['截屏对象']}）": info["dxcam"]["截屏对象"] == "建好了",
+        f"截屏对象和 Evo 一样建好了（{info['dxcam']['截屏对象']}，{info['dxcam']['截法']}）":
+            info["dxcam"]["截屏对象"] == "建好了" and info["dxcam"]["截法"] == "dxcam",
+        f"诊断信息里列了全部显卡（{info['dxcam'].get('全部显卡')}）、Evo.exe 的图形设置":
+            isinstance(info["dxcam"].get("全部显卡"), list) and len(info["dxcam"]["全部显卡"]) >= 1
+            and "图形设置" in info["Evo"],
         "没留下文件夹": [p for p in out.iterdir() if p.is_dir()] == [],
     }
     # 另外两种截法也真跑几秒：桌面常常在动（终端在刷新），数据页那种不一定存得下，只看截了、记了、打包了；
@@ -675,7 +680,7 @@ def fake_zip(tmp, name, images, video=None):
         writer = csv.DictWriter(f, tester_capture.CSV_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
-    info = tester_info.collect_info(None, None, "测试", [])
+    info = tester_info.collect_info(None, None, {"截法": None, "dxcam": "测试", "图形设置": None}, [])
     info["Apex"]["视频设置"] = video or "没找到视频设置文件"
     info["截屏结果"] = {"看到的游戏进程": {GAME: "15:00:00"}}
     Path(folder, "info.json").write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")

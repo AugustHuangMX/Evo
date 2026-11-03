@@ -37,7 +37,7 @@ Evo 使用了以下第三方库，它们各自的许可证随库一起放在 _in
   按 LGPL 的要求，pystray 以 Python 源文件的形式放在 _internal/pystray 文件夹里，
   你可以把它换成自己修改过的版本；pystray 的源代码：https://github.com/moses-palmer/pystray
 - 其他主要依赖：RapidOCR（Apache 2.0）、ONNX Runtime（MIT）、OpenCV（Apache 2.0）、NumPy（BSD）、
-  Flask（BSD）、Pillow（MIT-CMU）、dxcam（MIT）、PP-OCR 模型（Apache 2.0）
+  Flask（BSD）、Pillow（MIT-CMU）、dxcam（MIT）、mss（MIT，dxcam 用不了时截屏）、PP-OCR 模型（Apache 2.0）
 - 面板字体 Chakra Petch：SIL Open Font License 1.1，见 _internal/panel/static/fonts/OFL.txt
 - 面板里传奇名字前的小头像：来自 Apex Legends Wiki（https://apexlegends.wiki.gg/），不适用 AGPL-3.0，
   每个文件的许可不一样，见 _internal/panel/static/legends/LICENSE.txt

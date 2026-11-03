@@ -2,6 +2,7 @@
 规则见 docs/对局全流程图.md。
 
 只截屏，不碰游戏（唯一的例外：读 Apex 自己的视频设置文件，知道游戏画面是 16:9、16:10 还是 4:3，见 game_aspect.py）。
+截屏见 capture.py（dxcam；双显卡的笔记本上先把 Evo 设成「节能」，还不行改用 mss）。
 每截一张，先判断是哪个画面（见 screens.py：先比外观，几毫秒；像了才用识别引擎读关键字确认，
 停在同一个画面上、关键字那一块没变就不再读），
 再交给对应的部分。识别引擎（OCR）用到时才加载，闲置 2 分钟后释放；对局中交火时一律不用引擎（原则 3）：
@@ -44,8 +45,8 @@ from pathlib import Path
 from time import perf_counter, process_time  # 单独导入：测试会把本文件的 time 换成假时钟，这两个仍是真的
 
 import cv2
-import dxcam
 
+import capture
 import game_lang
 import screenshots
 import season_import
@@ -537,6 +538,8 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     每隔几秒看一眼；"16:10" 等 = 整次记录都这样（测试时直接指定）
     返回这次一共记下了几局。"""
     set_low_priority()
+    # 先建截屏对象：建不起来（或要新开进程才生效，capture.NeedRestart）就不建这次的截图文件夹
+    camera, how = capture.open_camera(log)
     usage = Usage(log)
     run_dir = CAPTURES_DIR / "live" / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -573,7 +576,6 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
     name_cfg = load_config("player_name.json")
     post = PostMatch(conn, log=log, name_slip=name_cfg["slip_similarity"], on_round_end=round_end)
 
-    camera = dxcam.create(output_color="BGR", processor_backend="numpy")
     # clock 用 lambda 包一层：测试时会把本文件的 time 换成假时钟
     engine = LazyEngine(SMALL_CROP_PARAMS, MODEL_IDLE_SECONDS, clock=lambda: time.monotonic(), log=log)
     detector = GameScreens(engine, log=lambda message: log(f"[{datetime.now():%H:%M:%S}] {message}"))
@@ -609,7 +611,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
         in_match.name_place = names["places"]["hud"]
         lobby.reader.cfg = load_config("lobby.json", lang)
 
-    log(f"屏幕: {camera.width}x{camera.height}")
+    log(f"屏幕: {camera.width}x{camera.height}（截屏：{how['截法']}）")
     if len(detector.detectors) > 1:
         log(f"认得出的游戏语言：{'、'.join(game_lang.label(x) for x in detector.detectors)}（认出第一个画面时定下来）")
     log(f"数据库: {Path(db_path).resolve()}")
