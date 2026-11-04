@@ -20,18 +20,10 @@
 
 - [ ] **双显卡笔记本上截不了屏**（2026-11-03 修了，`code/capture.py`，还没发版）：发版后请反馈"一打开 Apex 就识别不到了"的两位玩家更新，发回 Evo 的日志：看有没有"已在 Windows 的图形设置里把 Evo.exe 设成「节能」"，之后"屏幕: …（截屏：dxcam）"（第 1 步管用）还是"改用 mss"（不管用，用的是备用截法），能不能记下一局。用的是 mss 的话问问游戏卡不卡（帧数影响没实测过）。细节见 docs/识别经验.md
 - [ ] 请反馈的两位群友一键更新：一位看窗口能不能打开、日志里有没有"去掉了 … 个文件上'从网上下载的'标记"；另一位在战绩页删掉 10-26 18:46 多出来的那局（第 2 名 +215，"这局没有总结页"）
-- [ ] **Mirror酱（国内渠道，2026-11-04 用户和 Mirror酱 谈好）**：Mirror酱 提了 PR #4（两个 GitHub Actions：发 GitHub Release 时自动把 `Evo-*-win64.zip` 和更新日志传给 Mirror酱，RID `Evo`、windows / amd64、ZIP 增量）。玩家要自己买 CDK 才能从 Mirror酱 下载（不填 CDK 只能查版本），接入不收费、按订阅给开发者分成。文档 https://github.com/MirrorChyan/docs 。用户定的：
-  - 检查更新：照旧读 latest.json，**所有人**同时问一下 Mirror酱（`GET https://mirrorchyan.com/api/resources/Evo/latest?current_version=v<版本>&os=windows&arch=amd64`，不带 CDK）；latest.json 读不到时用 Mirror酱 的版本号提醒
-  - 设置页：问玩家倾向**国内渠道还是国际渠道**更新，写清楚：国内渠道给国际渠道下载慢、下载失败的人用，用的是 Mirror酱 的方案，要 CDK、要花钱、开发者能拿到分成，附 Mirror酱 项目链接；选了国内才出现 CDK 输入框（掩码、可留空）
-  - 一键更新：**只走玩家选的渠道，不自动换**；国内渠道出错（CDK 无效 / 过期 / 今天次数用完）写明原因，让玩家自己选要不要改用国际渠道
-  - CDK 只存本机设置，永远不上传、不写进日志；下载地址也不写进日志
-  - 加固：安装包里放所有文件的清单和 SHA-256，用 Mirror酱 增量包拼出新版本后逐个核对，对不上就不装
-  - 官网「国内下载」→ 弹说明窗口（收费、开发者有分成、Mirror酱 简介：也给国内很多二游工具提供下载，附项目列表链接）→ `https://mirrorchyan.com/zh/projects?rid=Evo&source=evo_site`；文字先给用户看
-  - 隐私说明（PRIVACY.md、官网隐私页、README、使用说明）写上每次检查更新连 mirrorchyan.com、填了 CDK 才发 CDK；原文先给用户看
-  - 发版顺序：GitHub Releases 挪到 `latest.json` 之前，等 Mirror酱 收到再让 Evo 提醒更新
-  - 不用真 CDK 实测（用户 11-04 定）；自动测试用假的 Mirror酱 服务器
-  - [ ] 用户：`gh secret set MirrorChyanUploadToken`（Token 不给 Claude），设好后合并 PR #4
-  - [ ] 用户：问 Mirror酱 要一份 v0.5.2 → v0.5.3 增量包的 `changes.json`（或路径格式：带不带最外层的 `Evo/`）
+- [ ] **Mirror酱（国内渠道，0.5.4 起）**：代码、设置页、隐私说明都做完了，官网（`site/`）也改好了、还没上传（提交 93bad11，合并进 main；做法见 docs/底座.md"一键更新"的国内渠道）；PR #4 已合并、上传 Token 已设（11-04）。剩下：
+  - [ ] 发 0.5.4（用户 11-04 说：等另一个窗口修完 bug、再完善几个功能一起发）：按新顺序发（publish.py → 推送 → `--github` → 等 GitHub Actions 传给 Mirror酱 → `--live`，见 docs/底座.md"发布"）；官网的国内下载说明窗口和隐私页跟着第一段上传。发完看一眼 GitHub Actions 的两个 workflow 有没有跑成功、`python code/mirrorchyan.py` 能不能查到 0.5.4
+  - [ ] 用户（Mirror酱 11-05 回复）：要一份增量包的 `changes.json`（或说一下路径带不带最外层的 `Evo/`），拿来在本机核对 `update_patch.compose`（代码两种都认，只是想用真东西验证一遍）
+  - [ ] 用户：告诉 Mirror酱 他们那边 v0.5.3 的更新日志是乱码（UTF-8 被当成 GBK，"新增"成了"鏂板"），是同步更新日志那一步的问题
 - [ ] **腾讯云 COS 被封（2026-10-31 发现）**：存储桶 `evo-dl-1312774356` 的所有 GET（含签名、含不存在的文件）都回 451 `UnavailableForLegalReasons`（"content illegal"），HEAD 还是 200。0.4.3、0.5.0 的一键更新会自动换 dl.evotracker.cn（看过 `updater._fetch`、`update_check.fetch_latest`）；官网国内下载已改成弹提示框（见 docs/底座.md）。
   - [ ] 用户（10-31 说晚点看）：腾讯云国内站主账号看站内信 / 安全管控中心的处置记录（封了哪个文件、什么原因），再定申诉还是换别家
   - [ ] 2026-11-01 用户决定：找到替代方案之前发版都跳过 COS（`tools/release.py` 的 `COS_PAUSED = True`，`publish.py`、`notice.py` 都不传 COS，见 docs/底座.md"发布"）。恢复后：`COS_PAUSED` 改回 False，**先把线上最新的 `latest.json`、`notice.json` 补传到 COS**（不然 0.4.3 起的 Evo 先读到 COS 上旧的，收不到新版本提醒）；官网两个 `data-mirror` 链接改回 COS 地址、删掉 index.html 最下面的提示框（不删的话 `publish.py` 会因为海外下载链接有 2 处停下）、重新打开那条转发规则

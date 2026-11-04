@@ -5,7 +5,8 @@
 2. 跑全部测试（tests/run_all.py）
 3. 打包（build.py）
 4. 用打包好的 Evo.exe 自检一张总结页截图，确认识别模型、参照图都打进去了（截图只在开发者电脑上，没有就跳过）
-5. 压缩：最外层是一个 Evo 文件夹，附上《使用说明（先看这个）.txt》（原文在 release/使用说明.txt）
+5. 压缩：最外层是一个 Evo 文件夹，附上《使用说明（先看这个）.txt》（原文在 release/使用说明.txt），
+   最后放所有文件的清单 Evo/_internal/evo_files.json（2026-11-04 起，Mirror酱 的增量包靠它核对，见 update_patch.py）
 6. 算 SHA-256：写在官网上，下载的人可以核对文件有没有被改过
 7. 做补丁包（增量更新，2026-10-24 用户决定，以后每次发布都这样；格式见 code/update_patch.py）：给 dist 里最近
    PATCH_FROM 个旧版本（2026-10-29 起只做上一版的一个）（不早于 DELTA_SINCE：更早的 Evo 不会用补丁包）各做一个，只放变了的文件
@@ -118,13 +119,23 @@ def self_check():
 
 
 def make_zip(target, readme_text):
+    """压缩包：dist/Evo 里的文件、使用说明，最后是文件清单（update_patch.MANIFEST：每个文件的大小和 SHA-256，
+    2026-11-04 起；Mirror酱 的增量包靠它拼出新版本、逐个核对）。返回一共几个文件。"""
     files = sorted(p for p in APP.rglob("*") if p.is_file())
+    # 开头带 BOM、Windows 换行：用记事本打开一定不乱码
+    readme = ("﻿" + readme_text.replace("\r\n", "\n").replace("\n", "\r\n")).encode("utf-8")
+    listed = {}
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for path in files:
-            z.write(path, Path("Evo") / path.relative_to(APP))
-        # 开头带 BOM、Windows 换行：用记事本打开一定不乱码
-        z.writestr(f"Evo/{README_NAME}", ("﻿" + readme_text.replace("\r\n", "\n").replace("\n", "\r\n")).encode("utf-8"))
-    return len(files) + 1
+            name = (Path("Evo") / path.relative_to(APP)).as_posix()
+            z.write(path, name)
+            listed[name] = [path.stat().st_size, sha256(path)]
+        z.writestr(f"Evo/{README_NAME}", readme)
+        listed[f"Evo/{README_NAME}"] = [len(readme), hashlib.sha256(readme).hexdigest()]
+        if update_patch.MANIFEST in listed:
+            raise Stop(f"dist/Evo 里已经有 {update_patch.MANIFEST}，和文件清单重名")
+        z.writestr(update_patch.MANIFEST, json.dumps({"version": APP_VERSION, "files": listed}, ensure_ascii=False, indent=1))
+    return len(files) + 2
 
 
 def sha256(path):
@@ -249,7 +260,8 @@ def main():
     if dirty:
         print("⚠ 这次有没提交的改动，只能自己试，不要发布")
     else:
-        print("\n上传：python tools/publish.py（先传压缩包和官网、逐项核对；最后 python tools/publish.py --live 传 latest.json）")
+        print("\n上传：python tools/publish.py（先传压缩包和官网、逐项核对；再 --github 传 GitHub Releases 和 Mirror酱；"
+              "最后 python tools/publish.py --live 传 latest.json）")
     return 0
 
 

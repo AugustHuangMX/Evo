@@ -1,6 +1,9 @@
 {# 一键更新的控件（updater.py）：顶部提示条（base.html）和设置页"更新"一栏共用。
-   job 是 updater.state() 的结果，phase：manual 只能去官网 / available 可以下载 / downloading / extracting /
+   job 是 updater.state() 的结果，phase：manual 只能去官网 / need_cdk 选了国内渠道、还没填 Mirror酱 CDK /
+   available 可以下载 / downloading（asking：国内渠道正在问 Mirror酱 要下载地址）/ extracting /
    failed / ready 已下载好（blocked = 现在不能安装的原因）/ installing。
+   job.channel：这次用的渠道（cn 国内 Mirror酱 / global 国际）；job.global_ok：能不能改用国际渠道一键更新。
+   国内渠道没下成时只写原因，"这次改用国际渠道下载"由玩家自己点（2026-11-04 用户决定：不替玩家换渠道）。
    下载、解压时页面每半秒问一次进度（base.html 里的脚本，看 data-update-poll），阶段变了就重新打开页面。 #}
 
 {% macro hidden(next) -%}
@@ -15,7 +18,7 @@
 <div class="update-progress">
   <div class="progress" role="progressbar" aria-label="下载进度" aria-valuemin="0" aria-valuemax="100"
        aria-valuenow="{{ job.percent }}" data-progress><span class="progress-bar" style="width: {{ job.percent }}%"></span></div>
-  <span class="progress-text num" data-progress-text>{{ job.percent }}% · {{ job.done_mb }} / {{ job.total_mb }} MB</span>
+  <span class="progress-text num" data-progress-text>{% if job.asking %}正在向 Mirror酱 要下载地址…{% else %}{{ job.percent }}% · {{ job.done_mb }} / {{ job.total_mb }} MB{% endif %}</span>
   <span class="progress-text" data-progress-line{% if live %} role="status" aria-atomic="true"{% endif %}>{{ '备用线路' if job.mirror }}</span>
 </div>
 {% else %}
@@ -26,9 +29,10 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro download_button(job, next, label='立即更新', primary=true) -%}
+{% macro download_button(job, next, label='立即更新', primary=true, channel=none) -%}
 <form method="post" action="{{ url_for('download_update') }}" data-busy="正在开始…">
   {{ hidden(next) }}
+  {% if channel %}<input type="hidden" name="channel" value="{{ channel }}">{% endif %}
   <button type="submit" class="btn{{ ' btn-primary' if primary }}">{{ label }}</button>
 </form>
 {%- endmacro %}
@@ -63,6 +67,10 @@
   <span class="grow">Evo 有新版本 <span class="num">{{ offer.version }}</span>，你现在用的是 <span class="num">{{ version }}</span></span>
   <a class="banner-link" href="{{ url_for('settings') }}#h-update">更新内容</a>
   {{ download_button(job, next) }}
+  {% elif job.phase == 'need_cdk' %}
+  <span class="grow">Evo 有新版本 <span class="num">{{ offer.version }}</span>。你选的是国内渠道（Mirror酱），要先在设置页填 CDK</span>
+  <a class="banner-link" href="{{ url_for('settings') }}#h-update">去填写</a>
+  {% if job.global_ok %}{{ download_button(job, next, '这次用国际渠道下载', primary=false, channel='global') }}{% endif %}
   {% elif job.phase == 'downloading' %}
   <span>正在下载 Evo <span class="num">{{ offer.version }}</span></span>
   {{ progress(job, live=true) }}
@@ -73,6 +81,7 @@
   {% elif job.phase == 'failed' %}
   <span class="grow">Evo <span class="num">{{ offer.version }}</span> 没下载成功：<span class="update-error">{{ job.error }}</span></span>
   {{ download_button(job, next, '重试', primary=false) }}
+  {% if job.channel == 'cn' and job.global_ok %}{{ download_button(job, next, '这次改用国际渠道下载', primary=false, channel='global') }}{% endif %}
   <a class="banner-link" href="{{ offer.page }}" target="_blank" rel="noopener noreferrer">去官网下载 ↗</a>
   {% elif job.phase == 'ready' %}
   <span class="grow">Evo <span class="num">{{ offer.version }}</span> 已下载好{% if job.blocked %}<span class="update-hint" id="update-blocked-top">{{ job.blocked }}</span>{% endif %}</span>
@@ -80,7 +89,7 @@
   {% elif job.phase == 'installing' %}
   <span class="grow">正在安装 Evo <span class="num">{{ offer.version }}</span>：Evo 会关闭几秒钟，装好后自动重新打开</span>
   {% endif %}
-  {% if job.phase in ('manual', 'available', 'failed', 'ready') %}
+  {% if job.phase in ('manual', 'need_cdk', 'available', 'failed', 'ready') %}
   <form method="post" action="{{ url_for('dismiss_update') }}">
     <input type="hidden" name="token" value="{{ token }}">
     <input type="hidden" name="version" value="{{ offer.version }}">
@@ -95,9 +104,11 @@
 {% macro status(job) -%}
 {% if job and job.phase in ('downloading', 'extracting') %}
 <div class="update-status" data-update-poll="{{ job.phase }}">
-  <div class="setting-desc">{{ '正在下载…' if job.phase == 'downloading' else '正在解压…' }}</div>
+  <div class="setting-desc">{{ ('正在下载…' if job.channel != 'cn' else '正在从 Mirror酱 下载…') if job.phase == 'downloading' else '正在解压…' }}</div>
   {{ progress(job) }}
 </div>
+{% elif job and job.phase == 'need_cdk' %}
+<div class="update-status setting-desc">你选的是国内渠道（Mirror酱）：在上面填好 CDK 才能一键更新</div>
 {% elif job and job.phase == 'failed' %}
 <div class="update-status update-error" role="alert">没下载成功：{{ job.error }}</div>
 {% elif job and job.phase == 'ready' %}
@@ -116,16 +127,19 @@
 {% if job and job.phase == 'manual' %}
 <a class="btn btn-primary" href="{{ newest.page }}" target="_blank" rel="noopener noreferrer">去官网下载 ↗</a>
 {% elif job and job.phase == 'available' %}
-{{ download_button(job, next, '立即更新 · ' ~ job.size_mb ~ ' MB') }}
+{{ download_button(job, next, '立即更新 · ' ~ (job.size_mb ~ ' MB' if job.size_mb else '国内渠道')) }}
+{% elif job and job.phase == 'need_cdk' %}
+{% if job.global_ok %}{{ download_button(job, next, '这次用国际渠道下载', primary=false, channel='global') }}{% endif %}
 {% elif job and job.phase == 'downloading' %}
 {{ cancel_button(next) }}
 {% elif job and job.phase == 'failed' %}
 {{ download_button(job, next, '重试') }}
+{% if job.channel == 'cn' and job.global_ok %}{{ download_button(job, next, '这次改用国际渠道下载', primary=false, channel='global') }}{% endif %}
 <a class="btn" href="{{ newest.page }}" target="_blank" rel="noopener noreferrer">去官网下载 ↗</a>
 {% elif job and job.phase == 'ready' %}
 {{ install_button(job, next, 'update-blocked-settings') }}
 {% endif %}
-{% if not job or job.phase in ('manual', 'available', 'failed', 'ready') %}
+{% if not job or job.phase in ('manual', 'need_cdk', 'available', 'failed', 'ready') %}
 <form method="post" action="{{ url_for('check_update') }}" id="check-form" data-busy="正在检查…">
   <input type="hidden" name="token" value="{{ token }}">
   <button type="submit" class="btn" id="check-btn">检查更新</button>

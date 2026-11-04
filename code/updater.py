@@ -13,6 +13,10 @@
    断了、出错，或者每 15 秒算一次速度、低于 300 KB/s（100 MB 要 6 分钟以上），就换下一条线路，
    从已经下到的地方接着下（HTTP Range；那边不支持就从头下）。每条线路最多用两次：别的都不行时还会回来接着下；
    都用完了才算失败。SHA-256 只认 latest.json 里的，所以不管从哪条线路下，文件被换掉都会被发现
+   国内渠道（Mirror酱，2026-11-04 用户决定）：玩家在设置页选了国内渠道、填了 Mirror酱 CDK 时，不用上面这些线路，
+   而是带上 CDK 问 Mirror酱 要下载地址（mirrorchyan.py），下它给的增量包或完整包，按它给的 SHA-256 核对；
+   增量包照包里的文件清单拼出新版本（update_patch.compose，每个文件都核对）。只走玩家选的渠道，出错就写明原因停下，
+   不自动换到国际渠道（用户决定：让玩家自己选）；面板上有"这次改用国际渠道下载"（start_download 的 channel）
 2. 解压到 _update/<版本号>/Evo/（用补丁包时：照补丁包里的清单，用补丁包里的文件和现在的程序文件拼出来，每个都核对），
    确认里面有 Evo.exe 和 _internal，写 ready.json（"已下载好"，Evo 重新打开后也认得）
 3. 点"安装并重新启动"（Apex 开着时不能点，免得丢掉正在记录的那一局）：打开新版本自己的 Evo.exe --apply-update，
@@ -48,6 +52,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 import app_settings
+import mirrorchyan
 import update_check
 import update_patch
 from paths import EXE_DIR, FROZEN
@@ -65,6 +70,7 @@ STARTED_WAIT = 20  # 秒：新版本的 Evo.exe 这么久还没说"已经开始"
 QUIT_DELAY = 1.0  # 秒：确认新版本跑起来后，旧的 Evo 等一下再退出，让页面先显示"正在安装"
 OLD_EXIT_WAIT = 120  # 秒：新版本最多等旧的 Evo 退出这么久
 UNLOCK_WAIT = 30  # 秒：旧的 Evo 刚退出时文件可能还被占着几秒，挪不动就重试
+FULL_SIZE_GUESS = 120 * 2**20  # 字节：Mirror酱 的增量包不知道完整的有多大，查硬盘空间时按这么大的完整安装包算
 CLEANUP_DELAY = 60  # 秒：Evo 启动后等这么久再删装过的版本（安装程序要先退出）
 RESULT_KEY = "update_result"  # app_settings：上次一键更新的结果，窗口顶部显示一次
 
@@ -117,8 +123,16 @@ def version_tuple(text):
 # ---------- 面板显示什么 ----------
 
 def supported(latest):
-    """这个新版本能不能在 Evo 里更新：打包好的 Evo、托盘程序接上了、latest.json 里有安装包信息。"""
-    return bool(FROZEN and _hooks is not None and latest and update_check.safe_download(latest.get("download")))
+    """这个新版本能不能在 Evo 里更新：打包好的 Evo、托盘程序接上了，而且玩家选的渠道下得到——
+    国际渠道要 latest.json 里有安装包信息；国内渠道（Mirror酱）点了"立即更新"再问下载地址，这里不用。"""
+    if not (FROZEN and _hooks is not None and latest):
+        return False
+    return mirrorchyan.channel() == "cn" or global_ok(latest)
+
+
+def global_ok(latest):
+    """这个版本能不能从国际渠道（dl.evotracker.cn）一键更新：latest.json 里有安装包信息。"""
+    return bool(latest and update_check.safe_download(latest.get("download")))
 
 
 def staged(version):
@@ -137,8 +151,9 @@ def install_blocker():
 
 def state(latest):
     """面板显示什么。latest 是 update_check.known_newer() 的结果，没有新版本时返回 None。返回字典，phase 是：
-    manual（只能去官网下载）/ available（可以点"立即更新"）/ downloading / extracting / failed /
-    ready（下载好了，blocked 是现在不能安装的原因）/ installing。"""
+    manual（只能去官网下载）/ need_cdk（选了国内渠道、还没填 CDK）/ available（可以点"立即更新"）/
+    downloading（asking：正在问 Mirror酱 要下载地址）/ extracting / failed / ready（下载好了，blocked 是现在不能安装的原因）/
+    installing。channel 是这次用的渠道（"cn" / "global"），global_ok 是能不能改用国际渠道一键更新。"""
     if not latest:
         return None
     version = latest["version"]
@@ -150,11 +165,16 @@ def state(latest):
         if job["phase"] == "downloading":
             job["percent"] = min(100, int(job["done"] * 100 / job["total"])) if job["total"] else 0
             job["done_mb"], job["total_mb"] = round(job["done"] / 2**20), round(job["total"] / 2**20)
+            job["asking"] = not job["total"]  # 国内渠道还在问 Mirror酱 要地址，还不知道多大
         return job
     if staged(version):
         return {"phase": "ready", "version": version, "blocked": install_blocker()}
+    if mirrorchyan.channel() == "cn":
+        phase = "available" if mirrorchyan.cdk() else "need_cdk"
+        return {"phase": phase, "version": version, "size_mb": None, "channel": "cn", "global_ok": global_ok(latest)}
     info = update_check.safe_download(latest["download"])
-    return {"phase": "available", "version": version, "size_mb": max(1, round((_patch_for(info) or info)["size"] / 2**20))}
+    return {"phase": "available", "version": version, "size_mb": max(1, round((_patch_for(info) or info)["size"] / 2**20)),
+            "channel": "global", "global_ok": True}
 
 
 def _patch_for(info):
@@ -172,21 +192,33 @@ def take_result():
 
 # ---------- 下载 ----------
 
-def start_download(latest):
-    """点了"立即更新"：在后台开始下载（已经在下载、已经下载好了就什么也不做）。不能下载时抛出 UpdateError。"""
-    if not supported(latest):
+def start_download(latest, channel=None):
+    """点了"立即更新"：在后台开始下载（已经在下载、已经下载好了就什么也不做）。不能下载时抛出 UpdateError。
+    channel：这次用哪个渠道，默认是玩家在设置页选的；国内渠道没下成、玩家点了"这次改用国际渠道下载"时是 "global"。"""
+    if not (FROZEN and _hooks is not None and latest):
         raise UpdateError("这个版本不能在 Evo 里更新，请去官网下载")
-    info = update_check.safe_download(latest["download"])
+    channel = channel if channel in ("cn", "global") else mirrorchyan.channel()
     version = latest["version"]
     if version_tuple(version) <= version_tuple(APP_VERSION):
         raise UpdateError(f"已经是 {APP_VERSION}，不用更新")
+    if channel == "cn":
+        key = mirrorchyan.cdk()
+        if not key:
+            raise UpdateError("国内渠道要先在设置页填 Mirror酱 CDK")
+        work, args, total = _mirror_download, (version, key), 0
+    else:
+        info = update_check.safe_download(latest.get("download"))
+        if info is None:
+            raise UpdateError("这个版本不能从国际渠道一键更新，请去官网下载")
+        work, args, total = _download, (version, info), (_patch_for(info) or info)["size"]
     with _lock:
         if _job.get("phase") in ("downloading", "extracting", "installing") or staged(version):
             return
         _job.clear()
-        _job.update(phase="downloading", version=version, done=0, total=(_patch_for(info) or info)["size"], mirror=False)
+        _job.update(phase="downloading", version=version, done=0, total=total, mirror=False, channel=channel,
+                    global_ok=global_ok(latest))
         _cancel.clear()
-    threading.Thread(target=_download, args=(version, info), name="update-download", daemon=True).start()
+    threading.Thread(target=work, args=args, name="update-download", daemon=True).start()
 
 
 def cancel_download():
@@ -265,12 +297,19 @@ def _patch_update(version, patch, path, full_size):
             raise update_patch.Unusable(f"服务器上没有（HTTP {e.code}）") from e
         raise
     _set_job(phase="extracting")
+    took, copied = _stage(version, lambda tmp: update_patch.apply(path, EXE_DIR, tmp, APP_VERSION, version))
+    _log(f"用补丁包拼好了 {version}：补丁包里的 {took} 个文件，加上现在的程序里没变的 {copied} 个，都核对过")
+
+
+def _stage(version, build):
+    """拼出新版本：build(tmp) 把它写进 _update/<版本号>.tmp/Evo/，确认有 Evo.exe 和 _internal，写 ready.json，
+    再改名成 _update/<版本号>/。出错删掉拼了一半的。返回 build 的结果。"""
     target = UPDATE_DIR / version
     tmp = target.with_name(target.name + ".tmp")
     for folder in (tmp, target):
         shutil.rmtree(folder, ignore_errors=True)
     try:
-        took, copied = update_patch.apply(path, EXE_DIR, tmp, APP_VERSION, version)
+        result = build(tmp)
         if not (tmp / "Evo" / "Evo.exe").is_file() or not (tmp / "Evo" / "_internal").is_dir():
             raise update_patch.Unusable("拼出来的新版本里没有 Evo.exe 或 _internal")
         _write_json(tmp / "ready.json", {"version": version})
@@ -278,7 +317,73 @@ def _patch_update(version, patch, path, full_size):
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    _log(f"用补丁包拼好了 {version}：补丁包里的 {took} 个文件，加上现在的程序里没变的 {copied} 个，都核对过")
+    return result
+
+
+# ---------- 国内渠道（Mirror酱） ----------
+
+def _mirror_download(version, key):
+    """国内渠道：带上 CDK 问 Mirror酱 要下载地址，下载、按它给的 SHA-256 核对；增量包照包里的文件清单拼出新版本
+    （update_patch.compose），完整包照常解压。出错写明原因停下，不自动改用国际渠道（用户决定：让玩家自己选）。
+    CDK 和下载地址都不写进日志。"""
+    part = UPDATE_DIR / f"Evo-{version}-mirrorchyan.zip.part"
+    try:
+        UPDATE_DIR.mkdir(exist_ok=True)
+        package = _mirror_package(version, key)
+        check_folder(max(package["size"], FULL_SIZE_GUESS))
+        try:
+            _mirror_get(package, part, version)
+        except urllib.error.HTTPError as e:  # 下载地址有时效：过期了再问一次，从头下
+            if not 400 <= e.code < 500:
+                raise
+            _log(f"Mirror酱 的下载地址用不了（HTTP {e.code}，可能过期了），重新要一次")
+            package = _mirror_package(version, key)
+            _mirror_get(package, part, version)
+        _set_job(phase="extracting")
+        if package["update_type"] == "incremental":
+            took, copied = _stage(version, lambda tmp: update_patch.compose(part, EXE_DIR, tmp, version))
+            _log(f"用 Mirror酱 的增量包拼好了 {version}：增量包里的 {took} 个文件，加上现在的程序里没变的 {copied} 个，"
+                 "都照文件清单核对过")
+        else:
+            extract(part, UPDATE_DIR / version, version)
+        _end_job()
+    except _Cancelled:
+        _log("下载取消了")
+        _end_job()
+    except update_patch.Unusable as e:
+        _log(f"Mirror酱 的增量包用不了：{e}")
+        _end_job(f"Mirror酱 的增量包和现在装着的 Evo 对不上（{e}），没有安装。可以重试，或者这次改用国际渠道下载")
+    except UpdateError as e:
+        _log(f"没下载好：{e}")
+        _end_job(str(e))
+    except (OSError, http.client.HTTPException, zipfile.BadZipFile) as e:
+        _log(f"没下载好：{_short(e)}")
+        _end_job(_describe(e))
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def _mirror_package(version, key):
+    """问 Mirror酱 要 version 的下载信息 {"url", "sha256", "size", "update_type"}；问不到抛出 UpdateError（原因给玩家看）。"""
+    _log("国内渠道：向 Mirror酱 要下载地址")
+    try:
+        answer = mirrorchyan.latest(key, timeout=update_check.TIMEOUT)
+    except mirrorchyan.MirrorError as e:
+        raise UpdateError(str(e)) from None
+    if answer["version"] != version:
+        raise UpdateError(f"Mirror酱 上暂时还没有 {version}（那边现在是 {answer['version']}），过一会儿再试")
+    if answer["download"] is None:
+        raise UpdateError("Mirror酱 没有给下载地址，请稍后再试")
+    package = answer["download"]
+    kind = "增量包" if package["update_type"] == "incremental" else "完整安装包"
+    _log(f"Mirror酱 给的是{kind}（{_size_text(package['size'])}）")
+    return package
+
+
+def _mirror_get(package, part, version):
+    _set_job(done=0, total=package["size"])
+    kind = "增量包" if package["update_type"] == "incremental" else "安装包"
+    _get({**package, "mirrors": []}, part, f"{version} 的{kind}（Mirror酱）")
 
 
 class _Part:

@@ -30,6 +30,8 @@ os.environ["EVO_DATA_DIR"] = str(_TEMP)  # paths.py 一导入就决定数据文�
 os.environ.pop("EVO_CAPTURES_DIR", None)  # 截图也跟着临时文件夹走，绝不写进项目的 captures/
 # Apex 的视频设置文件也指到临时文件夹（默认没有这个文件 = 按截图的比例），免得测试结果随开发者当时的游戏分辨率变
 os.environ["EVO_VIDEOCONFIG"] = str(_TEMP / "videoconfig.txt")
+# Mirror酱（检查更新时也问它）指到本机没人听的端口：测试绝不连真的 Mirror酱，要用的测试自己换成本机的小服务器
+os.environ["EVO_MIRRORCHYAN_URL"] = "http://127.0.0.1:9/api/resources/Evo/latest"
 sys.path.insert(0, str(CODE))
 
 import cv2  # noqa: E402

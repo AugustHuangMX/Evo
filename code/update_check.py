@@ -5,6 +5,9 @@
 读不到再读 https://dl.evotracker.cn/latest.json（Cloudflare）；0.4.2 及以前先读 dl.evotracker.cn 的。
 请求里只带"Evo/<版本号>"，不发送任何战绩、截图或电脑信息；和打开任何网页一样，服务器能看到访问者的 IP 地址。
 几秒钟连不上、文件格式不对，都当作"这次没查到"，不影响 Evo 的其他功能。
+同时（2026-11-04 起，用户决定：所有人都问）问一下 Mirror酱 上的最新版本（mirrorchyan.py，不带 CDK，只带版本号、
+系统和架构）；latest.json 读不到时（比如国内连不上 Cloudflare）用 Mirror酱 查到的版本号提醒更新，
+这时没有 dl.evotracker.cn 的安装包信息，国际渠道只能去官网下载，国内渠道照常一键更新。
 
 latest.json 由 release.py 在发布时生成，和安装包一起传到 R2 和 COS：
     {"version": "0.4.1", "date": "2026-10-30", "page": "https://evotracker.cn/#download", "notes": ["……"],
@@ -36,12 +39,14 @@ patches 是补丁包（0.4.0 起，2026-10-24 用户决定，见 update_patch.py
 import json
 import os
 import re
+import threading
 import time
 import urllib.request
 from datetime import datetime
 from urllib.parse import urlparse
 
 import app_settings
+import mirrorchyan
 from storage import APP_VERSION
 
 UPDATE_URL = os.environ.get("EVO_UPDATE_URL", "https://dl.evotracker.cn/latest.json")
@@ -188,6 +193,9 @@ def check(timeout=TIMEOUT, attempts=1):
     {"ok": True, "latest": {...}, "newer": 是否比现在装的新, "checked_at": 时间}，
     或 {"ok": False, "error": 原因, "checked_at": 时间}。"""
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    mirror = {}
+    asking = threading.Thread(target=_ask_mirror, args=(mirror, timeout), name="mirrorchyan-check", daemon=True)
+    asking.start()  # 和读 latest.json 同时问 Mirror酱，不多等
     latest, error = None, None
     for attempt in range(max(1, attempts)):
         if attempt:
@@ -197,6 +205,9 @@ def check(timeout=TIMEOUT, attempts=1):
             break
         except UpdateError as e:
             error = e
+    asking.join(timeout + 5)
+    if latest is None and mirror.get("answer"):
+        latest = from_mirror(mirror["answer"])  # latest.json 读不到：用 Mirror酱 查到的
     if latest is None:
         result = {"ok": False, "error": str(error), "checked_at": checked_at}
     else:
@@ -205,6 +216,21 @@ def check(timeout=TIMEOUT, attempts=1):
         app_settings.set_value("update_latest", latest if newer else None)
     app_settings.set_value("update_last_check", result)
     return result
+
+
+def _ask_mirror(out, timeout):
+    """问一下 Mirror酱 上的最新版本（不带 CDK），结果放进 out["answer"]；没问到就算了（不影响检查）。"""
+    try:
+        out["answer"] = mirrorchyan.latest(timeout=timeout)
+    except mirrorchyan.MirrorError:
+        pass
+
+
+def from_mirror(answer):
+    """latest.json 读不到时，用 Mirror酱 查到的版本当作最新版本：没有 dl.evotracker.cn 的安装包信息（download 为 None），
+    国际渠道只能去官网下载；国内渠道一键更新时再问 Mirror酱 要下载地址（updater.py）。"""
+    return {"version": answer["version"], "date": "", "page": DEFAULT_PAGE, "notes": answer["notes"],
+            "download": None, "source": "mirrorchyan"}
 
 
 def known_newer():

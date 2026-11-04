@@ -194,7 +194,8 @@ def panel_checks(out):
         "要不要自动检查新版本和公告？" in first and "每 30 分钟看一次有没有开发者公告" in first)
     app_settings.set_value("update_auto", True)
     settings = client.get("/settings").get_data(as_text=True)
-    out["设置页的开关叫\"自动检查新版本和公告\""] = 'id="update-auto-name">自动检查新版本和公告</div>' in settings
+    # 2026-11-04 用户改：设置页的开关只叫"自动检查新版本"，不写说明（公告照旧跟着这个开关）
+    out["设置页的开关叫\"自动检查新版本\""] = 'id="update-auto-name">自动检查新版本</div>' in settings
 
 
 def tray_checks(out, base):
