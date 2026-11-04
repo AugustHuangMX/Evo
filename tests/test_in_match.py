@@ -195,7 +195,8 @@ def collect_checks(images):
     r["got"] = [pick(row, *keys) for row in r["rows"]]
     r["said"] = [line for line in r["log"] if "返回大厅按钮" in line]
     # 停在总结页时只读总结页（2026-10-27 用户决定）：小队打完了 → 经验值页 → 总结页 → 大厅。右上角回到大厅才读；
-    # 从经验值页切到总结页时，经验值页等总结页存下了再读
+    # 从经验值页切到总结页时（数字还没停就切过去了：只看到一张经验值页），经验值页离开时那一帧等总结页存下了再读。
+    # 2026-11-04 起数字停下来时在经验值页上就读（那时总结页不在屏幕上），见 test_season31 的经验值页那几项
     read_on = []  # (读的是什么, 当时屏幕上是哪一帧)
     real_top, real_xp, real_summary = Hud.read_top, live_collect.read_xp, live_collect.read_summary
     real_mates, real_name = live_collect.read_teammates, live_collect.PlayerNameReader.read
@@ -211,7 +212,7 @@ def collect_checks(images):
             mock.patch.object(live_collect, "read_summary", spy("总结页", real_summary)), \
             mock.patch.object(live_collect, "read_teammates", spy("队友", real_mates)), \
             mock.patch.object(live_collect.PlayerNameReader, "read", spy("名字", real_name)):
-        r = run("pages_first", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, XP5, XP5, XP5, SUMMARY5, SUMMARY5,
+        r = run("pages_first", [START, PLAYING, PLAYING, PLAYING, SPECT_ENEMY, XP5, SUMMARY5, SUMMARY5,
                                 SUMMARY5, LOBBY, LOBBY])
         r["read_on"] = list(read_on)
         r["got"] = [pick(row, "placement", "kills", "damage", "rp_source", "legend") for row in r["rows"]]
@@ -410,7 +411,7 @@ def main():
             c["squad_out"]["got"] == [(18, 0, 0, 0, 0, -65, "对局中", 0, HUD_ONLY_NOTE, "ranked", "罗芭")]
             and bool(c["squad_out"]["said"]),
         f"停在总结页时只读总结页：右上角回到大厅才读（{tops}）": tops and set(tops) == {LOBBY},
-        f"  从经验值页切到总结页：总结页读完、存下以后才读经验值页（{order}）":
+        f"  从经验值页切到总结页（数字还没停就切过去）：总结页读完、存下以后才读经验值页（{order}）":
             "经验值页" in order and order[:order.index("经验值页")].count("总结页") >= 2,
         f"  对局中的数据照样补进这一局：传奇、怎么结束的；RP 用经验值页的（{pages['got']}；{pages['end_screen']}）":
             pages["got"] == [(8, 3, 688, "经验值页", "罗芭")] and pages["end_screen"] == {"对局中": "squad_out"},

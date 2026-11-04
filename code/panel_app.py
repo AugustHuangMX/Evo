@@ -1558,7 +1558,7 @@ def autostart_setting():
 SOUND_WHEN = {  # 设置页"提示音"一栏：每一声什么时候响（规则见 live_collect.SoundCues）
     "match_end": "小队打完了（淘汰画面、冠军、右下角出现\"返回大厅\"），提醒你去总结页",
     "summary": "Evo 读到了名次、击杀和伤害，可以离开了",
-    "xp": "经验值页的数字停下来、Evo 读到了 RP 和段位，可以离开了",
+    "xp": "经验值页的数字停下来、Evo 读到了 RP，可以离开了",
 }
 
 

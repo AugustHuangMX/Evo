@@ -66,7 +66,7 @@ from process_info import memory_mb, set_full_speed, set_low_priority
 from screens import GameScreens
 from summary_page import KEY_FIELDS, is_champion, read_summary, show, summary_readings, summary_to_match
 from teammates import describe, read_teammates
-from xp_page import numbers_moved, numbers_snapshot, read_xp
+from xp_page import numbers_moved, numbers_snapshot, read_rp, read_xp
 
 LATE_FIELDS = ("placement", "squad_kills")  # 总结页上晚 1–2 秒才滑进来的项
 MODEL_IDLE_SECONDS = 120  # 识别模型闲置这么久就释放
@@ -303,8 +303,9 @@ class FullSpeed:
 
 class ScreenWatcher:
     """经验值页、开局画面、大厅、淘汰画面、冠军横幅（见 config/screens.json）。
-    经验值页的数字有动画：数字停下来（xp.json 的 still：那几格的像素一秒不变，不用识别引擎）就读这一张，读全了
-    告诉 on_read（响"经验值页"那一声，2026-11-04 用户决定）；这次停留没读全的话，离开时再读最后一帧（读全了也响）。
+    经验值页的数字有动画：数字停下来（xp.json 的 still：那几格的像素和上一张差不多，不用识别引擎）就先读 RP 那四格，
+    对上了马上告诉 on_read（响"经验值页"那一声，2026-11-04 用户决定），再读整页；这次停留没读全的话，
+    离开时再读最后一帧（读全了也响）。
     进入开局画面或大厅表示上一局彻底结束；
     在开局画面读本局的模式和地图，读到就不再读；在淘汰画面读名次，这一次停留里读到就不再读，交给 PostMatch 归到这一局；
     进入冠军横幅告诉 PostMatch 记第 1 名。
@@ -383,26 +384,33 @@ class ScreenWatcher:
         self._read_held()
 
     def _watch_xp(self, frame, now):
-        """停在经验值页：数字停下来了（那几格和这一段开头那张差不多、过了 still.seconds 秒）就读这一张。"""
+        """停在经验值页：数字停下来了（那几格和这一段开头那张差不多、过了 still.seconds 秒）就读这一张。
+        先只读 RP 那四格：对上了、是这一局的，马上响提示音，再存截图、读整页（2026-11-04：读整页、存截图要将近一秒，
+        玩家看到数字停了常常马上就走，听起来像"切出去才响"）；四格对不上（动画还没播完）就不读整页，过一会儿再试。"""
         rule = self.xp_cfg["still"]
         tick = time.monotonic()
         snapshot = numbers_snapshot(frame, self.xp_cfg)
         if self.still is None or numbers_moved(self.still[0], snapshot, self.xp_cfg):
             self.still = (snapshot, tick)  # 还在动：从这一张重新算
             return
-        if (self.xp_full or tick - self.still[1] < rule["seconds"] or self.xp_reads >= rule["max_reads"]
+        if (self.xp_full or tick - self.still[1] < rule["seconds"] - 0.01 or self.xp_reads >= rule["max_reads"]
                 or (self.xp_read_at is not None and tick - self.xp_read_at < rule["retry_seconds"]) or self.busy()):
             return
         self.xp_reads += 1
         self.xp_read_at = tick
+        rp, known = read_rp(self.engine, frame, self.xp_cfg)
+        if rp is None:
+            return  # 顶部的数字和三个合计还对不上：动画多半还没播完
+        self.log(f"[{now:%H:%M:%S}] 经验值页的数字停下了，RP {rp:+d} 对上了")
+        if self.on_read is not None and self.post.xp_pending():
+            self.on_read(now)
         path = screenshots.path_for(self.run_dir, f"xp_{now:%H%M%S}_still.png")
         path.parent.mkdir(parents=True, exist_ok=True)
         save_png(path, frame)
-        self.log(f"[{now:%H:%M:%S}] 经验值页的数字停下了，读这一张（已存截图）")
-        reading, problems = read_xp(self.engine, frame, self.xp_cfg)
+        reading, problems = read_xp(self.engine, frame, self.xp_cfg, known=known)
         self.xp_full = not problems
         if self.post.on_xp(reading, problems, path, now) and self.on_read is not None:
-            self.on_read(now)
+            self.on_read(now)  # 这一局第一次读全（上面没响过的话，比如在大厅里打开的、只有经验值页的局）
 
     def _read_held(self):
         """识别先留着的经验值页最后一帧（总结页正在读时不读）。"""

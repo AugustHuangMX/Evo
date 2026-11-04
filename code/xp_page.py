@@ -122,9 +122,28 @@ def read_field(engine, img, name, spec, cfg):
     return ""
 
 
-def read_xp(engine, img, cfg):
-    """识别一张经验值页。返回 (结果, 问题列表)。结果里读不出的项为 None。"""
-    raw = {name: read_field(engine, img, name, spec, cfg) for name, spec in cfg["fields"].items()}
+RP_FIELDS = ("rp_shown", "combat_total", "bonus_total", "placement_total")  # 顶部的数字和三个合计
+
+
+def read_rp(engine, img, cfg):
+    """只读 RP 那四格（顶部的数字和三个合计，约整页的四成时间）：三个合计加起来等于顶部的数字才算读到。
+    返回 (RP 或 None, 这四格读到的原文：交给 read_xp 的 known，不用再读一遍)。
+    "排位分数已记录"那一声先看它：读整页、存截图要将近一秒，玩家看到数字停了常常马上就走（2026-11-04）。"""
+    raw = {name: read_field(engine, img, name, cfg["fields"][name], cfg) for name in RP_FIELDS}
+    parts = [re.match(cfg["patterns"]["points"], raw[name]) for name in RP_FIELDS[1:]]
+    shown = re.fullmatch(r"[+-]?\d+", raw["rp_shown"])
+    if shown is None or None in parts:
+        return None, raw
+    total = sum(int(m[1]) for m in parts)
+    return (total if total == int(shown[0]) else None), raw
+
+
+def read_xp(engine, img, cfg, known=None):
+    """识别一张经验值页。返回 (结果, 问题列表)。结果里读不出的项为 None。
+    known：已经读过的几格的原文（read_rp 读的那四格），不再读一遍。"""
+    known = known or {}
+    raw = {name: known[name] if name in known else read_field(engine, img, name, spec, cfg)
+           for name, spec in cfg["fields"].items()}
     patterns = cfg["patterns"]
     glued = cfg.get("split_glued", True)  # 次数和分数连在一起时（"00排位点数"）去拆；英文中间隔得远，不会连在一起，不拆
 

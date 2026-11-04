@@ -417,6 +417,12 @@ class PostMatch:
             storage.save_readings(self.conn, match_id, SOURCE_CHAMPION, {"placement": 1}, f"{when:%Y-%m-%d %H:%M:%S}")
             self._settle(match_id)
 
+    def xp_pending(self):
+        """这一局有别的数据（总结页、对局中、淘汰画面、冠军），经验值页还没用上：这时屏幕上的经验值页就是这一局的，
+        RP 一对上就能先响提示音（见 live_collect.ScreenWatcher）。没有别的数据时可能是在大厅里重新打开的上一局，等读完整页再说。"""
+        return not self.xp_done and any(x is not None for x in (self.match_id, self.hud, self.hud_end, self.elim,
+                                                                 self.champion))
+
     def on_xp(self, reading, problems, path, when):
         """识别了一张经验值页之后调用：数字停下来的那一张，或者离开时的最后一帧（见 live_collect.ScreenWatcher）。
         返回 True：这一局第一次读全（"经验值页"那一声在这时响，2026-11-04 用户决定）。"""

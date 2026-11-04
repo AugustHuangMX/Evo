@@ -139,7 +139,7 @@ def xp_still_checks():
 
     read_at, cue_at, left_at = first(log, "经验值页的数字停下了"), first(log, "提示音：经验值页"), first(log, "小队已淘汰")
     return {
-        f"动画播完、数字停了一秒才读，读全了马上响，还在经验值页上（日志第 {read_at}、{cue_at}、{left_at} 行）":
+        f"动画播完、数字停下（和上一张差不多）才读，RP 对上了马上响，还在经验值页上（日志第 {read_at}、{cue_at}、{left_at} 行）":
             None not in (read_at, cue_at, left_at) and read_at < cue_at < left_at,
         f"读的是停下来的那一张：RP +19（{[r['rp_delta'] for r in rows]}）": [r["rp_delta"] for r in rows] == [19],
         f"只响一次\"经验值页\"（{played}）": played.count("xp") == 1,
