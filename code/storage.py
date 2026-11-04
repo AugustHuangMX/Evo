@@ -609,6 +609,29 @@ def answer_name(conn, name, account_id=None):
     conn.commit()
 
 
+def delete_account(conn, account_id):
+    """删除一个账号的所有记录（设置页"账号"一栏的"删除"，比如不想要的小号，2026-11-05 用户要的）：这个账号所有名字的局
+    （连同队友、各来源读数、武器）、回大厅读到的段位、历史赛季的数据，再把这些名字从对照表里去掉：以后在这个号上再打，
+    当成新名字，弹窗问是不是同一个人。名字不管空格（见 name_key）；还没认出玩家名的局不动。截图由调用的地方删。
+    返回 (删掉的局（行，删截图用）, {"matches": 局数, "lobby": 大厅读数, "seasons": 历史赛季的行})。"""
+    sync_names(conn)  # 名字刚出现、还没登记进对照表时，先登记，不然它的局删不到
+    keys = {r[0] for r in conn.execute("SELECT name_key FROM player_names WHERE account_id = ?", (account_id,))}
+
+    def mine(table, id_column):
+        return [r for r in conn.execute(f"SELECT * FROM {table} WHERE player_name IS NOT NULL ORDER BY {id_column}")
+                if name_key(r["player_name"]) in keys]
+
+    matches, lobby, seasons = mine("matches", "match_id"), mine("lobby_readings", "reading_id"), mine("season_stats", "stat_id")
+    match_ids = [(r["match_id"],) for r in matches]
+    for table in ("matches", "teammates", "readings", "weapon_holds"):
+        conn.executemany(f"DELETE FROM {table} WHERE match_id = ?", match_ids)
+    conn.executemany("DELETE FROM lobby_readings WHERE reading_id = ?", [(r["reading_id"],) for r in lobby])
+    conn.executemany("DELETE FROM season_stats WHERE stat_id = ?", [(r["stat_id"],) for r in seasons])
+    conn.execute("DELETE FROM player_names WHERE account_id = ?", (account_id,))
+    conn.commit()
+    return matches, {"matches": len(matches), "lobby": len(lobby), "seasons": len(seasons)}
+
+
 def write_csv(conn, f):
     """把全部数据按 CSV 格式写进一个已打开的文件（或内存里的文本缓冲）。
     按 COLUMNS 的顺序取列：升级过的旧数据库里，新加的列排在最后，SELECT * 的顺序会和列名对不上。"""

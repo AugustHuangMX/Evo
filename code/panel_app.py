@@ -1954,6 +1954,28 @@ def move_name():
     return redirect(url_for("settings"))
 
 
+@app.post("/accounts/delete")
+def delete_account():
+    """设置页"账号"一栏的"删除一个账号"（2026-11-05 用户要的，比如不想要的小号）：account = 账号编号。
+    删这个账号的所有记录（见 storage.delete_account），删前先把数据库备份一份（同"清空所有战绩"），
+    这些局的截图也删（同战绩页删一局，用户决定）。只有 2 个以上账号时才有这一行（只有一个时用"清空所有战绩"）。"""
+    everyone = storage.accounts(db())
+    target = next((a for a in everyone if str(a["id"]) == request.form.get("account", "")), None)
+    if target is None or len(everyone) < 2:
+        flash("没有删除：请选一个账号", "error")
+        return redirect(url_for("settings"))
+    backup = db_path().with_name(f"{db_path().name}.bak-account-{datetime.now():%Y%m%d-%H%M%S}")
+    storage.backup_db(db(), backup)
+    rows, counts = storage.delete_account(db(), target["id"])
+    shots = sum(screenshots.discard(db(), row, removing=True) for row in rows)  # 局已经删了：别的局还在用的截图照样不删
+    if session.get("account") == target["id"]:  # 正在看的就是它：换回默认（最近玩过的账号）
+        session.pop("account")
+    also = "".join(f"、{n} {what}" for n, what in ((counts["lobby"], "次大厅段位"), (counts["seasons"], "条历史赛季数据")) if n)
+    flash(f"已删除账号 {target['name']} 的 {counts['matches']} 局战绩{also}" + ("和这些局的截图" if shots else "")
+          + f"。删除前的数据备份在 {backup}", "ok")
+    return redirect(url_for("settings"))
+
+
 @app.post("/accounts/later")
 def later_names():
     """弹窗的"稍后再问"（或按 Esc）：这个窗口开着期间不再弹，关掉窗口、下次打开时再问

@@ -239,6 +239,26 @@
       </form>
       {% endfor %}
       {% endfor %}
+      {% if accounts|length >= 2 %}
+      {# 删除一个账号的所有记录（2026-11-05 用户要的，比如不想要的小号；panel_app.delete_account）：先选账号，"删除"才能点，
+         确认框里写清楚删谁、几局。只有一个账号时没有这一行（用"数据与隐私"里的"清空所有战绩"） #}
+      <form method="post" action="{{ url_for('delete_account') }}" class="setting danger-zone name-row" id="delete-account-form">
+        <input type="hidden" name="token" value="{{ token }}">
+        <div class="setting-text">
+          <div class="setting-name" id="delete-account-name">删除一个账号</div>
+          <div class="setting-desc">比如不想要的小号：它的对局、大厅段位、历史赛季数据{% if not (keep_shots or shots_locked) %}和截图{% endif %}都删掉，删前自动备份数据库。以后在这个号上再打，会当成新名字问你</div>
+        </div>
+        <div class="setting-actions inline">
+          <select name="account" id="delete-account-select" aria-labelledby="delete-account-name">
+            <option value="" selected>选一个账号</option>
+            {% for a in accounts %}
+            <option value="{{ a.id }}" data-name="{{ a.name }}" data-games="{{ a.games }}">{{ a.name }}（{{ a.games }} 局）</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-danger" id="delete-account-btn">删除</button>
+        </div>
+      </form>
+      {% endif %}
     </section>
     {% endif %}
 
@@ -761,6 +781,28 @@
     btn.setAttribute("aria-busy", "true");
     btn.textContent = "正在删除…";
   });
+  // 删除一个账号：选了账号"删除"才能点；确认框写清楚删谁、几局，确认后按钮变成"正在删除…"
+  (function () {
+    var form = document.getElementById("delete-account-form");
+    if (!form) return;  // 只有一个账号时没有这一行
+    var select = document.getElementById("delete-account-select"), btn = document.getElementById("delete-account-btn");
+    function sync() { btn.disabled = !select.value; }
+    select.addEventListener("change", sync);
+    sync();  // 返回这一页时浏览器可能记着上次选的
+    form.addEventListener("submit", function (e) {
+      var opt = select.options[select.selectedIndex];
+      if (!select.value || !confirm("确定删除账号 " + opt.dataset.name + " 的全部记录吗？\n"
+          + opt.dataset.games + " 局战绩（连同队友、武器）、回大厅读到的段位、历史赛季数据"
+          + {{ ('' if keep_shots or shots_locked else '，以及这些局的截图') | tojson }} + "都会删掉。\n"
+          + "删除前会自动备份一份数据库" + {{ ('' if keep_shots or shots_locked else '；截图删了就找不回来') | tojson }} + "。")) {
+        e.preventDefault();
+        return;
+      }
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "正在删除…";
+    });
+  })();
   // 检查更新、立即更新、安装：按钮变成"正在…"（form 上的 data-busy，见 base.html）
 </script>
 {% endblock %}

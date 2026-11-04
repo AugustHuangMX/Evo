@@ -10,11 +10,14 @@
   总览、战绩、传奇筛选、待确认数都只算这个账号；切换后换页面还记得，去掉页码和展开的那一局；
   "全部账号"时段位和走势图提示选一个账号；每局详情里有玩家名
 - 设置页"账号"一栏：把名字并到别的账号、再拆回来；并到不存在的账号不保存
+- 删除一个账号：小号的局（连同队友、读数、武器、截图）、大厅读数、历史赛季都删掉，名字从对照表去掉（不管空格）；
+  主号和没认出玩家名的局不动；删前备份；没有口令、不存在的账号不删；正在看的账号删了页面照常；以后再打当成新名字
 
 运行：python tests/test_accounts.py
 """
 
 import re
+import shutil
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -22,6 +25,7 @@ from pathlib import Path
 from fake_game import report  # 要在项目代码之前导入（设置临时数据文件夹）
 
 import panel_app
+import paths
 import storage
 
 FOLDER = Path(tempfile.mkdtemp(prefix="evo-accounts-", dir=storage.DB_PATH.parent.parent))  # 在测试的临时数据文件夹里
@@ -179,11 +183,78 @@ def switch_checks():
     return out
 
 
+def delete_checks():
+    """设置页"删除一个账号"：小号的局（连同队友、读数、武器、截图）、大厅读数、历史赛季都删掉，名字从对照表去掉；
+    主号和没认出玩家名的局不动；删前有备份。返回每一步看到的结果。"""
+    token = panel_app.app.config["TOKEN"]
+    out = {}
+    # 主号 2 局，小号 2 局（第二局名字读出了空格，算同一个名字），1 局没认出玩家名
+    path, conn = new_db("delete", [("Main", "2026-10-16 20:00:00"), ("Main", "2026-10-16 21:00:00"),
+                                   (None, "2026-10-16 22:00:00"), ("Alt", "2026-10-17 20:00:00"),
+                                   ("A lt", "2026-10-17 21:00:00")])
+    storage.accounts(conn)
+    storage.answer_name(conn, "Alt")
+    ids = {a["name"]: a["id"] for a in storage.accounts(conn)}
+    games = [r["match_id"] for r in conn.execute("SELECT match_id FROM matches ORDER BY match_id")]
+    main_game, alt_game = games[0], games[3]
+    # 截图文件夹照记录程序的样子按时间起名，测完删掉：全部测试在同一个临时数据文件夹里接着跑，
+    # 留下来会被后面的"截图留不留"当成最新的（正在记录的）文件夹
+    folder = paths.CAPTURES_DIR / "live" / "20261017_195900"
+    folder.mkdir(parents=True, exist_ok=True)
+    shots = {}
+    for game in (main_game, alt_game):  # 每边一局：队友、读数、武器、总结页截图都有
+        shots[game] = folder / f"{game:02d}_summary.png"
+        shots[game].write_bytes(b"png")
+        storage.update_match(conn, game, {"evidence_path": str(paths.data_relative(shots[game]))})
+        storage.save_teammates(conn, game, [{"slot": "left", "name": "Mate"}])
+        storage.save_readings(conn, game, "总结页", {"placement": 5}, "2026-10-17 20:00:00")
+        storage.save_weapon_holds(conn, game, [("r301", 0, 60)])
+    for name in ("Main", "Alt", "A lt"):
+        storage.save_lobby(conn, {"read_at": "2026-10-17 22:00:00", "player_name": name, "rank_tier": "钻石",
+                                  "rank_division": "II", "rank_progress": 500, "score": 11500})
+    for name in ("Main", "Alt"):
+        storage.save_season_pending(conn, {"player_name": name, "season": 31, "kind": "all", "games": 10,
+                                          "read_at": "2026-10-17 22:00:00"})
+    panel_app.app.config.update(DB=path)
+    client = panel_app.app.test_client()
+    client.post("/account", data={"token": token, "account": str(ids["A lt"]), "next": "/"})  # 正在看小号
+
+    settings = client.get("/settings").get_data(as_text=True)
+    out["form"] = 'id="delete-account-form"' in settings and settings.count('data-games="2"') == 2
+    out["no_token"] = client.post("/accounts/delete", data={"account": str(ids["A lt"])}).status_code
+    bad = client.post("/accounts/delete", data={"token": token, "account": "999"}, follow_redirects=True)
+    out["bad"] = "请选一个账号" in bad.get_data(as_text=True) and summary(conn) == [("Main", 2, True), ("A lt", 2, True)]
+    done = client.post("/accounts/delete", data={"token": token, "account": str(ids["A lt"])}, follow_redirects=True)
+    text = done.get_data(as_text=True)
+    out["flash"] = "已删除账号 A lt 的 2 局战绩、2 次大厅段位、1 条历史赛季数据和这些局的截图" in text
+    out["page"] = 'id="delete-account-form"' not in text  # 只剩一个账号：没有这一行了
+    out["left"] = summary(conn)
+
+    def count(table, game=None):
+        return conn.execute(f"SELECT COUNT(*) FROM {table}" + (" WHERE match_id = ?" if game else ""),
+                            (game,) if game else ()).fetchone()[0]
+    out["matches"] = count("matches")  # 主号 2 局 + 没认出玩家名的 1 局
+    out["alt_gone"] = [count(t, alt_game) for t in ("teammates", "readings", "weapon_holds")]
+    out["main_kept"] = [count(t, main_game) for t in ("teammates", "readings", "weapon_holds")]
+    out["lobby"] = [r["player_name"] for r in storage.lobby_readings(conn)]
+    out["seasons"] = [r["player_name"] for r in storage.season_rows(conn)]
+    out["names"] = [r[0] for r in conn.execute("SELECT name_key FROM player_names")]
+    out["shots"] = (shots[alt_game].exists(), shots[main_game].exists())
+    out["backup"] = len(list(FOLDER.glob("delete.db.bak-account-*"))) == 1
+    out["view"] = client.get("/").status_code  # 正在看的账号删了：换回剩下的那个，不出错
+    storage.insert_match(conn, {"player_name": "Alt", "ended_at": "2026-10-18 20:00:00"})  # 以后在小号上再打
+    out["again"] = summary(conn)
+    conn.close()
+    shutil.rmtree(folder, ignore_errors=True)
+    return out
+
+
 def main():
     print("多账号：账号对照表、新玩家名的弹窗、切换账号")
     t = table_checks()
     p = panel_checks()
     s = switch_checks()
+    d = delete_checks()
     return report({
         f"第一个名字自动成为账号，只差空格的算同一个名字（{t['first']}）": t["first"] == [("Imperial Hzd", 2, True)],
         f"新名字先单独算一个账号，等回答（{t['pending']}）":
@@ -215,6 +286,20 @@ def main():
         f"设置页：把小号并到主号（{s['moved']}），再拆回来（{s['split']}）":
             s["moved"] == [("Alt", 5, True)] and s["split"] == [("Main", 3, True), ("Alt", 2, True)],
         "设置页：并到不存在的账号，不保存": s["bad"],
+        "设置页有\"删除一个账号\"，每个账号一项、写着局数": d["form"],
+        f"删除账号：没有口令不能删（状态码 {d['no_token']}）；选了不存在的账号不删，有提示":
+            d["no_token"] == 403 and d["bad"],
+        "删除小号：有提示（几局、几次大厅段位、几条历史赛季、截图），只剩一个账号后这一行不显示":
+            d["flash"] and d["page"],
+        f"删除小号：只剩主号（{d['left']}），主号的局和没认出玩家名的局都在（{d['matches']} 局）":
+            d["left"] == [("Main", 2, True)] and d["matches"] == 3,
+        f"删除小号：它的队友、读数、武器删了（{d['alt_gone']}），主号的还在（{d['main_kept']}）":
+            d["alt_gone"] == [0, 0, 0] and d["main_kept"] == [1, 1, 1],
+        f"删除小号：大厅读数、历史赛季只剩主号的（{d['lobby']}、{d['seasons']}），名字从对照表去掉（{d['names']}）":
+            d["lobby"] == ["Main"] and d["seasons"] == ["Main"] and d["names"] == ["Main"],
+        f"删除小号：它的截图删了，主号的还在（小号、主号：{d['shots']}）；删前备份了数据库": d["shots"] == (False, True) and d["backup"],
+        f"正在看的账号删了：页面照常打开（状态码 {d['view']}）": d["view"] == 200,
+        f"以后在小号上再打：当成新名字，等回答（{d['again']}）": d["again"] == [("Main", 2, True), ("Alt", 1, False)],
     })
 
 

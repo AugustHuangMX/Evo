@@ -607,7 +607,7 @@ table.stats-table { width: 100%; border-collapse: collapse; }
 .name-row { margin: 0; }
 .name-row .setting-name { overflow-wrap: anywhere; }
 .name-move { display: flex; align-items: center; gap: 8px; }
-.name-move select { max-width: 200px; text-overflow: ellipsis; }
+.name-move select, #delete-account-select { max-width: 200px; text-overflow: ellipsis; }
 .info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .info-value { margin-top: 4px; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--input-border); background: var(--inset); }
 .rec-note { margin-top: 14px; }
