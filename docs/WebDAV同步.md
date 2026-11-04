@@ -11,7 +11,7 @@
 | 8 → 9 | `matches` / `lobby_readings` 追加 `sync_uid`、`sync_updated`；稳定 UID 的唯一索引；`sync_tombstones` | 业务字段、原 ID、关联关系、NULL 和本机截图路径保留 |
 | 9 → 10 | `sync_revisions`、`sync_conflicts`、`sync_media` | 分别保存逻辑版本及内容指纹、部分并发冲突副本和截图引用，不改业务列 |
 
-`APP_VERSION` 保持 `0.4.0`，满足现有更新器的数字版本约定；窗口另外显示 `WebDAV beta 4`。这是贡献分支的构建标识，不宣称上游已正式发布此功能。
+当前贡献分支使用 `APP_VERSION=0.4.1`，满足现有更新器的数字版本约定；窗口另外显示 `WebDAV beta 5`。本次更新加入战斗贡献、多维数据分析与深浅主题适配，数据库仍为 schema 10。这是贡献分支的构建标识，不宣称上游已正式发布此功能。
 
 ## 跨设备对局 ID 与匿名统计（beta 4）
 
