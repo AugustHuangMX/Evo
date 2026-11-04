@@ -46,6 +46,7 @@ import test_stats_page
 import test_summary_page
 import test_teammates
 import test_telemetry
+import test_testers_1104
 import test_traditional
 import test_updater
 import test_weapons
@@ -83,7 +84,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "游戏里的数据页（认出、读两栏、核对，录入历史赛季数据用）": test_season_stats,
          "录入历史赛季数据（新表、录入模式、记录程序读数据页）": test_season_import,
          "\"赛季\"页面（录入按钮、待核对、保存、历史赛季表、设置页那一行）": test_seasons_page,
-         "代码地图（docs/代码地图.md 是最新的、每个文件都分了组）": test_code_map}
+         "代码地图（docs/代码地图.md 是最新的、每个文件都分了组）": test_code_map,
+         "测试员 11-04 的截图（第 31 赛季 16:9、4:3：新地图、大厅分数、队友名字、经验值页段位）": test_testers_1104}
 
 try:  # 云同步（微信小程序）的测试只在开发者电脑上，不上传 GitHub（2026-10-24 用户决定）：有就一起跑
     import test_cloud_sync

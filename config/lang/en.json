@@ -28,8 +28,8 @@
     "match_start.json": {
       "modes": {"RANKED": "ranked", "TRIOS": "pubs", "DUOS": "pubs"},
       "maps": {"WORLD'S EDGE": "世界尽头", "OLYMPUS": "奥林匹斯", "STORM POINT": "风暴点", "KINGS CANYON": "诸王峡谷",
-               "BROKEN MOON": "残月"},
-      "_说明_maps": "画面上的写法 → 简体名字（数据库里存简体）。E-District 的简体名字还没见过，先不加（读到了会留空，日志里提醒）"
+               "BROKEN MOON": "残月", "E-DISTRICT": "电力区域"},
+      "_说明_maps": "画面上的写法 → 简体名字（数据库里存简体）。E-District 的简体是'电力区域'（2026-11-04 简体截图里见过；英文横幅上照别的地图写成大写，还没见过英文的这张图）"
     },
     "summary.json": {
       "banner": {"champion": "CHAMPION"},

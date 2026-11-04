@@ -91,7 +91,7 @@ RP：游戏里没有单一的"总 RP"，只有"段位 + 段内进度"。**总分
 
 - 只改文档、注释：不跑（加、删、改名文件时只跑代码地图那一组）
 - 改页面、底座、测试工具、开发脚本：只跑相关的那一两组，`python tests/test_xxx.py`
-- 改模型（识别、`config/`、记录程序）、数据库 `storage.py`、新赛季更新以后：跑全部 `python tests/run_all.py`（约 9–11 分钟，41 组）。发版时 `release.py` 自己会跑全部
+- 改模型（识别、`config/`、记录程序）、数据库 `storage.py`、新赛季更新以后：跑全部 `python tests/run_all.py`（约 9–11 分钟，42 组）。发版时 `release.py` 自己会跑全部
 - 测试只 import 项目代码，项目代码不能 import 测试（否则 PyInstaller 会把测试打进安装包）
 
 ## 协作约定
