@@ -243,8 +243,11 @@ a { color: inherit; text-decoration: none; }
 .share-status { flex: 1; margin: 0; color: var(--good); font-size: 13px; }
 .share-status.share-error { color: var(--bad); }
 .share-body .dialog-desc { margin-top: -6px; font-size: 13px; }
-/* 只给读屏软件看的文字 */
-.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+/* 只给读屏软件看的文字。!important：别的规则不能把它撑开（2026-11-04：总览页六维图下面那张数字表，
+   "table.stats-table""radar-table"的 width: 100% 把它撑回整行宽，从窗口右边伸出去，出现横向滚动条） */
+.sr-only { position: absolute !important; width: 1px !important; height: 1px !important; margin: -1px !important;
+  padding: 0 !important; overflow: hidden !important; clip-path: inset(50%) !important; white-space: nowrap !important;
+  border: 0 !important; }
 
 /* ---------- 筛选栏 ---------- */
 .filters, .filter-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
