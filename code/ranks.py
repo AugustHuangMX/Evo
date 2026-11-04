@@ -51,6 +51,15 @@ def score(tier, division, progress):
     return t["starts"][DIVISIONS.index(division)] + progress
 
 
+def division_size(tier, division):
+    """这一段满分多少（白银 II：750）= 分数线上下一段的起点 - 这一段的起点。不分段的、读不全的、最高一段返回 None。"""
+    start = score(tier, division, 0)
+    if start is None or not has_divisions(tier):
+        return None
+    above = [s for s, _ in boundaries() if s > start]
+    return min(above) - start if above else None
+
+
 def boundaries():
     """分数线上每一段的起点，从低到高：[(分数, "钻石 IV"), ..., (16000, "大师")]。
     几个段位起点相同时（大师和猎杀者）只留低的那个。"""
