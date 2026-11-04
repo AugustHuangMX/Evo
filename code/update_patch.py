@@ -11,6 +11,12 @@ Evo 里（updater.py 调 apply）：下载补丁包、按 latest.json 核对 SHA
 补丁包里有的从补丁包里取，没有的从程序文件夹里现在的文件复制，每个文件都核对大小和 SHA-256。有一个对不上
 （被杀毒软件删了、被改过……）这个补丁包就用不了（Unusable），改下完整的安装包。拼出来的和解压完整安装包
 一模一样，之后的安装步骤不变。
+
+Mirror酱 的增量包（国内渠道，2026-11-04 用户决定；updater.py 调 compose）：Mirror酱 自己比较前后两个版本的
+完整安装包、做出增量包（新增和改了的文件，加一个 changes.json 写着删了哪些）。我们不靠 changes.json 拼，
+而是靠完整安装包里的文件清单 MANIFEST（release.py 写进去的，新版本每个文件的大小和 SHA-256，格式和 patch.json
+的 files 一样）：照清单拼出新版本，增量包里有的取增量包里的，没有的从现在的程序文件夹复制，每个都核对，
+清单上没有的旧文件自然就没了。对不上同样抛出 Unusable，不装。增量包里的路径带不带最外层的 Evo/ 都认。
 """
 
 import hashlib
@@ -22,6 +28,9 @@ from pathlib import Path, PurePosixPath
 
 INFO = "patch.json"  # 补丁包里的文件清单
 ROOT = "Evo"  # 安装包里最外层的文件夹
+MANIFEST = f"{ROOT}/_internal/evo_files.json"  # 完整安装包里的文件清单：{"version", "files"}，不列它自己（2026-11-04 起）
+CHANGES = "changes.json"  # Mirror酱 增量包最外层的变化说明（只核对里面的路径，拼的时候不用）
+CHANGE_KEYS = ("added", "modified", "deleted", "added_dir", "deleted_dir")
 MAX_FILES = 20000  # 现在约 350 个文件，多得离谱一定是坏了
 CHUNK = 1 << 20
 
@@ -85,28 +94,32 @@ def make(old_zip, new_zip, target, old_version, new_version):
 
 # ---------- Evo 里 ----------
 
-def _files(info, from_version, to_version):
-    """patch.json 对不对：是从现在的版本升到要装的版本，每个文件的路径、大小、SHA-256 格式都对。返回 {路径: (大小, SHA-256)}。"""
-    if not isinstance(info, dict) or info.get("from") != from_version or info.get("to") != to_version:
-        raise Unusable(f"补丁包不是从 {from_version} 升到 {to_version} 的")
-    files = info.get("files")
+def file_list(files, what="补丁包"):
+    """文件清单 {"Evo/<路径>": [大小, SHA-256]} 对不对：路径在 Evo/ 下面、有 Evo.exe，大小、SHA-256 格式都对。
+    返回 {路径: (大小, SHA-256)}；不对抛出 Unusable。"""
     if not isinstance(files, dict) or not 0 < len(files) <= MAX_FILES or f"{ROOT}/Evo.exe" not in files:
-        raise Unusable("补丁包里的文件清单不对")
+        raise Unusable(f"{what}里的文件清单不对")
     out = {}
     for name, value in files.items():
         ok = (safe_name(name) and isinstance(value, list) and len(value) == 2
               and isinstance(value[0], int) and not isinstance(value[0], bool) and value[0] >= 0
               and isinstance(value[1], str) and re.fullmatch(r"[0-9a-f]{64}", value[1]))
         if not ok:
-            raise Unusable("补丁包里的文件清单不对")
+            raise Unusable(f"{what}里的文件清单不对")
         out[name] = (value[0], value[1])
     return out
+
+
+def _files(info, from_version, to_version):
+    """patch.json 对不对：是从现在的版本升到要装的版本，每个文件的路径、大小、SHA-256 格式都对。返回 {路径: (大小, SHA-256)}。"""
+    if not isinstance(info, dict) or info.get("from") != from_version or info.get("to") != to_version:
+        raise Unusable(f"补丁包不是从 {from_version} 升到 {to_version} 的")
+    return file_list(info.get("files"))
 
 
 def apply(patch_zip, current, target, from_version, to_version):
     """按补丁包把新版本拼进 target（拼好后是 target/Evo/……）。current 是程序文件夹（装着 from_version）。
     对不上就抛出 Unusable；出了错 target 里可能留着拼了一半的文件，由调用的人删掉。返回 (从补丁包取了几个, 从本机复制了几个)。"""
-    current, target = Path(current), Path(target)
     try:
         z = zipfile.ZipFile(patch_zip)
     except zipfile.BadZipFile as e:
@@ -117,24 +130,99 @@ def apply(patch_zip, current, target, from_version, to_version):
         except (KeyError, ValueError) as e:
             raise Unusable("补丁包里没有文件清单") from e
         files = _files(info, from_version, to_version)
-        inside = {name for name in z.namelist() if name != INFO}
+        inside = {name: name for name in z.namelist() if name != INFO}
         if any(name not in files for name in inside):
             raise Unusable("补丁包里有清单上没有的文件")
-        took = 0
-        for name, (size, digest) in files.items():
-            dst = target.joinpath(*PurePosixPath(name).parts)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            if name in inside:
-                took += 1
-                with z.open(name) as src, open(dst, "wb") as out:
-                    got = _hash_copy(src, out)
-            else:
-                local = current.joinpath(*PurePosixPath(name).parts[1:])
-                if not local.is_file() or local.stat().st_size != size:
-                    raise Unusable(f"本机的 {name.removeprefix(ROOT + '/')} 和 {from_version} 的不一样（或者没有了）")
-                with open(local, "rb") as src, open(dst, "wb") as out:
-                    got = _hash_copy(src, out)
-                shutil.copystat(local, dst)
-            if got != (size, digest):
-                raise Unusable(f"{name.removeprefix(ROOT + '/')} 的 SHA-256 对不上")
+        return _assemble(z, inside, files, current, target, f" {from_version} ")
+
+
+def compose(package_zip, current, target, to_version):
+    """Mirror酱 的增量包：照里面的文件清单（MANIFEST）把 to_version 拼进 target（拼好后是 target/Evo/……）。
+    current 是程序文件夹。增量包里的路径带不带最外层的 Evo/ 都行；changes.json 里的路径也要在 Evo 里面。
+    对不上抛出 Unusable（不装）；出了错 target 里可能留着拼了一半的文件，由调用的人删掉。返回 (从增量包取了几个, 从本机复制了几个)。"""
+    try:
+        z = zipfile.ZipFile(package_zip)
+    except zipfile.BadZipFile as e:
+        raise Unusable("增量包打不开") from e
+    with z:
+        inside = {}  # Evo/<路径> → 增量包里的名字
+        for name in z.namelist():
+            if name == CHANGES or name.endswith("/"):
+                continue
+            full = _in_root(name)
+            if full is None or not safe_name(full) or full in inside:
+                raise Unusable("增量包里的文件位置不对")
+            inside[full] = name
+        _check_changes(z)
+        if MANIFEST not in inside:
+            raise Unusable("增量包里没有文件清单")
+        try:
+            info = json.loads(z.read(inside[MANIFEST]).decode("utf-8"))
+        except ValueError as e:
+            raise Unusable("增量包里的文件清单打不开") from e
+        if not isinstance(info, dict) or info.get("version") != to_version:
+            raise Unusable(f"增量包不是 {to_version} 的")
+        files = file_list(info.get("files"), "增量包")
+        if any(name != MANIFEST and name not in files for name in inside):
+            raise Unusable("增量包里有清单上没有的文件")
+        took, copied = _assemble(z, inside, files, current, target, "现在装着的版本")
+        dst = Path(target).joinpath(*PurePosixPath(MANIFEST).parts)  # 清单自己也装上（下次更新还要用）
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(z.read(inside[MANIFEST]))
+        return took + 1, copied
+
+
+def _in_root(name):
+    """增量包里的一个路径换成安装包里的写法（Evo/……）；写法本身就不对（绝对路径、盘符、反斜杠、空的一段、..）返回 None。"""
+    if not isinstance(name, str) or not name or name.startswith("/") or "\\" in name or ":" in name:
+        return None
+    parts = name.rstrip("/").split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return None
+    return "/".join(parts) if parts[0] == ROOT else "/".join([ROOT, *parts])
+
+
+def _check_changes(z):
+    """changes.json（Mirror酱 写的，可以没有）：每一项都是路径的列表，路径都在 Evo 里面。不对抛出 Unusable。"""
+    try:
+        raw = z.read(CHANGES)
+    except KeyError:
+        return
+    try:
+        changes = json.loads(raw.decode("utf-8"))
+    except ValueError as e:
+        raise Unusable("增量包里的 changes.json 打不开") from e
+    if not isinstance(changes, dict):
+        raise Unusable("增量包里的 changes.json 不对")
+    for key in CHANGE_KEYS:
+        paths = changes.get(key, [])
+        if not isinstance(paths, list) or len(paths) > MAX_FILES:
+            raise Unusable("增量包里的 changes.json 不对")
+        for path in paths:
+            full = _in_root(path)
+            if full is None or len(PurePosixPath(full).parts) < 2:
+                raise Unusable("增量包里的 changes.json 有不在 Evo 里的路径")
+
+
+def _assemble(z, inside, files, current, target, from_label):
+    """照清单 files 把新版本写进 target：inside（Evo/<路径> → 压缩包里的名字）里有的从压缩包 z 取，
+    没有的从程序文件夹 current 复制。每个文件都核对大小和 SHA-256，对不上抛出 Unusable。返回 (取了几个, 复制了几个)。"""
+    current, target = Path(current), Path(target)
+    took = 0
+    for name, (size, digest) in files.items():
+        dst = target.joinpath(*PurePosixPath(name).parts)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if name in inside:
+            took += 1
+            with z.open(inside[name]) as src, open(dst, "wb") as out:
+                got = _hash_copy(src, out)
+        else:
+            local = current.joinpath(*PurePosixPath(name).parts[1:])
+            if not local.is_file() or local.stat().st_size != size:
+                raise Unusable(f"本机的 {name.removeprefix(ROOT + '/')} 和{from_label}的不一样（或者没有了）")
+            with open(local, "rb") as src, open(dst, "wb") as out:
+                got = _hash_copy(src, out)
+            shutil.copystat(local, dst)
+        if got != (size, digest):
+            raise Unusable(f"{name.removeprefix(ROOT + '/')} 的 SHA-256 对不上")
     return took, len(files) - took

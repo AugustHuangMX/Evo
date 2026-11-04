@@ -2,10 +2,13 @@
 
     python tools/publish.py --dry-run   试一遍：准备压缩包、预览官网要改的地方和更新日志的原文，不上传任何东西
     python tools/publish.py             第一段：确认更新日志的原文后，上传压缩包和官网，逐项核对
-    python tools/publish.py --live      第二段：上传 latest.json，开着"自动检查新版本"的 Evo 开始提醒更新
+    python tools/publish.py --github    第二段：传到 GitHub Releases（先 git push origin main），GitHub Actions 自动传给 Mirror酱
+    python tools/publish.py --live      第三段：确认 Mirror酱 也收到了，上传 latest.json，开着"自动检查新版本"的 Evo 开始提醒更新
 
-为什么分两段：latest.json 一换，所有开着自动检查的 Evo 都会提醒更新，收不回来。
-所以先把压缩包、官网都传好、核对过，人也看过了，再做最后一步。
+为什么分开：latest.json 一换，所有开着自动检查的 Evo 都会提醒更新，收不回来。
+所以先把压缩包、官网、GitHub Releases 都传好、核对过，Mirror酱（国内渠道）也收到了，人也看过了，再做最后一步。
+（2026-11-04 起 GitHub Releases 挪到 latest.json 之前：发 Release 时 GitHub Actions 把压缩包传给 Mirror酱，
+.github/workflows/mirrorchyan_release.yml；它收到之前就提醒更新的话，选了国内渠道的玩家会下不到）
 
 更新日志（2026-10-19 用户要求）：官网更新日志页要加的这一版，原文必须先给开发者看、点头以后才能发布。
 --dry-run 会显示原文和核对码（按原文算的）；在终端里运行第一段会直接问你，否则要加 --changelog-ok 核对码。
@@ -25,16 +28,18 @@
      site/changelog.html 最上面加这一版（内容来自 latest.json，也就是 release/更新内容.txt），"最新"标签挪过来
   7. 上传官网（Cloudflare Pages）；线上已经是新版本就跳过
   8. 打开 evotracker.cn，确认下载链接和 SHA-256 已经是新的，更新日志页有这一版
-第二段（--live）：
-  9. 再核对一次线上的压缩包、补丁包（R2 比 MD5，COS 比记下的 SHA-256，不用重新下载）和官网
+第二段（--github，2026-11-01 用户决定：多一个下载的地方；2026-11-04 起在 --live 之前）：
+  12. 把压缩包传到 GitHub Releases（标签 v<版本号>，说明是更新内容和 SHA-256）。要先 git push origin main。
+      发布以后 GitHub Actions 把压缩包和更新日志传给 Mirror酱（几分钟，gh run list 看进度）
+第三段（--live）：
+  9. 再核对一次线上的压缩包、补丁包（R2 比 MD5，COS 比记下的 SHA-256，不用重新下载）和官网；
+     问一下 Mirror酱 上是不是已经是这个版本（还不是就停下；Mirror酱 出了问题、不想等就加 --skip-mirror）
   10. 上传 latest.json（R2 和 COS 各一份；0.4.3 起 Evo 先读 COS 的，读不到再读 R2 的，之前的反过来）
   11. 下载回来，确认和本机的一样
 
-第三段（--github，2026-11-01 用户决定：多一个下载的地方）：
-  12. 把压缩包传到 GitHub Releases（标签 v<版本号>，说明是更新内容和 SHA-256）。要先 git push origin main
-
 COS 停用期间（release.COS_PAUSED，2026-11-01 起：COS 被封，用户决定找到替代方案之前都跳过）：第 4、5 步和
-latest.json 都不传 COS，官网的国内下载链接不动（照旧打开"国内下载暂时不可用"的提示框，提示框里的海外下载链接一起换）。
+latest.json 都不传 COS，官网的国内下载链接不动：2026-11-04 起打开 Mirror酱 的说明窗口（#cn-mirror：要花钱、
+开发者有分成，再去 Mirror酱 上 Evo 的页面下载；窗口里的海外下载链接一起换）。
 
 上传 R2 用 Wrangler（Cloudflare 的命令行工具，只装在开发电脑上，第一次用要 wrangler login），不用打开 Cloudflare 网站；
 上传 COS 用 tools/cos.py（密钥在 %USERPROFILE%\\.evo\\cos.json，见 cos.py 开头）；
@@ -59,6 +64,7 @@ from pathlib import Path
 
 import code_path  # noqa: F401  先把 code/ 加进搜索路径，下面才能 import 程序代码（见 code_path.py）
 import cos
+import mirrorchyan
 import release
 import update_check
 from release import DIST, README_NAME, Stop, git, sha256
@@ -85,7 +91,8 @@ MIRROR_URL = f"{COS}/{ZIP_NAME}"
 # 官网的国内下载（首屏的下载按钮和下载区的"国内下载"）：<a … data-mirror href="COS 上的压缩包">，发版时换成新版本的
 MIRROR_LINKS = 2
 MIRROR_LINK = re.compile(r'(<a\s[^>]*\bdata-mirror\b[^>]*\bhref=")([^"]*)(")')
-PAUSED_HREF = "#cn-paused"  # COS 停用期间国内下载链接打开的提示框（site/index.html 最下面）；提示框里还有一个海外下载链接
+PAUSED_HREF = "#cn-mirror"  # COS 停用期间国内下载链接打开的 Mirror酱 说明窗口（site/index.html 最下面，2026-11-04 起；之前是
+#   "国内下载暂时不可用"的 #cn-paused）；窗口里还有一个海外下载链接
 GITHUB_REPO = "AugustHuangMX/Evo"
 TAG = f"v{APP_VERSION}"
 
@@ -307,10 +314,11 @@ def update_site(digest, size, dry_run):
     if found != MIRROR_LINKS or len(mirrors) != 1:
         raise Stop(f"site/index.html 里的国内下载链接（带 data-mirror 的 <a>）应该有 {MIRROR_LINKS} 处、地址一样，"
                    f"找到 {found} 处、{len(mirrors)} 种地址：网页的写法可能变了，请手动改")
-    if COS_PAUSED:  # 国内下载照旧打开"暂时不可用"的提示框，不换成 COS 上的新版本（传不上去）
+    if COS_PAUSED:  # 国内下载打开 Mirror酱 的说明窗口，不换成 COS 上的新版本（传不上去）
         if mirrors != {PAUSED_HREF}:
-            raise Stop(f"COS 停用中，官网的国内下载链接应该是 {PAUSED_HREF}（打开提示框），现在是 {mirrors.pop()}：请手动核对")
-        print(f"    国内下载链接：COS 停用中，照旧打开提示框（{PAUSED_HREF}）")
+            raise Stop(f"COS 停用中，官网的国内下载链接应该是 {PAUSED_HREF}（打开 Mirror酱 的说明窗口），"
+                       f"现在是 {mirrors.pop()}：请手动核对")
+        print(f"    国内下载链接：COS 停用中，打开 Mirror酱 的说明窗口（{PAUSED_HREF}）")
     else:
         changes.append(("国内下载链接", mirrors.pop(), MIRROR_URL, MIRROR_LINKS))
 
@@ -499,13 +507,14 @@ def publish(dry_run, changelog_ok):
         print("\n试运行完成，没有上传任何东西。正式上传：python tools/publish.py")
     else:
         print(f"\n第一段完成：{APP_VERSION} 的压缩包、补丁包和官网都已经上线，但还没有任何 Evo 会提醒更新。")
-        print("自己从官网下载试一下；确认没问题后，最后一步：python tools/publish.py --live")
+        print("自己从官网下载试一下；确认没问题后：git push origin main（推之前查一遍没有小程序的文件），"
+              "再 python tools/publish.py --github（GitHub Actions 会传给 Mirror酱），最后 python tools/publish.py --live")
 
 
 # ---------- 第二段 ----------
 
-def go_live(yes):
-    step(9, "核对线上的压缩包、补丁包和官网")
+def go_live(yes, skip_mirror=False):
+    step(9, "核对线上的压缩包、补丁包、官网和 Mirror酱")
     if not (ZIP.is_file() and LATEST.is_file()):
         raise Stop(f"dist 里没有 {ZIP_NAME} 或 latest.json：先运行 python tools/publish.py")
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
@@ -523,6 +532,7 @@ def go_live(yes):
         raise Stop("官网还不是这个版本：先运行 python tools/publish.py")
     where = "R2" if COS_PAUSED else "R2 和 COS"
     print(f"    ✅ {where}上的压缩包、补丁包，还有官网，都是这个版本")
+    check_mirror(skip_mirror)
     local = LATEST.read_bytes()
     r2_done = remote_bytes(LATEST_URL) == local
     cos_done = COS_PAUSED or cos_bytes(f"{COS}/latest.json") == local  # COS 停用中：不传
@@ -568,8 +578,23 @@ def go_live(yes):
         raise Stop(f"{COS}/latest.json 和本机的 dist/latest.json 不一样")
     print(f"    ✅ {where}上的都一样")
     print(f"\n{APP_VERSION} 已发布。CDN 缓存最多 5 分钟，之后所有 Evo 检查更新都会看到新版本。")
-    print("别忘了：在 claude/progress.md 的\"版本\"里记一笔，提交，git push origin main（推之前查一遍没有小程序的文件），"
-          "再 python tools/publish.py --github 传到 GitHub Releases")
+    print("别忘了：在 claude/progress.md 的\"版本\"里记一笔，提交，git push origin main（推之前查一遍没有小程序的文件）")
+
+
+def check_mirror(skip):
+    """Mirror酱（国内渠道）上是不是已经是这个版本：GitHub Actions 在 --github 之后几分钟传过去。
+    还不是就停下（不然选了国内渠道的玩家收到提醒却下不到）；skip：Mirror酱 出了问题、不等它（--skip-mirror）。"""
+    if skip:
+        print("    ⚠ 跳过 Mirror酱 的核对（--skip-mirror）：选了国内渠道的玩家要等 Mirror酱 收到才下得到")
+        return
+    try:
+        online = mirrorchyan.latest(timeout=20)["version"]
+    except mirrorchyan.MirrorError as e:
+        raise Stop(f"问不到 Mirror酱 上的版本（{e}）：过一会儿再试；不等它就加 --skip-mirror") from e
+    if online != APP_VERSION:
+        raise Stop(f"Mirror酱 上还是 {online}：先 python tools/publish.py --github，等 GitHub Actions 把压缩包传给 Mirror酱"
+                   "（gh run list 看进度，几分钟），再运行这一步；Mirror酱 出了问题、不等它就加 --skip-mirror")
+    print(f"    ✅ Mirror酱 上也是 {APP_VERSION}")
 
 
 # ---------- 第三段：GitHub Releases（2026-11-01 用户决定：多一个下载的地方） ----------
@@ -604,8 +629,11 @@ def publish_github():
     if not (ZIP.is_file() and LATEST.is_file()):
         raise Stop(f"dist 里没有 {ZIP_NAME} 或 latest.json：先运行 python tools/publish.py")
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
-    if latest.get("version") != APP_VERSION or online_version() != APP_VERSION:
-        raise Stop(f"线上的 latest.json 还不是 {APP_VERSION}：先运行 python tools/publish.py 和 --live")
+    if latest.get("version") != APP_VERSION:
+        raise Stop(f"dist/latest.json 写的是 {latest.get('version')}，不是 {APP_VERSION}：先运行 python tools/publish.py")
+    # 2026-11-04 起在 --live 之前传（Mirror酱 从 GitHub Releases 拿压缩包）：只要第一段做完了，R2 和官网已经是这个版本
+    if remote_info(f"{DL}/{ZIP_NAME}") != (ZIP.stat().st_size, md5(ZIP)) or not site_is_new(sha256(ZIP)):
+        raise Stop(f"R2 上的压缩包或官网还不是 {APP_VERSION}：先运行 python tools/publish.py")
     commit = zip_commit(ZIP)
     if not commit:
         raise Stop(f"{ZIP_NAME} 不是从提交好的代码打的")
@@ -638,6 +666,8 @@ def publish_github():
     if got.hexdigest() != digest:
         raise Stop(f"{url} 的 SHA-256 是 {got.hexdigest()}，和本机的不一样")
     print(f"    ✅ 和本机的一样：https://github.com/{GITHUB_REPO}/releases/tag/{TAG}")
+    print("\nGitHub Actions 正在把压缩包和更新日志传给 Mirror酱（几分钟，gh run list 看进度）。"
+          "传完以后最后一步：python tools/publish.py --live")
 
 
 def main():
@@ -645,14 +675,16 @@ def main():
     parser = argparse.ArgumentParser(description="发布新版本：上传压缩包、官网和 latest.json（说明见 publish.py 开头）")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="试一遍：准备压缩包、预览官网要改的地方，不上传")
-    mode.add_argument("--live", action="store_true", help="第二段：上传 latest.json，Evo 开始提醒更新")
-    mode.add_argument("--github", action="store_true", help="第三段：压缩包传到 GitHub Releases（先 git push origin main）")
+    mode.add_argument("--live", action="store_true", help="第三段：确认 Mirror酱 收到了，上传 latest.json，Evo 开始提醒更新")
+    mode.add_argument("--github", action="store_true",
+                      help="第二段：压缩包传到 GitHub Releases（先 git push origin main），GitHub Actions 自动传给 Mirror酱")
+    parser.add_argument("--skip-mirror", action="store_true", help="和 --live 一起用：不等 Mirror酱 收到（它出了问题时）")
     parser.add_argument("--yes", action="store_true", help="和 --live 一起用：已经确认过，不再问")
     parser.add_argument("--changelog-ok", metavar="核对码", help="第一段用：更新日志的原文已经确认过（核对码见 --dry-run 的输出）")
     args = parser.parse_args()
     try:
         if args.live:
-            go_live(args.yes)
+            go_live(args.yes, args.skip_mirror)
         elif args.github:
             publish_github()
         else:

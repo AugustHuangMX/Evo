@@ -32,6 +32,7 @@ import game_aspect
 import game_lang
 import global_stats
 import map_rotation
+import mirrorchyan
 import notice_check
 import panel_seasons
 import radar
@@ -1441,6 +1442,11 @@ def settings():
         last_check=app_settings.get("update_last_check"),
         newest=update_check.known_newer(),
         job=updater.state(update_check.known_newer()),
+        update_channel=mirrorchyan.channel(),  # 更新渠道（国际 / 国内 Mirror酱），见 mirrorchyan.py
+        cdk_set=mirrorchyan.cdk() is not None,  # 页面上只说填没填，不把 CDK 放进网页
+        cdk_check=app_settings.get(mirrorchyan.CHECK_KEY),
+        mirror_page=mirrorchyan.PAGE,
+        mirror_notice_off=app_settings.get(mirrorchyan.NOTICE_KEY) is True,  # 点国内渠道时的说明点过"不再提示"
         accounts=[{**a, "last_text": time_text(a["last"]),
                    "name_stats": [{**one, "last_text": time_text(one["last"])} for one in a["name_stats"]]}
                   for a in account_view()["accounts"]],
@@ -1811,12 +1817,49 @@ def dismiss_update():
 
 @app.post("/update/download")
 def download_update():
-    """"立即更新"（和下载失败后的"重试"）：在后台下载新版本，页面上显示进度（updater.start_download）。"""
+    """"立即更新"（和下载失败后的"重试"）：在后台下载新版本，页面上显示进度（updater.start_download）。
+    channel=global：国内渠道没下成，玩家点了"这次改用国际渠道下载"（只这一次，不改设置）。"""
+    channel = "global" if request.form.get("channel") == "global" else None
     try:
-        updater.start_download(update_check.known_newer())
+        updater.start_download(update_check.known_newer(), channel)
     except updater.UpdateError as e:
         flash(str(e), "error")
     return back_to_page()
+
+
+@app.post("/update/channel")
+def update_channel():
+    """设置页"更新渠道"（2026-11-04 用户决定，见 mirrorchyan.py）：国际渠道 / 国内渠道（Mirror酱，要 CDK）。
+    选国内渠道时可以同时填 CDK：填了就问 Mirror酱 核对一次，结果写在输入框下面；留空就保留原来填的。
+    clear=1：清除 CDK。CDK 只存在本机的设置里，不写进日志、不放回网页。"""
+    choice = "cn" if request.form.get("channel") == "cn" else "global"
+    app_settings.set_value(mirrorchyan.CHANNEL_KEY, choice)
+    typed = request.form.get("cdk", "").strip()
+    if request.form.get("clear") == "1":
+        app_settings.set_value(mirrorchyan.CDK_KEY, None)
+        app_settings.set_value(mirrorchyan.CHECK_KEY, None)
+        flash("已清除 Mirror酱 CDK", "ok")
+    elif choice == "cn" and typed:
+        key = mirrorchyan.clean_cdk(typed)
+        if key is None:
+            flash("没有保存：CDK 的格式不对（不能有空格，最长 128 个字符）", "error")
+        else:
+            app_settings.set_value(mirrorchyan.CDK_KEY, key)
+            result = mirrorchyan.check_cdk(key)
+            if result["ok"]:
+                flash("已改用国内渠道，CDK 有效" + (f"，到 {result['expires']} 到期" if result["expires"] else ""), "ok")
+            else:
+                flash(f"CDK 已保存，但没核对通过：{result['error']}", "error")
+    else:
+        flash("已改用国内渠道（Mirror酱）" if choice == "cn" else "已改用国际渠道", "ok")
+    return redirect(url_for("settings") + "#h-update")
+
+
+@app.post("/update/mirror-notice-off")
+def mirror_notice_off():
+    """点"国内渠道"时弹出的说明里点了"不再提示"（页面上的脚本发的，不刷新页面）。"""
+    app_settings.set_value(mirrorchyan.NOTICE_KEY, True)
+    return "", 204
 
 
 @app.post("/update/cancel")

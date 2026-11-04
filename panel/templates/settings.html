@@ -424,8 +424,7 @@
       <h2 id="h-update">更新</h2>
       <div class="setting">
         <div class="setting-text">
-          <div class="setting-name" id="update-auto-name">自动检查新版本和公告</div>
-          <div class="setting-desc">Evo 开着时每 8 小时检查一次新版本、每 30 分钟看一次有没有开发者公告，只下载官网上公开的版本号和公告文件，不发送任何战绩、截图或电脑信息。有新版本时提醒你，点了"立即更新"才下载</div>
+          <div class="setting-name" id="update-auto-name">自动检查新版本</div>
         </div>
         <form method="post" action="{{ url_for('update_auto') }}">
           <input type="hidden" name="token" value="{{ token }}">
@@ -437,6 +436,51 @@
             <span class="switch-state" aria-hidden="true">{{ '已开启' if update_auto else '已关闭' }}</span>
           </button>
         </form>
+      </div>
+      {# 更新渠道（2026-11-04 用户决定，见 mirrorchyan.py）：让玩家自己选，写清楚国内渠道要花钱、开发者有分成。
+         选了国内渠道才出现 CDK 输入框（:has，不用脚本）；CDK 不放回网页，只显示填没填。
+         点"国内渠道"时弹出说明（#mirror-notice，文字是用户 11-04 写的原文），"不再提示"以后不再弹 #}
+      <div class="setting setting-block">
+        <div class="setting-text">
+          <div class="setting-name" id="channel-name">更新渠道</div>
+          <form method="post" action="{{ url_for('update_channel') }}" class="channel-form"
+                data-mirror-notice="{{ '0' if mirror_notice_off else '1' }}">
+            <input type="hidden" name="token" value="{{ token }}">
+            <fieldset class="choices" aria-labelledby="channel-name">
+              <label class="choice">
+                <input type="radio" name="channel" value="global"{{ ' checked' if update_channel != 'cn' }}>
+                <span class="choice-body">
+                  <span class="choice-title">国际渠道（免费）</span>
+                </span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="channel" value="cn"{{ ' checked' if update_channel == 'cn' }}>
+                <span class="choice-body">
+                  <span class="choice-title">国内渠道（Mirror酱，需要 CDK）</span>
+                </span>
+              </label>
+            </fieldset>
+            <div class="setting-desc"><a class="text-link" href="{{ mirror_page }}" target="_blank" rel="noopener noreferrer">了解 Mirror酱、获取 CDK ↗</a></div>
+            <div class="cdk-box">
+              <label class="setting-name" for="cdk-input">Mirror酱 CDK</label>
+              <div class="cdk-row">
+                <input type="password" id="cdk-input" name="cdk" autocomplete="off" spellcheck="false" maxlength="128"
+                       placeholder="{{ '已填写，要换就粘贴新的' if cdk_set else '粘贴你的 CDK' }}" aria-describedby="cdk-status">
+              </div>
+              <div class="setting-desc" id="cdk-status">
+                {%- if cdk_set and cdk_check and cdk_check.ok %}CDK 有效{% if cdk_check.expires %}，到 {{ cdk_check.expires }} 到期{% endif %}（{{ cdk_check.checked_at }} 核对）
+                {%- elif cdk_set and cdk_check %}<span class="update-error">CDK 没核对通过：{{ cdk_check.error }}</span>
+                {%- elif cdk_set %}已填写
+                {%- else %}还没填。CDK 只保存在这台电脑上，只在核对和一键更新时发给 Mirror酱
+                {%- endif %}
+              </div>
+            </div>
+            <div class="channel-actions">
+              <button type="submit" class="btn">保存</button>
+              {% if cdk_set %}<button type="submit" class="btn-text" name="clear" value="1">清除 CDK</button>{% endif %}
+            </div>
+          </form>
+        </div>
       </div>
       <div class="setting">
         <div class="setting-text">
@@ -495,6 +539,18 @@
   </aside>
 </div>
 
+{# 点"国内渠道"时的说明（2026-11-04 用户写的原文，"Mirror酱""CDK"前后照面板的习惯加了空格） #}
+<dialog class="dialog support-dialog" id="mirror-notice" aria-label="国内渠道（Mirror酱）"
+        aria-describedby="mirror-notice-1 mirror-notice-2">
+  <div class="support-body">
+    <p class="support-text" id="mirror-notice-1">国际渠道下载慢、下载失败时可以选择这个功能。使用 Mirror酱 提供的下载加速功能。</p>
+    <p class="support-text" id="mirror-notice-2">注：此功能需要前往 Mirror酱 官网购买 CDK，Mirror酱 和开发者（我）会根据金额分成。我一直致力于为大家提供免费的使用体验，选择这项服务乃无奈之举。因此优先推荐大家使用国际渠道！</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-text" data-mirror-never>不再提示</button>
+      <button type="button" class="btn" data-mirror-close autofocus>关闭</button>
+    </div>
+  </div>
+</dialog>
 <dialog class="dialog support-dialog" id="support-1" aria-labelledby="h-support-1" aria-describedby="support-1-desc">
   <div class="support-body">
     <h2 id="h-support-1" tabindex="-1" autofocus>支持我</h2>
@@ -528,6 +584,26 @@
 {% block scripts %}
 {{ import_script() }}
 <script>
+  // 点"国内渠道"：弹出说明（没点过"不再提示"时）。"不再提示"记进设置（不刷新页面），以后不再弹
+  (function () {
+    var form = document.querySelector(".channel-form"), notice = document.getElementById("mirror-notice");
+    if (!form || !notice) return;
+    var cn = form.querySelector('input[name="channel"][value="cn"]');
+    cn.addEventListener("change", function () {
+      if (cn.checked && form.dataset.mirrorNotice === "1") notice.showModal();
+    });
+    notice.querySelector("[data-mirror-close]").addEventListener("click", function () { notice.close(); });
+    notice.querySelector("[data-mirror-never]").addEventListener("click", function () {
+      form.dataset.mirrorNotice = "0";
+      var body = new FormData();
+      body.append("token", form.querySelector('input[name="token"]').value);
+      fetch("{{ url_for('mirror_notice_off') }}", { method: "POST", body: body });
+      notice.close();
+    });
+    notice.addEventListener("click", function (e) { if (e.target === notice) notice.close(); });  // 点弹窗外面（背景）
+    notice.addEventListener("close", function () { cn.focus(); });
+  })();
+
   // 支持我：一个弹窗点"下一步"就关掉、打开下一个；全关了以后焦点回到"支持我"按钮
   (function () {
     var opener = document.getElementById("support-open");

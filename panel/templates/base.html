@@ -402,7 +402,8 @@
               bar.firstElementChild.style.width = s.percent + "%";
             });
             document.querySelectorAll("[data-progress-text]").forEach(function (el) {
-              el.textContent = s.percent + "% · " + s.done_mb + " / " + s.total_mb + " MB";
+              // 国内渠道刚开始时还在问 Mirror酱 要下载地址（还不知道多大）
+              el.textContent = s.asking ? "正在向 Mirror酱 要下载地址…" : s.percent + "% · " + s.done_mb + " / " + s.total_mb + " MB";
             });
             document.querySelectorAll("[data-progress-line]").forEach(function (el) {
               var line = s.mirror ? "备用线路" : "";  // 换了线路才改，读屏软件只念一次

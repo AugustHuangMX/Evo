@@ -1,6 +1,6 @@
 """运行全部测试：python tests/run_all.py（约 9 分钟）
 
-什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、数据页"全体玩家"（global_stats.py）、六维图（radar.py）、总览页的地图轮换（map_rotation.py、config/rotation.json）、诊断工具（evo_diag.py、tools/diag_report.py）、截屏（capture.py）、武器识别（weapons.py、tools/weapon_templates.py、config/templates/weapons/）
+什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py、update_patch.py、mirrorchyan.py、tools/release.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、数据页"全体玩家"（global_stats.py）、六维图（radar.py）、总览页的地图轮换（map_rotation.py、config/rotation.json）、诊断工具（evo_diag.py、tools/diag_report.py）、截屏（capture.py）、武器识别（weapons.py、tools/weapon_templates.py、config/templates/weapons/）
 或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；
@@ -26,6 +26,7 @@ import test_legend_icons
 import test_legends
 import test_light
 import test_map_rotation
+import test_mirrorchyan
 import test_notice
 import test_player_name
 import test_radar
@@ -56,6 +57,7 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "源码运行（战绩记进安装版）": test_source_run, "淘汰画面（名次入库、和总结页/经验值页核对）": test_eliminated,
          "0.3.0 新流程（对局中、冠军、大厅校准、各来源优先级）": test_in_match,
          "一键更新（下载、核对、安装、恢复、面板）": test_updater,
+         "国内渠道 Mirror酱（问版本、检查更新、一键更新、增量包、设置页、发版的文件清单）": test_mirrorchyan,
          "WebView2 检查（没有时问要不要装、不装用浏览器、不用 IE 内核、去掉 DLL 的下载标记）": test_webview2,
          "游戏画面比例（16:10、4:3：换算、自动检测、设置页、整局重放）": test_aspect,
          "第 31 赛季的新界面（简体、16:10：大厅、经验值页改写成'RP'，一局排位整段重放）": test_season31,
