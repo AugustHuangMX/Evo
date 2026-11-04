@@ -7,6 +7,7 @@
 - 对局中队友的名字：第 31 赛季起是逐字出来的动画，认出传奇 2 秒以后才裁；和总结页一个是另一个的开头时算同一个人、
   记长的（诊断包里没有动画中途的截图，把名字后半截涂掉来模拟）
 - 自己的名字：总结页卡片上被游戏截短（"…dkaldad"），大厅读到完整的以后改记完整的
+- 16:9 经验值页的段位常常没读到（原因还没查到）：日志里写出那两行读成了什么
 
 运行：python tests/test_testers_1104.py
 """
@@ -26,7 +27,7 @@ from layout import Mapping
 from lobby import LobbyReader, split_progress
 from match_start import read_match_start
 from ocr import SMALL_CROP_PARAMS, create_engine, load_config
-from post_match import PostMatch
+from post_match import PostMatch, rank_text
 import storage
 from storage import truncated_of
 
@@ -52,6 +53,9 @@ def text_checks():
         # 名字是编的（别的玩家的名字不进仓库）
         "名字被截短：'Abcd'是'Abcdefg'的开头 → 同一个人，记长的": truncated_of("Abcd", "Abcdefg") == "Abcdefg",
         "反过来、中文、不管空格也一样": (truncated_of("测试名字", "测试"), truncated_of("Ab Cd", "AbCdEf")) == ("测试名字", "AbCdEf"),
+        "经验值页段位没读到：日志里写出那两行读成了什么":
+            rank_text({"rank_tier": None, "raw": {"next_rank": "378 RP 黄金", "progress": "372RP"}})
+            == "-（没读到：下一段位'378 RP 黄金'、段内进度'372RP'）",
         "一样的名字、只剩 1 个字、不是开头的：都不算截短":
             (truncated_of("名字A", "名字A"), truncated_of("A", "Abc"), truncated_of("Abcx", "Abcdefg")) == (None, None, None),
     }

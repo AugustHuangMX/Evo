@@ -94,7 +94,11 @@ def xp_conflicts(reading, xp_time, summary, summary_time):
 
 def rank_text(reading):
     if reading["rank_tier"] is None:
-        return "-"
+        # 经验值页的段位没读到：写出那两行读成了什么，下次看日志就知道原因（2026-11-04：16:9 测试员 7 局里 5 局"段位 -"，
+        # 诊断包里缩小的截图却读得出，原尺寸的经验值页又没截到，查不出是哪一行读错了）
+        raw = reading.get("raw") or {}
+        seen = [f"{label}'{raw[k]}'" for k, label in (("next_rank", "下一段位"), ("progress", "段内进度")) if raw.get(k)]
+        return f"-（没读到：{'、'.join(seen) or '两行都没读到'}）" if raw else "-"
     return f"{ranks.rank_name(reading['rank_tier'], reading['rank_division'])} {reading['rank_progress']}"
 
 
