@@ -1,0 +1,41 @@
+name: mirrorchyan_release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GitHub release tag (defaults to the latest release)
+        required: false
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  mirrorchyan:
+    if: ${{ github.repository_owner == 'AugustHuangMX' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MirrorChyan/uploading-action@v1
+        with:
+          filetype: latest-release
+          filename: Evo-*-win64.zip
+          mirrorchyan_rid: Evo
+          tag: ${{ inputs.tag || github.event.release.tag_name }}
+          os: windows
+          arch: amd64
+          owner: AugustHuangMX
+          repo: Evo
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
+
+  sync-release-note:
+    if: ${{ github.event_name == 'release' }}
+    needs: mirrorchyan
+    uses: ./.github/workflows/mirrorchyan_release_note.yml
+    with:
+      tag: ${{ github.event.release.tag_name }}
+    secrets:
+      MirrorChyanUploadToken: ${{ secrets.MirrorChyanUploadToken }}

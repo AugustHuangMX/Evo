@@ -1,0 +1,36 @@
+name: mirrorchyan_release_note
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GitHub release tag (defaults to the latest release)
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      MirrorChyanUploadToken:
+        required: true
+  release:
+    types: [edited]
+
+permissions:
+  contents: read
+
+jobs:
+  mirrorchyan:
+    if: ${{ github.repository_owner == 'AugustHuangMX' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: MirrorChyan/release-note-action@v1
+        with:
+          mirrorchyan_rid: Evo
+          version_name: ${{ inputs.tag || github.event.release.tag_name }}
+          owner: AugustHuangMX
+          repo: Evo
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
