@@ -4,6 +4,8 @@
 {% from "_range.html" import range_empty_text with context %}
 {% block title %}战绩 · Evo{% endblock %}
 
+{# 战绩页（/matches）：每局一行，点开看队友和详情，改正、确认、删除，看截图，导出 CSV #}
+
 {% block content %}
 
 {% if review_count and not only_review %}

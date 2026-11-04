@@ -2,6 +2,7 @@
 
 什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、数据页"全体玩家"（global_stats.py）、六维图（radar.py）、总览页的地图轮换（map_rotation.py、config/rotation.json）、诊断工具（evo_diag.py、tools/diag_report.py）、截屏（capture.py）、武器识别（weapons.py、tools/weapon_templates.py、config/templates/weapons/）
 或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
+加、删、改名文件以后也跑一下（或者只跑 python tests/test_code_map.py）：代码地图 docs/代码地图.md 要跟着重新生成。
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；
 找不到截图的测试会显示"跳过"。测试文件只 import 项目代码，项目代码不 import 测试，所以测试不会被打进安装包。
@@ -13,6 +14,7 @@ import fake_game  # noqa: F401  要在项目代码之前导入（设置临时数
 import test_accounts
 import test_autostart
 import test_capture
+import test_code_map
 import test_aspect
 import test_data_move
 import test_tester
@@ -81,7 +83,8 @@ TESTS = {"总结页停留": test_summary_page, "轻量（按需加载模型）":
          "按赛季看（本赛季 / 上赛季：总览页、数据页、战绩页）": test_season_ranges,
          "游戏里的数据页（认出、读两栏、核对，录入历史赛季数据用）": test_season_stats,
          "录入历史赛季数据（新表、录入模式、记录程序读数据页）": test_season_import,
-         "\"赛季\"页面（录入按钮、待核对、保存、历史赛季表、设置页那一行）": test_seasons_page}
+         "\"赛季\"页面（录入按钮、待核对、保存、历史赛季表、设置页那一行）": test_seasons_page,
+         "代码地图（docs/代码地图.md 是最新的、每个文件都分了组）": test_code_map}
 
 try:  # 云同步（微信小程序）的测试只在开发者电脑上，不上传 GitHub（2026-10-24 用户决定）：有就一起跑
     import test_cloud_sync

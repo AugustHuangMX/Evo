@@ -9,6 +9,7 @@ Evo：一个轻量、开源的 Apex Legends 战绩记录器，面向 PC 玩家�
 | 什么时候 | 读 |
 |---|---|
 | 每次开工 | [claude/progress.md](claude/progress.md) 的"版本一览"（很短：现在发到哪一版、每版有什么）。[claude/todo.md](claude/todo.md)（所有待办只放在那里）不用通读：开始一件事前搜这件事的关键词，读相关的那条（用户定过的做法、不要的做法、做到哪了）；用户说"继续""做下一个"时才通读。要查以前怎么做的：`git log`（提交说明里写着改了什么、怎么验证的），10-28 以前的里程碑在 [claude/progress_archive.md](claude/progress_archive.md)，平时不读 |
+| 找某个功能的代码在哪个文件 | [docs/代码地图.md](docs/代码地图.md)：每个文件一行，按分工分组。不用通读，搜关键词或只读相关的那一节。它是 `python tools/code_map.py` 从各文件开头的说明生成的，不要手改：加、删、改名文件（`code/`、`tools/` 的新文件要先在脚本的 `SECTIONS` 里分好组），或者改了文件开头说明的第一句以后，重新运行一次（`python tests/test_code_map.py` 检查） |
 | 改模型（识别逻辑、`config/`） | [docs/模型流程.drawio](docs/模型流程.drawio)（实际怎么跑）、[docs/对局全流程图.md](docs/对局全流程图.md)（规则为什么这样定）、[docs/识别经验.md](docs/识别经验.md)（实测结论、游戏画面特征） |
 | 改页面 | [docs/面板.md](docs/面板.md) |
 | 打包、安装、发布、改托盘或窗口 | [docs/底座.md](docs/底座.md) |
@@ -86,7 +87,7 @@ RP：游戏里没有单一的"总 RP"，只有"段位 + 段内进度"。**总分
 
 ## 测试
 
-- 运行：`python tests/run_all.py`（约 8–9 分钟，32 组）。改了模型、记录程序或 `config/` 之后都要跑，新赛季更新后也要跑一遍
+- 运行：`python tests/run_all.py`（约 8–9 分钟，41 组）。改了模型、记录程序或 `config/` 之后都要跑，新赛季更新后也要跑一遍
 - 做法：`tests/fake_game.py` 用"假摄像头"把真实截图按顺序喂给记录程序，数据写进临时文件夹（不碰正式数据），时钟是假的。正确答案写在 `tests/` 里的 CSV 和测试文件里
 - 测试只 import 项目代码，项目代码不能 import 测试（否则 PyInstaller 会把测试打进安装包）
 

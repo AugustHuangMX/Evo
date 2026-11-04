@@ -5,6 +5,8 @@
 {% from "_range.html" import range_seg, range_empty_text with context %}
 {% block title %}总览 · Evo{% endblock %}
 
+{# 总览页（/）：段位卡片和 RP 走势、统计数字、地图轮换、最近对局、六维图、传奇表现、关注我 #}
+
 {% macro follow_card() %}
 {# 关注我：开发者的 B 站、小黑盒主页和 Evo 官网（有对局时在左边一列"最近对局"下面，2026-10-28 用户要求：放在下面全宽会凸出来；没有对局时在提示下面）。target="_blank" 交给系统浏览器打开（和设置页"意见反馈"一样），Evo 自己不联网。
    没有对局时也显示。图标只是装饰，名字就在旁边 #}
