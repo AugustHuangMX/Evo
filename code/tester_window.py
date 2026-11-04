@@ -26,7 +26,7 @@ from pathlib import Path
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from tester_answers import FIELDS, rank_text
+from tester_answers import FIELDS, parse_time, rank_text
 
 # 颜色：同 panel/static/style.css 的深色
 BG, CARD, INSET = "#0D0F13", "#151820", "#0D0F13"
@@ -532,7 +532,14 @@ class TesterApp:
         self.label(box, "这段时间还有 Evo 没记下的局吗？", bold=True)
         self.choice_row(box, [("没有", "没有"), ("有（在备注里写一下大概几点、第几名）", "有")], missed)
         lobby = record["大厅"][-1] if record["大厅"] else None
-        if lobby is not None:
+        # 最后一局之后 Evo 还没读过大厅（打完没回大厅，或者回了马上点结束）：问的会是开局前的段位，这一项不用判断
+        # （2026-11-04 一位测试员因此判了"不对"，其实 Evo 一分钟后回到大厅读对了）
+        read_at = parse_time(lobby["read_at"]) if lobby is not None else None
+        stale = bool(matches) and read_at is not None and read_at < matches[-1]["last_read"]
+        if stale:
+            self.label(box, f"大厅：Evo 最后读到的「{rank_text(lobby)}」是最后一局开始前的，这局打完还没回到大厅读，"
+                            "这一项不用判断。下次打完回到大厅、停几秒再点结束", muted=True).pack_configure(pady=(12, 0))
+        elif lobby is not None:
             self.label(box, f"大厅现在显示的段位和分数是「{rank_text(lobby)}」吗？", bold=True).pack_configure(pady=(12, 0))
             row = self.choice_row(box, [("对", "对"), ("不对，是", "不对")], lobby_verdict)
             tk.Entry(row, textvariable=lobby_fix, width=16, font=self.f_body, fg=TEXT, bg=INSET, insertbackground=TEXT,
@@ -554,8 +561,9 @@ class TesterApp:
                             fixed[key] = int(text) if text.lstrip("+-").isdigit() else text
                 out["局"][match_id] = {"判断": verdict.get() or None, "正确的": fixed}
             if lobby is not None:
-                out["大厅"] = {"Evo 读的": rank_text(lobby), "判断": lobby_verdict.get() or None,
-                             "正确的": lobby_fix.get().strip()}
+                out["大厅"] = {"Evo 读的": rank_text(lobby),
+                             "判断": "还没读到最后一局之后的大厅" if stale else (lobby_verdict.get() or None),
+                             "正确的": "" if stale else lobby_fix.get().strip()}
             return out
 
         return collect

@@ -196,7 +196,8 @@ def prune(folder, session_start, windows, thin_lobby):
 def apply_match_answers(folder, session_start, matches, events, answers):
     """测试员确认完：算每局的时间段、删截图，返回要写进 answers.json 的内容。
     answers：{"局": {match_id: {"判断": "对" / "不对" / None, "正确的": {项: 值}}}, "漏记": "没有" / "有" / None,
-    "大厅": {"Evo 读的", "判断", "正确的"} 或 None, "全部带上": bool}。"""
+    "大厅": {"Evo 读的", "判断", "正确的"} 或 None, "全部带上": bool}。大厅的"判断"是"对" / "不对" / None，
+    或者"还没读到最后一局之后的大厅"（Evo 最后一次读大厅在最后一局之前，不让测试员判断；当作没确认，大厅的截图照样留）。"""
     windows = match_windows(matches, events, session_start)
     judged = answers.get("局", {})
     rows, plan = [], []

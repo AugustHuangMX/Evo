@@ -536,6 +536,54 @@ def window_checks(tmp):
     }
 
 
+def stale_lobby_checks():
+    """打完一局的确认页（tester_window.match_answers，藏起来不显示）：Evo 最后一次读大厅在最后一局之前时，
+    大厅那一项不让判断（2026-11-04：一位测试员打完马上点结束，问的是开局前的段位，他判了"不对"，其实 Evo 是对的）。"""
+    import tkinter as tk
+
+    import tester_window
+    from tester_answers import FIELDS
+
+    class Session:
+        def __init__(self, lobby_at):
+            self.lobby_at = lobby_at
+
+        def evo_record(self):
+            match = {"match_id": 35, "last_read": datetime(2026, 11, 4, 16, 38, 39), "needs_review": 0,
+                     **{key: 1 for key, _ in FIELDS}}
+            lobby = {"read_at": self.lobby_at, "rank_tier": "白银", "rank_division": "I", "rank_progress": 252,
+                     "score": 5002}
+            return {"数据库": "evo.db", "局": [match], "大厅": [lobby]}
+
+    def texts(parent):
+        for child in parent.winfo_children():
+            if isinstance(child, tk.Label):
+                yield child.cget("text")
+            yield from texts(child)
+
+    root = tk.Tk()
+    root.withdraw()
+    got = {}
+    try:
+        app = tester_window.TesterApp(root, tester_projects.load_projects(), {}, tester_projects.languages(),
+                                      tester_projects.weapon_list(), lambda *_: None, None, lambda: True, "测试")
+        for lobby_at in ("2026-11-04 16:22:50", "2026-11-04 16:39:42"):  # 最后一局之前读的 / 之后读的
+            app.session = Session(lobby_at)
+            area = tk.Frame(root)
+            collect = app.match_answers(area)
+            shown = list(texts(area))
+            got[lobby_at] = (any("大厅现在显示的段位" in t for t in shown), any("这一项不用判断" in t for t in shown),
+                             collect()["大厅"]["判断"])
+    finally:
+        root.destroy()
+    before, after = got["2026-11-04 16:22:50"], got["2026-11-04 16:39:42"]
+    return {
+        f"确认页：Evo 最后读大厅在最后一局之前 → 不问大厅、写明不用判断（{before}）":
+            before == (False, True, "还没读到最后一局之后的大厅"),
+        f"确认页：最后一局之后读过大厅 → 照常问（{after}）": after == (True, False, None),
+    }
+
+
 def finder_checks(tmp):
     def evo_dir(folder, log=True):
         folder.mkdir(parents=True, exist_ok=True)
@@ -725,7 +773,8 @@ def main():
         tmp = Path(name)
         checks = {**light_checks(), **recorder_checks(tmp), **stop_checks(tmp), **still_checks(tmp),
                   **answers_checks(tmp), **session_answers_checks(tmp), **reminder_checks(),
-                  **weapon_checks(tmp), **project_checks(tmp), **window_checks(tmp), **finder_checks(tmp),
+                  **weapon_checks(tmp), **project_checks(tmp), **window_checks(tmp), **stale_lobby_checks(),
+                  **finder_checks(tmp),
                   **info_checks(tmp), **zip_checks(tmp), **real_checks(tmp)}
         ok = report(checks)
         shots = report_checks(tmp)
