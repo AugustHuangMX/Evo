@@ -64,6 +64,9 @@ MAX_GAP_SECONDS = 600  # 同一局的总结页和经验值页，时间不会相�
 SAME_MATCH_SECONDS = 120  # 总结页、经验值页之后这么久之内看到的淘汰画面等算同一局（新的一局从排队到被淘汰，至少要这么久）
 MODE_LABELS = {"ranked": "排位", "pubs": "匹配", "other": "其他"}
 MATE_SIMILAR = 0.6  # 对局中和总结页的队友名字这么像就算同一个人（名字里有游戏显示不了的字，两边可能读得不一样）
+# 自己的名字：一个是另一个的开头、短的至少这么多个字（不管空格），才当作被截短了（游戏只截短长名字；
+# 太短的可能真是两个账号，如 "Bob" 和 "Bobby"）
+TRUNCATED_NAME_MIN = 8
 
 
 def xp_score(reading, problems):
@@ -235,6 +238,7 @@ class PostMatch:
         self.player_name = None  # 这次记录认出的玩家名
         self.name_slip = name_slip  # 和之前的名字这么像，就当作识别误差（见 config/player_name.json）
         self.unnamed = []  # 这次记录里存下时还不知道玩家名的局，认出名字后补上
+        self.saved = []  # 这次记录里存下的所有局（之前记的名字原来是截短的，改成完整的时用）
         self.last_xp = None  # 上一次用过的经验值页读数（补进了一局或单独记了一局），不随每局清掉
         self.reset()
 
@@ -286,10 +290,25 @@ class PostMatch:
         """读到自己的玩家名之后调用（where：在哪读到的，写日志用）。
         - 第一次读到：记下，并补上这次记录里之前存下、还不知道名字的局
         - 和之前的一样（不管空格）：不用管
+        - 一个是另一个的开头（2026-11-04：总结页卡片上名字太长时游戏会截短，"Asuna[dkaldad"）：记完整的那个；
+          之前记的是截短的，这次记录里已经存下的局改成完整的（以前存下的局不动：账号对照表会照常问是不是同一个人）
         - 和之前的很像：当作识别误差，仍用之前的名字
         - 完全不一样：换了账号（用终端运行时，一次记录可能跨过重启游戏），之后的局记在新名字下"""
         old = self.player_name
         if old is not None and storage.name_key(name) == storage.name_key(old):
+            return
+        full = storage.truncated_of(name, old) if old is not None else None
+        if full is not None and len(storage.name_key(old if full == name else name)) >= TRUNCATED_NAME_MIN:
+            if full == old:
+                self.log(f"[{when:%H:%M:%S}] {where}读到玩家名 {name}，是 {old} 被截短了，仍记在 {old} 下")
+                return
+            self.player_name = full
+            fixed = [m for m in self.saved
+                     if (row := storage.get_match(self.conn, m)) is not None and row["player_name"] == old]
+            for match_id in fixed:
+                storage.update_match(self.conn, match_id, {"player_name": full})
+            self.log(f"[{when:%H:%M:%S}] {where}读到玩家名 {full}，之前的 {old} 是被截短的，改记 {full}"
+                     + (f"（这次记录里的 {len(fixed)} 局也改过来：编号 {'、'.join(map(str, fixed))}）" if fixed else ""))
             return
         if old is not None and storage.name_similarity(name, old) >= self.name_slip:
             self.log(f"[{when:%H:%M:%S}] {where}读到玩家名 {name}，和 {old} 很像，当作识别误差，仍记在 {old} 下")
@@ -450,6 +469,7 @@ class PostMatch:
 
     def _wait_for_name(self, match_id):
         """刚存下一局：还不知道玩家名的话，记下编号，认出名字后补上。"""
+        self.saved.append(match_id)
         if self.player_name is None:
             self.unnamed.append(match_id)
 

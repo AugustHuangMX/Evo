@@ -6,6 +6,7 @@
 - 4:3 大厅的段内分数：原尺寸截图上"436/750 RP"会读成"436/750.RP""6817750 RP"（斜杠读错），照样读得出
 - 对局中队友的名字：第 31 赛季起是逐字出来的动画，认出传奇 2 秒以后才裁；和总结页一个是另一个的开头时算同一个人、
   记长的（诊断包里没有动画中途的截图，把名字后半截涂掉来模拟）
+- 自己的名字：总结页卡片上被游戏截短（"…dkaldad"），大厅读到完整的以后改记完整的
 
 运行：python tests/test_testers_1104.py
 """
@@ -70,6 +71,28 @@ def merge_checks():
             got == [("left", "Abcdefg", "万蒂奇"), ("right", "测试名字很长", "亡灵")]}
 
 
+def own_name_checks():
+    """不用截图：自己的名字在总结页卡片上被游戏截短（名字是编的）。"""
+    when = datetime(2026, 11, 4, 22, 33, 47)
+    p = PostMatch(storage.connect(":memory:"), log=lambda line: None)
+    p.on_player_name("Abcdef[ghijkl", when, "总结页")  # 截短的先读到
+    first = storage.insert_match(p.conn, {"placement": 15, "ended_at": "2026-11-04 22:33:47", "player_name": p.player_name})
+    p._wait_for_name(first)
+    p.on_player_name("Abcdef[ghijklm]", when, "大厅")  # 后来大厅读到完整的
+    renamed = storage.get_match(p.conn, first)["player_name"]
+    p.on_player_name("Abcdef[ghijkl", when, "总结页")  # 再读到截短的
+    after = p.player_name
+    q = PostMatch(storage.connect(":memory:"), log=lambda line: None)
+    q.on_player_name("Bob", when, "大厅")
+    q.on_player_name("Bobby", when, "大厅")
+    return {
+        f"自己的名字：先读到截短的、大厅读到完整的 → 改记完整的，这次记录里已经存下的局也改过来（{renamed}）":
+            renamed == "Abcdef[ghijklm]",
+        f"之后再读到截短的：仍记完整的（{after}）": after == "Abcdef[ghijklm]",
+        f"太短的不算截短（'Bob' 和 'Bobby' 可能真是两个账号，照旧当作换了账号：{q.player_name}）": q.player_name == "Bobby",
+    }
+
+
 def reveal(hud, frame, keep):
     """模拟第 31 赛季队友名字逐字出来的动画：两名队友名字条从左数 keep 个基准像素以后涂成名字条右端的底色。"""
     out, mates = frame.copy(), hud.cfg["teammates"]
@@ -130,6 +153,7 @@ def main():
     print("测试员 11-04 的截图（第 31 赛季，16:9 和 4:3）")
     checks = text_checks()
     checks.update(merge_checks())
+    checks.update(own_name_checks())
     missing = [str(f) for f in FOLDERS.values() if not f.is_dir()]
     if missing:
         print(f"  ⏭ 跳过截图部分：找不到 {'、'.join(missing)}（截图不在仓库里）")
