@@ -1,4 +1,4 @@
-"""提示音（sounds.py、live_collect.SoundCues）：对局结束、总结页读完了、进入经验值页，每局每一声最多一次。
+"""提示音（sounds.py、live_collect.SoundCues）：对局结束、总结页读完了、经验值页读全了，每局每一声最多一次。
 
 - 声音文件：Evo 默认的三个都在，格式对，不超过 2 秒、不爆音，和 tools/make_sounds.py 合成出来的一模一样；
   每套声音包都有 pack.json（名字、许可），WAV 是 16 位、不超过 10 秒
@@ -7,7 +7,7 @@
 - 音量：默认 100% 放原文件；调小了放调小的副本（振幅按音量的平方），同一音量不重做，换音量删掉旧的
 - 自己的文件：核对格式、长度后存进数据文件夹；读不出、格式不对、太长、空的都说原因；恢复默认
 - 什么时候响（直接喂画面，不用截图）：淘汰画面 / 冠军横幅 / "返回大厅"按钮响"对局结束"，已经到过总结页、经验值页就不响；
-  总结页读完了才响；进经验值页响；来回切页不重复；下一局重新算
+  总结页读完了才响；经验值页读全了才响（2026-11-04 起，进经验值页不响）；来回切页不重复；下一局重新算
 - 用截图跑真正的记录程序：一局从开局到大厅，响了哪几声、顺序对不对；总结页停留太短不响"读完了"
 - 设置页：开关、声音包下拉框、音量滑块、三个"试听"（脚本提交，不刷新页面）；选"自己的文件"时的选文件、恢复默认
 测试时不真的出声（fake_game 把声音换成记一笔）。
@@ -244,7 +244,8 @@ def custom_checks():
 
 
 def cue(steps):
-    """直接喂画面给 SoundCues：steps 里是画面名（None = 都不是），"read" = 总结页读完了。返回响了哪几声。"""
+    """直接喂画面给 SoundCues：steps 里是画面名（None = 都不是），"read" = 总结页读完了，"xpread" = 经验值页读全了。
+    返回响了哪几声。"""
     played, log = [], []
     cues = SoundCues(log.append, play=lambda name: played.append(name) or True)
     now = datetime(2026, 10, 21, 20, 0)
@@ -252,6 +253,8 @@ def cue(steps):
         when = now + timedelta(seconds=i)
         if step == "read":
             cues.summary_read(when)
+        elif step == "xpread":
+            cues.xp_read(when)
         else:
             cues.update(step, when)
     return played, log
@@ -259,19 +262,23 @@ def cue(steps):
 
 def rule_checks():
     out = {}
-    played, log = cue(["match_start", None, None, "eliminated", None, "summary", "summary", "read", "xp", "lobby"])
-    out[f"淘汰 → 总结页读完了 → 经验值页：三声按顺序（{played}）"] = played == ["match_end", "summary", "xp"]
+    played, log = cue(["match_start", None, None, "eliminated", None, "summary", "summary", "read", "xp", "xp", "xpread",
+                       "lobby"])
+    out[f"淘汰 → 总结页读完了 → 经验值页读全了：三声按顺序（{played}）"] = played == ["match_end", "summary", "xp"]
     out["日志里写了每一声"] = [line.split("] ")[1] for line in log] == ["提示音：对局结束", "提示音：总结页读完了", "提示音：经验值页"]
     played, _ = cue(["match_start", None, "squad_out", None, "squad_out", None, "squad_out"])
     out[f"观战对手时\"返回大厅\"按钮一会儿有一会儿没有：只响一次（{played}）"] = played == ["match_end"]
-    played, _ = cue(["match_start", None, "champion", None, "summary", "read", "xp"])
+    played, _ = cue(["match_start", None, "champion", None, "summary", "read", "xp", "xpread"])
     out[f"冠军：横幅响\"对局结束\"，再响总结页、经验值页（{played}）"] = played == ["match_end", "summary", "xp"]
-    played, _ = cue(["match_start", None, "summary", "read", "xp"])
+    played, _ = cue(["match_start", None, "summary", "read", "xp", "xpread"])
     out[f"没看到淘汰画面就进了总结页：不响\"对局结束\"（{played}）"] = played == ["summary", "xp"]
     played, _ = cue(["match_start", None, "summary", "read", None, "squad_out", "eliminated"])
     out[f"从总结页切回\"实况\"又看到\"返回大厅\"、淘汰画面：不再响\"对局结束\"（{played}）"] = played == ["summary"]
-    played, _ = cue(["match_start", None, "summary", "read", "xp", "summary", "read", "xp", "summary", "xp"])
+    played, _ = cue(["match_start", None, "summary", "read", "xp", "xpread", "summary", "read", "xp", "xpread", "summary",
+                     "xp"])
     out[f"总结页和经验值页来回切：每一声只响一次（{played}）"] = played == ["summary", "xp"]
+    played, _ = cue(["match_start", None, "eliminated", "summary", "read", "xp", "xp", "xp", "lobby"])
+    out[f"进了经验值页、还没读全就回大厅：不响\"经验值页\"（{played}）"] = played == ["match_end", "summary"]
     played, _ = cue(["match_start", None, None, None, "match_start", None, "lobby"])
     out["自己先成盒、队友还活着，提前回大厅或直接进下一局：一声都不响"] = played == []
     played, _ = cue(["match_start", None, "eliminated", "summary", "read", "match_start", None, "eliminated", "summary",

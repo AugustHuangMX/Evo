@@ -14,8 +14,12 @@ import argparse
 import re
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 import game_lang
 import ranks
+from layout import cut
 from ocr import SMALL_CROP_PARAMS, create_engine, crop, load_config, load_image, read_lines
 
 CONFIG_NAME = "xp.json"
@@ -40,6 +44,24 @@ def read_text(engine, img, spec, cfg):
         return "", None
     text, score = max(lines, key=lambda x: x[1])
     return normalize(text), score
+
+
+def numbers_snapshot(img, cfg):
+    """经验值页上读的那几格（cfg 的 fields，只看主区域）缩小成灰度：用来看数字停下来没有（不用识别引擎，约 1 毫秒）。"""
+    parts = []
+    for spec in cfg["fields"].values():
+        anchor = spec.get("anchor")
+        piece = cut(img, spec["roi"], cfg["base_resolution"], cfg.get("anchor") if anchor is None else anchor)
+        _, _, w, h = spec["roi"]
+        gray = cv2.cvtColor(piece, cv2.COLOR_BGR2GRAY)
+        parts.append(cv2.resize(gray, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA))
+    return parts
+
+
+def numbers_moved(a, b, cfg):
+    """两张的那几格差得多不多：有一格平均差超过 still.max_diff（0–255 的灰度）就算还在动。"""
+    limit = cfg["still"]["max_diff"]
+    return any(float(np.mean(cv2.absdiff(x, y))) > limit for x, y in zip(a, b))
 
 
 def split_count_points(digits):

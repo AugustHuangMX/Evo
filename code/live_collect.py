@@ -22,7 +22,7 @@
     对局中存下的右上角见上；从经验值页切到总结页时，经验值页的最后一帧先留着，总结页存下了（或者离开了）再读
 - 各来源读到的数都记进 readings 表，每一项最后用哪个来源的数见 post_match.py（总结页、经验值页读得清楚时以它们为准，
   没有时用对局中的）
-- 提示音（见 SoundCues、sounds.py；设置页能关）：小队打完了响一声提醒去总结页，总结页读完了响一声，进经验值页响一声
+- 提示音（见 SoundCues、sounds.py；设置页能关）：小队打完了响一声提醒去总结页，总结页读完了响一声，经验值页读全了响一声
 - 读结算画面、大厅时不让 Windows 降频（见 FullSpeed）：笔记本上识别可能慢 10 倍以上，玩家等不到提示音就离开了
 
 数据存在数据文件夹（见 paths.py；用源码运行时就是项目文件夹）的 data/evo.db（用 python code/storage.py 查看），
@@ -66,7 +66,7 @@ from process_info import memory_mb, set_full_speed, set_low_priority
 from screens import GameScreens
 from summary_page import KEY_FIELDS, is_champion, read_summary, show, summary_readings, summary_to_match
 from teammates import describe, read_teammates
-from xp_page import read_xp
+from xp_page import numbers_moved, numbers_snapshot, read_xp
 
 LATE_FIELDS = ("placement", "squad_kills")  # 总结页上晚 1–2 秒才滑进来的项
 MODEL_IDLE_SECONDS = 120  # 识别模型闲置这么久就释放
@@ -222,7 +222,8 @@ class SoundCues:
       这一局已经到过总结页或经验值页就不响（已经在那里了，比如从总结页切回"实况"又看到"返回大厅"）；
       自己先成盒、队友还活着时没有这几个画面，不响；提前回大厅、成盒后直接进了下一局也不响
     - 总结页读完了：SummaryWatcher 读全、存下这一局时（summary_read）；停留太短没读全、等太久都不响
-    - 经验值页：进入时（数字有动画，离开时才读，没有"读完了"的那一刻）"""
+    - 经验值页：这一局的经验值页第一次读全时（xp_read，ScreenWatcher 告诉它：数字停下来读了那一张，或者离开时读最后一帧；
+      2026-11-04 用户决定，以前是一进经验值页就响，数字还在跳就说"已记录"）"""
 
     MATCH_END = ("eliminated", "champion", "squad_out")
 
@@ -245,12 +246,14 @@ class SoundCues:
             self._cue("match_end", now)
         elif screen in ("summary", "xp"):
             self.on_pages = True
-            if screen == "xp":
-                self._cue("xp", now)
 
     def summary_read(self, now):
         self.on_pages = True
         self._cue("summary", now)
+
+    def xp_read(self, now):
+        self.on_pages = True
+        self._cue("xp", now)
 
     def _cue(self, name, now):
         if name in self.played:
@@ -300,25 +303,37 @@ class FullSpeed:
 
 class ScreenWatcher:
     """经验值页、开局画面、大厅、淘汰画面、冠军横幅（见 config/screens.json）。
-    离开经验值页时识别最后一帧（数字有动画，最后一帧才是最终结果）；进入开局画面或大厅表示上一局彻底结束；
+    经验值页的数字有动画：数字停下来（xp.json 的 still：那几格的像素一秒不变，不用识别引擎）就读这一张，读全了
+    告诉 on_read（响"经验值页"那一声，2026-11-04 用户决定）；这次停留没读全的话，离开时再读最后一帧（读全了也响）。
+    进入开局画面或大厅表示上一局彻底结束；
     在开局画面读本局的模式和地图，读到就不再读；在淘汰画面读名次，这一次停留里读到就不再读，交给 PostMatch 归到这一局；
     进入冠军横幅告诉 PostMatch 记第 1 名。
-    截图：保留全部时，进入时存一张、离开前最后一帧再存一张；否则只存经验值页离开前的最后一帧
-    （没有总结页的局要拿它当识别依据），大厅、开局画面、淘汰画面、冠军横幅不存。"""
+    截图：保留全部时，进入时存一张、离开前最后一帧再存一张；经验值页读的每一张都存（没有总结页的局要拿它当识别依据，
+    读完以后照常清理），离开时的最后一帧只在要读它时存；大厅、开局画面、淘汰画面、冠军横幅不存。"""
 
     def __init__(self, engine, screens, xp_cfg, start_cfg, elim_cfg, post, run_dir, log, keep_all=True,
-                 busy=lambda: False):
-        """busy()：总结页正在读、还没存下。这时离开经验值页，最后一帧先留着，等 busy() 不再为真再读。"""
+                 busy=lambda: False, on_read=None):
+        """busy()：总结页正在读、还没存下。这时经验值页先不读（离开时的最后一帧先留着），等 busy() 不再为真再读。
+        on_read(时间)：这一局的经验值页第一次读全（提示音）。"""
         self.engine, self.screens, self.xp_cfg, self.start_cfg = engine, screens, xp_cfg, start_cfg
         self.elim_cfg = elim_cfg
         self.post, self.run_dir, self.log, self.keep_all = post, run_dir, log, keep_all  # 每局结束时可能改（round_end）
         self.busy = busy
+        self.on_read = on_read
         self.current = None  # 现在停在哪个画面（None = 都不是）
         self.last = None  # 这个画面最近的一帧和时间，离开时存下来
         self.frames = 0  # 在这个画面已经看到了几帧
         self.enter_path = None  # 进入这个画面时存的截图（没存为 None）
         self.placement = None  # 这一次停在淘汰画面读到的名次
         self.held = None  # 先留着、还没读的经验值页最后一帧：(截图, 截图路径, 时间)
+        self._reset_xp()
+
+    def _reset_xp(self):
+        """这一次停在经验值页的状态（进入别的画面时清掉）。时间用 time.monotonic()（测试时是假时钟）。"""
+        self.still = None  # 数字可能停下来的这一段：(开头那张的几格, 开头的时刻)
+        self.xp_reads = 0  # 这次停留读了几次
+        self.xp_read_at = None  # 上一次读的时刻
+        self.xp_full = False  # 这次停留读全了（离开时就不用再读最后一帧）
 
     def update(self, screen, frame, now):
         """每截一帧调用一次。screen：这一帧是哪个画面（如 "xp"），都不是则为 None。"""
@@ -339,29 +354,55 @@ class ScreenWatcher:
             elif screen is not None:
                 self.log(f"[{now:%H:%M:%S}] 进入{self._label(screen)}")
             self.current, self.frames, self.placement = screen, 0, None
+            self._reset_xp()
         if screen is not None:
             self.last = (frame.copy(), now)
             self.frames += 1
+        if screen == "xp":
+            self._watch_xp(frame, now)
         if screen == "match_start" and not self.post.info_complete():
             self.post.on_match_start(read_match_start(self.engine, frame, self.start_cfg), now)
         if screen == "eliminated" and self.placement is None:
             self._read_placement(frame, now)
 
     def leave(self):
-        """离开当前画面：存下最后一帧（保留全部时，只看到一帧的话进入时已经存过了；否则只存经验值页）；
-        如果是经验值页，识别最后一帧（总结页正在读时先留着）。"""
+        """离开当前画面：存下最后一帧（保留全部时，只看到一帧的话进入时已经存过了；否则只存要读的经验值页）；
+        如果是经验值页、这次停留还没读全，识别最后一帧（总结页正在读时先留着）。"""
         if self.current is not None:
             last_frame, last_time = self.last
             path = self.enter_path
-            if (self.frames > 1) if self.keep_all else (self.current == "xp"):
+            read_last = self.current == "xp" and not self.xp_full
+            if (self.frames > 1) if self.keep_all else read_last:
                 name = f"{self.current}_{last_time:%H%M%S}_leave.png"
                 path = screenshots.path_for(self.run_dir, name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 save_png(path, last_frame)
                 self.log(f"[{last_time:%H:%M:%S}] 离开{self._label(self.current)}，已存最后一帧")
-            if self.current == "xp":
+            if read_last:
                 self.held = (last_frame, path, last_time)
         self._read_held()
+
+    def _watch_xp(self, frame, now):
+        """停在经验值页：数字停下来了（那几格和这一段开头那张差不多、过了 still.seconds 秒）就读这一张。"""
+        rule = self.xp_cfg["still"]
+        tick = time.monotonic()
+        snapshot = numbers_snapshot(frame, self.xp_cfg)
+        if self.still is None or numbers_moved(self.still[0], snapshot, self.xp_cfg):
+            self.still = (snapshot, tick)  # 还在动：从这一张重新算
+            return
+        if (self.xp_full or tick - self.still[1] < rule["seconds"] or self.xp_reads >= rule["max_reads"]
+                or (self.xp_read_at is not None and tick - self.xp_read_at < rule["retry_seconds"]) or self.busy()):
+            return
+        self.xp_reads += 1
+        self.xp_read_at = tick
+        path = screenshots.path_for(self.run_dir, f"xp_{now:%H%M%S}_still.png")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_png(path, frame)
+        self.log(f"[{now:%H:%M:%S}] 经验值页的数字停下了，读这一张（已存截图）")
+        reading, problems = read_xp(self.engine, frame, self.xp_cfg)
+        self.xp_full = not problems
+        if self.post.on_xp(reading, problems, path, now) and self.on_read is not None:
+            self.on_read(now)
 
     def _read_held(self):
         """识别先留着的经验值页最后一帧（总结页正在读时不读）。"""
@@ -370,7 +411,8 @@ class ScreenWatcher:
         frame, path, when = self.held
         self.held = None
         reading, problems = read_xp(self.engine, frame, self.xp_cfg)
-        self.post.on_xp(reading, problems, path, when)
+        if self.post.on_xp(reading, problems, path, when) and self.on_read is not None:
+            self.on_read(when)
 
     def _read_placement(self, frame, now):
         """读淘汰画面上的名次。没读出来时只在第一帧提示一次，之后每帧再试。"""
@@ -588,7 +630,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                              PlayerNameReader(engine, name_cfg), on_read=cues.summary_read)
     other = ScreenWatcher(engine, detector.cfg, load_config("xp.json", lang), load_config("match_start.json", lang),
                           load_config("eliminated.json", lang), post, run_dir, log, keep_all=keep,
-                          busy=lambda: summary.waiting)
+                          busy=lambda: summary.waiting, on_read=cues.xp_read)
     def save_hud(frame, name):
         path = screenshots.path_for(run_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -659,7 +701,7 @@ def collect(db_path=storage.DB_PATH, interval=1.0, fast=0.3, summary_timeout=10.
                     use_language(lang)
                 on_summary, on_xp = screen == "summary", screen == "xp"
                 speed.update(screen, in_match.active)  # 读结算画面、大厅时不让 Windows 降频
-                cues.update(screen, now)  # 提示音：小队打完了、进经验值页（总结页读完了由 summary 告诉它）
+                cues.update(screen, now)  # 提示音：小队打完了（总结页读完了由 summary、经验值页读全了由 other 告诉它）
                 summary.update(on_summary, frame, now)  # 没读全就离开（比如直接回大厅）时在这里存下，要在交对局中的数据之前
                 if screen in ("match_start", "lobby"):
                     summary.catch_up()  # 存总结页时先留着的队友、名字：回到大厅、下一局开局时读，在交对局中的数据之前

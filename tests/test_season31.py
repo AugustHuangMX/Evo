@@ -7,13 +7,14 @@
 总结页、经验值页（+19，第 11 名，707RP，43 RP ▶ 黄金 IV）来回切 → 没回大厅，直接和队友排了下一局（开局画面）→ 桌面。
 - 关键截图：每种画面认得出、读得对（大厅、经验值页、右上角的 RP 是新写法）；射击场的大厅也认得出、没有段位
 - 整局重放：记下一局，数据和截图上的一样，不待确认；大厅读到段位和分数，从经验值页补上 RP 和之后的段位
+- 经验值页：数字停下来才读、读全了才响提示音；动画没播完就离开不响（2026-11-04）
 
 运行：python tests/test_season31.py
 """
 
 import glob
 
-from fake_game import SHOTS, _TEMP, load, report, run_collect  # 要在项目代码之前导入
+from fake_game import SHOTS, SOUNDS_PLAYED, _TEMP, load, report, run_collect  # 要在项目代码之前导入
 
 import fake_game
 import layout
@@ -116,6 +117,37 @@ def replay_checks():
     return out
 
 
+def xp_still_checks():
+    """经验值页：数字停下来就读那一张，读全了才响"经验值页"（2026-11-04 用户决定，以前一进页面就响，数字还在跳就说"已记录"）。
+    假时钟下经验值页每 0.3 秒一张。0294–0297 动画还在播（相邻两张那几格差 4.5–70；0296 起明细已经读得全，
+    后面几行还在淡入），0298 停下了（差 2.5 以内）。"""
+    VIDEO_CONFIG.write_text('"VideoConfig"\n{\n\t"setting.fullscreen"\t\t"1"\n\t"setting.defaultres"\t\t"2560"\n'
+                            '\t"setting.defaultresheight"\t\t"1600"\n}\n', encoding="utf-16")
+    path = {p: glob.glob(str(FOLDER / f"{p}_*.jpg"))[0] for p in ("0294", "0295", "0296", "0297", "0298", "0300")}
+    try:
+        SOUNDS_PLAYED.clear()
+        rows, _, log = run_collect([path[p] for p in ["0294", "0295", "0296", "0297"] + ["0298"] * 5 + ["0300"]], load)
+        played = list(SOUNDS_PLAYED)
+        SOUNDS_PLAYED.clear()
+        _, _, early_log = run_collect([path[p] for p in ("0294", "0295", "0300")], load)  # 动画没播完（0295 明细还没出来）就离开
+        early = list(SOUNDS_PLAYED)
+    finally:
+        VIDEO_CONFIG.unlink()
+
+    def first(lines, text):
+        return next((i for i, line in enumerate(lines) if text in line), None)
+
+    read_at, cue_at, left_at = first(log, "经验值页的数字停下了"), first(log, "提示音：经验值页"), first(log, "小队已淘汰")
+    return {
+        f"动画播完、数字停了一秒才读，读全了马上响，还在经验值页上（日志第 {read_at}、{cue_at}、{left_at} 行）":
+            None not in (read_at, cue_at, left_at) and read_at < cue_at < left_at,
+        f"读的是停下来的那一张：RP +19（{[r['rp_delta'] for r in rows]}）": [r["rp_delta"] for r in rows] == [19],
+        f"只响一次\"经验值页\"（{played}）": played.count("xp") == 1,
+        f"动画没播完就离开：数字没停过、不提前读，最后一帧没读全，不响（{early}）":
+            "xp" not in early and first(early_log, "经验值页的数字停下了") is None,
+    }
+
+
 def main():
     print("第 31 赛季的新界面（简体、16:10，一局排位整段重放）")
     checks = text_checks()
@@ -124,6 +156,7 @@ def main():
         return report(checks)
     checks.update(screenshot_checks(create_engine(SMALL_CROP_PARAMS)))
     checks.update({f"整局重放：{k}": v for k, v in replay_checks().items()})
+    checks.update({f"经验值页：{k}": v for k, v in xp_still_checks().items()})
     return report(checks)
 
 

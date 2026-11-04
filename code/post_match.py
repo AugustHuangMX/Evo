@@ -418,17 +418,20 @@ class PostMatch:
             self._settle(match_id)
 
     def on_xp(self, reading, problems, path, when):
-        """每次离开经验值页、识别了最后一帧之后调用。"""
+        """识别了一张经验值页之后调用：数字停下来的那一张，或者离开时的最后一帧（见 live_collect.ScreenWatcher）。
+        返回 True：这一局第一次读全（"经验值页"那一声在这时响，2026-11-04 用户决定）。"""
         if self.xp_done:
-            return
+            return False
         if self._reopened_xp(reading):
             self.log(f"[{when:%H:%M:%S}] 回到了上一局的经验值页（在大厅里打开的），不重复记")
-            return
+            return False
+        first_full = not problems and (self.xp is None or bool(self.xp[1]))
         if self.xp is None or xp_score(reading, problems) > xp_score(*self.xp[:2]):
             self.xp = (reading, problems, path, when)
         if self.xp[1]:  # 到目前为止还没有一次读全
             self.log(f"[{when:%H:%M:%S}] 经验值页没读全（{problems[0]}）。下次等数字停下再离开")
         self._use_xp()
+        return first_full
 
     def finish(self):
         """这一局彻底结束（下一局开局、回到大厅，或停止运行）。没有总结页的局在这里单独记一局。

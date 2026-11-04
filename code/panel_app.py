@@ -1558,7 +1558,7 @@ def autostart_setting():
 SOUND_WHEN = {  # 设置页"提示音"一栏：每一声什么时候响（规则见 live_collect.SoundCues）
     "match_end": "小队打完了（淘汰画面、冠军、右下角出现\"返回大厅\"），提醒你去总结页",
     "summary": "Evo 读到了名次、击杀和伤害，可以离开了",
-    "xp": "进入经验值页时。等最上面的数字不再跳动再离开",
+    "xp": "经验值页的数字停下来、Evo 读到了 RP 和段位，可以离开了",
 }
 
 
@@ -1588,7 +1588,7 @@ def sounds_setting():
     """"提示音"开关（默认开）。记录程序每次要响时看一眼，所以马上生效。"""
     on = request.form.get("on") == "1"
     app_settings.set_value(sounds.SETTING_KEY, on)
-    flash("已开启提示音：对局结束、总结页读完了、进入经验值页时各响一声。" if on
+    flash("已开启提示音：对局结束、总结页读完了、经验值页读完了各响一声。" if on
           else "已关闭提示音。", "ok")
     return redirect(url_for("settings"))
 
