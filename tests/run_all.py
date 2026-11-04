@@ -1,8 +1,7 @@
-"""运行全部测试：python tests/run_all.py（约 9 分钟）
+"""运行全部测试：python tests/run_all.py（约 9–11 分钟）
 
-什么时候跑：改了识别（layout.py、game_aspect.py、game_lang.py、ocr.py、screens.py、summary_page.py、teammates.py、xp_page.py、match_start.py、eliminated.py、legends.py、player_name.py、hud.py、lobby.py）、记录程序（live_collect.py、in_match.py、post_match.py、calibration.py、screenshots.py）、数据库（storage.py）、段位（ranks.py）、面板（panel_app.py、传奇头像 tools/legend_icons.py）、检查和一键更新（update_check.py、updater.py）、窗口和 WebView2 检查（app_window.py、webview2.py）、数据文件夹（paths.py、data_move.py）、开机自启（autostart.py）、提示音（sounds.py、tools/make_sounds.py）、匿名统计（telemetry.py）、数据页"全体玩家"（global_stats.py）、六维图（radar.py）、总览页的地图轮换（map_rotation.py、config/rotation.json）、诊断工具（evo_diag.py、tools/diag_report.py）、截屏（capture.py）、武器识别（weapons.py、tools/weapon_templates.py、config/templates/weapons/）
-或 config/ 里的识别规则之后；新赛季游戏更新以后。全部 ✅ 才说明没改坏。
-加、删、改名文件以后也跑一下（或者只跑 python tests/test_code_map.py）：代码地图 docs/代码地图.md 要跟着重新生成。
+什么时候跑全部、什么时候只跑相关的一组（python tests/test_xxx.py）、什么时候不用跑：见 docs/测试SOP.md。
+全部 ✅ 才说明没改坏。
 
 测试用的截图不提交到仓库（太大，而且有其他玩家的名字和 ID），只在开发者电脑上项目文件夹的 captures/ 里；
 找不到截图的测试会显示"跳过"。测试文件只 import 项目代码，项目代码不 import 测试，所以测试不会被打进安装包。
