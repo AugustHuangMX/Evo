@@ -518,6 +518,17 @@ def name_similarity(a, b):
     return SequenceMatcher(None, name_key(a), name_key(b)).ratio()
 
 
+def truncated_of(a, b):
+    """一个名字是另一个的开头（不管空格，短的至少 2 个字）：其中一个被截短了，是同一个人。返回长的那个，不是返回 None。
+    截短的来历（2026-11-04 测试员的截图）：对局中队友名字刚出现时是逐字出来的动画，只读到前半截；
+    总结页卡片、名字太长时游戏自己截短（"Asuna[dkaldad"）。"""
+    ka, kb = name_key(a), name_key(b)
+    if ka == kb:
+        return None
+    short, full = (a, b) if len(ka) < len(kb) else (b, a)
+    return full if len(name_key(short)) >= 2 and name_key(full).startswith(name_key(short)) else None
+
+
 def sync_names(conn):
     """把对局里出现过、对照表里还没有的名字登记进去，每个新名字先单独算一个账号。
     还没有任何已确认的账号时，最早出现的那个名字直接确认（第一个账号不用问）；

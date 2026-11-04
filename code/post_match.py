@@ -512,7 +512,8 @@ class PostMatch:
 
     def _merge_mates(self, match_id):
         """对局中认出的队友（名字、传奇）和总结页上的队友（名字、ID、数据）按名字对上。
-        名字以对局中的为准（2026-10-18 用户决定），总结页的补空；对不上的只在日志里记一笔。没有总结页的局，记成 hud1、hud2。"""
+        名字以对局中的为准（2026-10-18 用户决定），总结页的补空；一个是另一个的开头（有一边被截短了，2026-11-04）时
+        算同一个人、记长的那个。对不上的只在日志里记一笔。没有总结页的局，记成 hud1、hud2。"""
         hud_mates = [m for m in (self.hud["mates"] if self.hud else []) if m["name"] or m["legend"]]
         if not hud_mates:
             return
@@ -523,7 +524,8 @@ class PostMatch:
         free = list(range(len(hud_mates)))
         pairs = []
         for row in rows:
-            scores = [(storage.name_similarity(hud_mates[i]["name"], row["name"]), i) for i in free
+            scores = [(1.0 if storage.truncated_of(hud_mates[i]["name"], row["name"])
+                       else storage.name_similarity(hud_mates[i]["name"], row["name"]), i) for i in free
                       if hud_mates[i]["name"] and row["name"]]
             best = max(scores, default=None)
             if best and best[0] >= MATE_SIMILAR:
@@ -536,9 +538,14 @@ class PostMatch:
         for row, mate in pairs:
             fields = {"legend": mate["legend"]}
             if mate["name"]:
-                if row["name"] and storage.name_key(mate["name"]) != storage.name_key(row["name"]):
-                    self.log(f"           队友名字：对局中读到 {mate['name']}，总结页读到 {row['name']}，记对局中的")
                 fields["name"] = mate["name"]
+                if row["name"] and storage.name_key(mate["name"]) != storage.name_key(row["name"]):
+                    full = storage.truncated_of(mate["name"], row["name"])
+                    if full:
+                        fields["name"] = full
+                    which = "对局中的" if fields["name"] == mate["name"] else "总结页的"
+                    self.log(f"           队友名字：对局中读到 {mate['name']}，总结页读到 {row['name']}，记{which}"
+                             + ("（另一边被截短了）" if full else ""))
             storage.update_teammate(self.conn, match_id, row["slot"], {k: v for k, v in fields.items() if v})
         for i in free:
             self.log(f"           对局中的队友 {hud_mates[i]['name'] or '（名字没读到）'}"

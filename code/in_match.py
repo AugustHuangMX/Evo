@@ -3,7 +3,8 @@
 规则见 docs/对局全流程图.md 第 4–6 步。每张截图调用一次 update(画面, 截图, 时间)：
 - 左下角认得出自己的传奇 = 这一张是自己的界面（观战时认不出，见 hud.py）。只在这种截图上：
   - 认自己的传奇：同一个传奇认出 2 次算数（之前在靶场里认出的不算，开局画面会清掉）
-  - 认两名队友的传奇（同样 2 次算数，一局只认一次）；名字那一条裁下来先留着
+  - 认两名队友的传奇（同样 2 次算数，一局只认一次）；名字那一条裁下来先留着（认出传奇 MATE_NAME_DELAY 秒以后才裁：
+    第 31 赛季起名字是逐字出来的动画；留 3 块，结束时都读，取读到最多的、一样多取长的；一块都没等到才用之前裁的）
   - 还不知道自己的玩家名时，把头像旁边的名字裁下来先留着（最多 max_hud_reads 块）
   - 右上角那一块存在内存里：内容变了才存，只留最近的 keep 块（一局结束时每块要读约 0.2 秒）
   - 自己那一行变红 = 倒地；看到"观战"标签 = 成盒；成盒后又看到自己的界面 = 被复活
@@ -21,12 +22,16 @@
 from collections import deque
 
 from hud import TOP_FIELDS, TOP_LABELS
+from storage import name_key
 from weapons import WeaponDetector, WeaponTimer
 
 END_SCREENS = ("eliminated", "champion", "summary", "xp", "squad_out")  # 这一局打完了（squad_out：右下角"返回大厅"）
 ZERO_IF_HIDDEN = ("kills", "assists", "participation", "damage")  # 右上角没显示 = 0
 STATE_ALIVE, STATE_KNOCKED, STATE_DEAD = "存活", "倒地", "成盒"
 SAME_MATCH_SECONDS = 180  # 看到自己的界面以后这么久之内又出现开局画面（横幅闪回来），还是同一局
+# 认出队友的传奇以后过这么久才裁名字：第 31 赛季起左下角队友的名字是逐字出来的动画，刚出现时每 0.3 秒一张
+# 会截到前半截（2026-11-04 测试员 16:9 的日志："trigger"记成"trigg"，太短的和总结页对不上，队友的传奇就丢了）
+MATE_NAME_DELAY = 2.0
 AFTER_END_SECONDS = 60  # 结算以后这么久之内又看到自己的界面（拿冠军后还能跑几秒），不算新的一局
 
 
@@ -64,6 +69,8 @@ class InMatchWatcher:
         self.mate_votes = [{}, {}]
         self.mates = [None, None]  # 两名队友的传奇（编号）
         self.mate_names = [[], []]  # 两名队友的名字那一条（最多 3 块）
+        self.mate_seen = [None, None]  # 每个队友位置第一次认出传奇的时间：过了 MATE_NAME_DELAY 秒才裁名字
+        self.mate_early = [[], []]  # 那之前裁的（最多 3 块）：没等到就结束了（刚认出队友就退出）才用
         self.own_names = []  # 自己的名字那一条
         self.tops = deque(maxlen=self.keep)  # 右上角
         self.weapons.reset()  # 每一段拿在手上的武器
@@ -128,7 +135,7 @@ class InMatchWatcher:
         if self.state == STATE_ALIVE:  # 倒地时拿不了武器
             self.weapons.update(frame, now)
         self._vote_own(own, now)
-        self._vote_mates(frame)
+        self._vote_mates(frame, now)
         if self.post.player_name is None and len(self.own_names) < self.max_names:
             self.own_names.append(self.hud.own_name_snip(frame, self.name_place["roi"], self.name_place.get("anchor")))
         snip = self.hud.top_snip(frame)
@@ -158,14 +165,17 @@ class InMatchWatcher:
             self.legend = key
             self.post.on_legend(self.hud.legends.name(key), now)
 
-    def _vote_mates(self, frame):
+    def _vote_mates(self, frame, now):
         if all(m is not None for m in self.mates) and all(len(n) >= 3 for n in self.mate_names):
             return
         for slot, key in enumerate(self.hud.mate_legends(frame)):
             if key is None:
                 continue
-            if len(self.mate_names[slot]) < 3:
-                self.mate_names[slot].append(self.hud.mate_name_snip(frame, slot))
+            self.mate_seen[slot] = self.mate_seen[slot] or now
+            later = (now - self.mate_seen[slot]).total_seconds() >= MATE_NAME_DELAY
+            snips = self.mate_names[slot] if later else self.mate_early[slot]
+            if len(snips) < 3:
+                snips.append(self.hud.mate_name_snip(frame, slot))
             if self.mates[slot] is None:
                 votes = self.mate_votes[slot]
                 votes[key] = votes.get(key, 0) + 1
@@ -199,7 +209,10 @@ class InMatchWatcher:
         out = []
         left = self.hud.cfg["teammates"]["name_left"]
         for slot in range(2):
-            name = next((n for n in (self.hud.read_name(s, left) for s in self.mate_names[slot]) if n), None)
+            # 几块都读：取读到次数最多的，一样多取长的（有一块赶上了动画、只读到前半截也不怕）
+            snips = self.mate_names[slot] or self.mate_early[slot]
+            reads = [n for n in (self.hud.read_name(s, left) for s in snips) if n]
+            name = max(reads, key=lambda n: (reads.count(n), len(name_key(n)))) if reads else None
             key = self.mates[slot]
             if name or key:
                 out.append({"slot": f"hud{slot + 1}", "name": name, "legend": self.hud.legends.name(key) if key else None})
