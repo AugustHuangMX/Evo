@@ -15,7 +15,7 @@
                   "_说明": "左下角的模式框：排位时'RANKED'，匹配时'UNRANKED'（字小一点，参照图按几种大小比），两种都认作大厅。段位那一栏只在排位时有，匹配时读不到就不读（lobby.json 的 give_up_blank_reads）。参照图小，门槛提高到 0.7：英文截图里真大厅最低 0.89，对局中最像的 0.48（左边打开死亡箱），打完以后的'EXIT OR REQUEUE'菜单里也有'RANKED'（0.95），当作回大厅也没关系（这一局已经结束）"},
         "eliminated": {"keywords": ["PLACED"], "template_box": [714, 510, 350, 88],
                        "_说明": "'SQUAD ELIMINATED / PLACED #3'，位置和简体的'全军覆没 / 排名第 X'一样"},
-        "champion": {"_说明": "还没截到英文的冠军横幅：照用简体的参照图和关键字，所以英文的冠军横幅现在认不出（总结页、经验值页的名次照样能记第 1 名）"},
+        "champion": {"keywords": ["CHAMPION"], "_说明": "冠军横幅'You Are The Champion'（2026-11-05 按游戏官方英文文本核对）。照用简体的参照图，关键字'CHAMPION'"},
         "squad_out": {"roi": [1490, 1022, 220, 50], "keywords": ["Return to Lobby"], "template_box": [1514, 1033, 164, 30]},
         "lobby_s30": {"keywords": ["RANKED"], "_说明": "英文不用这一项（简体第 30 赛季的旧大厅）：英文的大厅由上面的 lobby 认。和 lobby_pubs 一样换掉关键字，只是不继承简体的'排位点数'"},
         "lobby_pubs": {"keywords": ["UNRANKED"], "_说明": "英文不用这一项：匹配大厅'UNRANKED'由上面的 lobby 认（关键字 RANKED 也在里面）。这里换掉关键字，只是不继承简体的'未上榜'（不然简体的匹配大厅英文也对得上，认不出是哪种语言）；参照图回落到简体的，样子也不像，不会多跑识别"},
