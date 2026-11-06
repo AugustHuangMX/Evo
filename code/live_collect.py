@@ -214,7 +214,7 @@ class SummaryWatcher:
         values = {name: r["value"] for name, r in results.items()}
         if self._upgrade_if_same_page(results, problems, frame, when):
             return
-        if same_match(values, self.last_saved):
+        if self._same_round_recent(when) and same_match(values, self.last_saved):
             self.log(f"[{when:%H:%M:%S}] 回到了同一局的总结页，不重复保存")
             return
         if note:
@@ -241,6 +241,21 @@ class SummaryWatcher:
         self.later.append({"match_id": match_id, "frame": frame.copy(), "when": when,
                            "memo": self.visit["memo"] if self.visit else {},
                            "banner": "banner" in self.cfg and not champion})
+
+    def _same_round_recent(self, when):
+        """「回到同一张总结页」这道判重只在**同一局还没收尾、且相隔不超过 SAME_MATCH_SECONDS** 时才用。
+        - last_saved 为空：交给 same_match 自己（主机模式重启后靠它查数据库上一局判重）
+        - 这一局已经收尾过（post.match_id 变了/清了，比如已经进了下一局或回了大厅）：不是同一张，
+          新的总结页要照常记，不能因为两局数字碰巧一样就被当成"回到同一张"而漏记一局
+        - 和上一次存下隔了超过 SAME_MATCH_SECONDS：也不可能是同一张总结页
+        防止"上一局是待确认、下一局数据又恰好相同"时把真正的新一局并掉/漏掉。"""
+        if self.last_saved is None:
+            return True
+        if getattr(self.post, "match_id", None) != self.last_saved_id:
+            return False
+        if self.last_saved_when is None:
+            return True
+        return (when - self.last_saved_when).total_seconds() <= SAME_MATCH_SECONDS
 
     def _upgrade_if_same_page(self, results, problems, frame, when):
         """上一次「没读全就离开」存成了待确认，这次又读到同一张总结页：把读数补进那一局，不新插一局。
