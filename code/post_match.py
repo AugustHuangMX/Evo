@@ -397,6 +397,15 @@ class PostMatch:
         self._settle(match_id)
         self._use_xp()
 
+    def on_summary_upgraded(self, match_id, values, when):
+        """同一局的总结页后来又读全了（原来没读全就离开、存成了待确认）：把读数补进那一局，不新插一局、也不再 finish。
+        只重新结算总结页那几项：模式、地图、传奇在第一次存下时已经写在这一局上了。这一局已经不是当前这一局时忽略。"""
+        if self.match_id != match_id:
+            return
+        self.summary = (values, when)
+        self._settle(match_id)
+        self._use_xp()
+
     def on_summary_later(self, match_id, when, mates, name, champion):
         """总结页上先留着、晚点才读的（2026-11-01，见 live_collect.SummaryWatcher.catch_up）：两名队友、自己的名字（没读到为 None）、
         顶部是不是"捍卫者"。一般在对局中的数据交来之前读（队友等它来了再对上）；已经交来了就马上对上。

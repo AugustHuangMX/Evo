@@ -116,6 +116,13 @@ def main():
         and rows[0]["needs_review"] == 1 and (rows[0]["review_note"] or "").startswith("名次：没读到"),
         "存下以后不再快速检查（回到每秒一次）": m7_sleeps[-1] == 1.0 and min(m7_sleeps) <= 0.3,
     })
+
+    # 2026-11-06 实战：名次还没滑进来就离开总结页（存成待确认），几秒后回到同一张、名次也滑进来了 ——
+    # 应该把那一局补全，不能再存一局（以前会存成两局：待确认 + 正常）。
+    frames = ["观战", "B5", "B5", "观战", "F5", "F5"]
+    rows, _, _ = run_collect(frames, images.get)
+    checks["名次没滑进来就离开、随后回到同一张读全：只存 1 局并补全名次"] = (
+        len(rows) == 1 and rows[0]["placement"] == 8 and rows[0]["needs_review"] == 0)
     return report(checks)
 
 
